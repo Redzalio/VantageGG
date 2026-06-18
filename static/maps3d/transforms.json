@@ -1,0 +1,396 @@
+{
+  "de_anubis": {
+    "sourceType": "source2viewer_world",
+    "unitScale": 0.0254,
+    "axisMap": "vrf_yup",
+    "rotationDeg": 90,
+    "translate": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "glb": "de_anubis_full.glb",
+    "verified": true,
+    "validation": {
+      "ct": {
+        "n": 16,
+        "miss": 0,
+        "within20": 16,
+        "median": 1,
+        "max_abs": 1
+      },
+      "t": {
+        "n": 16,
+        "miss": 0,
+        "within20": 16,
+        "median": -1,
+        "max_abs": 1
+      },
+      "world_bounds": {
+        "min": [
+          -3475,
+          -2820,
+          -852
+        ],
+        "max": [
+          4866,
+          3202,
+          1013
+        ]
+      }
+    }
+  },
+  "de_dust2": {
+    "sourceType": "source2viewer_world",
+    "unitScale": 0.0254,
+    "axisMap": "vrf_yup",
+    "rotationDeg": 90,
+    "translate": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "glb": "de_dust2_full.glb",
+    "verified": true,
+    "validation": {
+      "ct": {
+        "n": 15,
+        "miss": 0,
+        "within20": 15,
+        "median": 0,
+        "max_abs": 1
+      },
+      "t": {
+        "n": 15,
+        "miss": 0,
+        "within20": 15,
+        "median": 0,
+        "max_abs": 0
+      },
+      "world_bounds": {
+        "min": [
+          -2496,
+          -3080,
+          -320
+        ],
+        "max": [
+          4608,
+          4736,
+          1409
+        ]
+      }
+    }
+  },
+  "de_train": {
+    "sourceType": "source2viewer_world",
+    "unitScale": 0.0254,
+    "axisMap": "vrf_yup",
+    "rotationDeg": 90,
+    "translate": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "glb": "de_train_full.glb",
+    "verified": true,
+    "validation": {
+      "ct": {
+        "n": 14,
+        "miss": 0,
+        "within20": 14,
+        "median": -1,
+        "max_abs": 1
+      },
+      "t": {
+        "n": 14,
+        "miss": 0,
+        "within20": 14,
+        "median": 0,
+        "max_abs": 1
+      },
+      "world_bounds": {
+        "min": [
+          -2904,
+          -3717,
+          -368
+        ],
+        "max": [
+          3769,
+          3613,
+          1411
+        ]
+      }
+    }
+  },
+  "de_mirage": {
+    "sourceType": "source2viewer_world",
+    "unitScale": 0.0254,
+    "axisMap": "vrf_yup",
+    "rotationDeg": 90,
+    "translate": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "glb": "de_mirage_full.glb",
+    "verified": true,
+    "validation": {
+      "method": "three.js raycast vs real info_player_* spawns (authoritative)",
+      "rotation": 90,
+      "spawns": 33,
+      "floor_found": 33,
+      "miss_by_rotation": {
+        "0": 14,
+        "90": 0,
+        "180": 14,
+        "270": 14
+      },
+      "median_bias_u": -23,
+      "coplanar_within15u": "32/33",
+      "max_residual_u": 17,
+      "world_bounds": {
+        "min": [
+          -4169,
+          -3864,
+          -257
+        ],
+        "max": [
+          3114,
+          2051,
+          1431
+        ]
+      },
+      "note": "rotation 90 uniquely seats all spawns on the mesh; the uniform median vertical bias is auto-fit at runtime from real players"
+    }
+  },
+  "de_vertigo": {
+    "sourceType": "source2viewer_world",
+    "unitScale": 0.0254,
+    "axisMap": "vrf_yup",
+    "rotationDeg": 90,
+    "translate": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "glb": "de_vertigo_full.glb",
+    "verified": true,
+    "validation": {
+      "method": "three.js raycast vs real info_player_* spawns (authoritative)",
+      "rotation": 90,
+      "spawns": 30,
+      "floor_found": 30,
+      "miss_by_rotation": {
+        "0": 11,
+        "90": 0,
+        "180": 14,
+        "270": 14
+      },
+      "median_bias_u": -15,
+      "coplanar_within15u": "30/30",
+      "max_residual_u": 2,
+      "world_bounds": {
+        "min": [
+          -13150,
+          -9899,
+          -832
+        ],
+        "max": [
+          12350,
+          9418,
+          17990
+        ]
+      },
+      "note": "rotation 90 uniquely seats all spawns on the mesh; the uniform median vertical bias is auto-fit at runtime from real players"
+    }
+  },
+  "de_nuke": {
+    "sourceType": "source2viewer_world",
+    "unitScale": 0.0254,
+    "axisMap": "vrf_yup",
+    "rotationDeg": 90,
+    "translate": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "glb": "de_nuke_full.glb",
+    "verified": true,
+    "validation": {
+      "method": "three.js raycast vs real info_player_* spawns (authoritative)",
+      "rotation": 90,
+      "spawns": 40,
+      "floor_found": 40,
+      "miss_by_rotation": {
+        "0": 24,
+        "90": 0,
+        "180": 26,
+        "270": 4
+      },
+      "median_bias_u": -17,
+      "coplanar_within15u": "40/40",
+      "max_residual_u": 8,
+      "world_bounds": {
+        "min": [
+          -6113,
+          -5786,
+          -1023
+        ],
+        "max": [
+          6528,
+          2494,
+          1881
+        ]
+      },
+      "note": "rotation 90 uniquely seats all spawns on the mesh; the uniform median vertical bias is auto-fit at runtime from real players"
+    }
+  },
+  "de_overpass": {
+    "sourceType": "source2viewer_world",
+    "unitScale": 0.0254,
+    "axisMap": "vrf_yup",
+    "rotationDeg": 90,
+    "translate": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "glb": "de_overpass_full.glb",
+    "verified": true,
+    "validation": {
+      "method": "three.js raycast vs real info_player_* spawns (authoritative)",
+      "rotation": 90,
+      "spawns": 44,
+      "floor_found": 44,
+      "miss_by_rotation": {
+        "0": 14,
+        "90": 0,
+        "180": 20,
+        "270": 20
+      },
+      "median_bias_u": -11,
+      "coplanar_within15u": "44/44",
+      "max_residual_u": 10,
+      "world_bounds": {
+        "min": [
+          -5952,
+          -4714,
+          -269
+        ],
+        "max": [
+          1816,
+          4383,
+          2742
+        ]
+      },
+      "note": "rotation 90 uniquely seats all spawns on the mesh; the uniform median vertical bias is auto-fit at runtime from real players"
+    }
+  },
+  "de_ancient": {
+    "sourceType": "source2viewer_world",
+    "unitScale": 0.0254,
+    "axisMap": "vrf_yup",
+    "rotationDeg": 90,
+    "translate": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "glb": "de_ancient_full.glb",
+    "verified": true,
+    "validation": {
+      "method": "three.js raycast vs real info_player_* spawns (authoritative)",
+      "rotation": 90,
+      "spawns": 24,
+      "floor_found": 24,
+      "miss_by_rotation": {
+        "0": 12,
+        "90": 0,
+        "180": 12,
+        "270": 13
+      },
+      "median_bias_u": 0,
+      "coplanar_within15u": "24/24",
+      "max_residual_u": 15,
+      "world_bounds": {
+        "min": [
+          -5104,
+          -4640,
+          -136
+        ],
+        "max": [
+          3224,
+          3800,
+          2222
+        ]
+      },
+      "note": "rotation 90 uniquely seats all spawns on the mesh; the uniform median vertical bias is auto-fit at runtime from real players"
+    }
+  },
+  "de_inferno": {
+    "sourceType": "source2viewer_world",
+    "unitScale": 0.0254,
+    "axisMap": "vrf_yup",
+    "rotationDeg": 90,
+    "translate": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "glb": "de_inferno_full.glb",
+    "verified": true,
+    "validation": {
+      "method": "three.js raycast vs real info_player_* spawns (authoritative)",
+      "rotation": 90,
+      "spawns": 40,
+      "floor_found": 40,
+      "miss_by_rotation": {
+        "0": 37,
+        "90": 0,
+        "180": 38,
+        "270": 40
+      },
+      "median_bias_u": -18,
+      "coplanar_within15u": "31/40",
+      "max_residual_u": null,
+      "world_bounds": {
+        "min": [
+          -3548,
+          -2787,
+          -75
+        ],
+        "max": [
+          3960,
+          4244,
+          1727
+        ]
+      },
+      "note": "rotation 90 uniquely seats all spawns on the mesh; the uniform median vertical bias is auto-fit at runtime from real players"
+    }
+  },
+  "de_cache": {
+    "sourceType": "source2viewer_world",
+    "unitScale": 0.0254,
+    "axisMap": "vrf_yup",
+    "rotationDeg": 90,
+    "translate": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "glb": "de_cache_full.glb",
+    "verified": true,
+    "validation": {
+      "best_mapping": [
+        0,
+        1,
+        2,
+        1
+      ],
+      "n": 32,
+      "within40": 32,
+      "hit": 32,
+      "mean_abs": 0
+    }
+  }
+}

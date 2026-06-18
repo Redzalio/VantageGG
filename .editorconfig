@@ -1,0 +1,19 @@
+# EditorConfig (https://editorconfig.org) -- keeps every editor reading/writing these files
+# as UTF-8 so the symbols in source render correctly instead of as mojibake.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+[*.py]
+indent_size = 4
+
+[*.{js,html,css,json,md}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false

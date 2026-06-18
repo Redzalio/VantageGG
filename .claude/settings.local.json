@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./.venv/Scripts/python.exe -c \"import flask, demoparser2; print\\('deps ok'\\)\")",
+      "Bash(HOST=127.0.0.1 PORT=8770 ./.venv/Scripts/python.exe app.py)",
+      "Read(//tmp/**)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://127.0.0.1:8770/)",
+      "Bash(grep -vE '^\\\\s*#|^\\\\s*$' .env)"
+    ]
+  }
+}

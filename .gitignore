@@ -1,0 +1,45 @@
+# --- secrets / config (NEVER commit) ---
+.env
+*.env
+!.env.example
+
+# --- the SQLite index/users/teams/jobs DB + WAL siblings ---
+cs2dp.sqlite
+cs2dp.sqlite-wal
+cs2dp.sqlite-shm
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# --- user data (parsed caches, uploads, libraries, per-user state) ---
+data/
+cache/
+uploads/
+incoming/
+nades/
+goals/
+playbook/
+reviews/
+team.json
+practice.json
+
+# --- python / venv / caches ---
+.venv/
+venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+
+# --- offline map-building tools (large Windows-only binaries; not needed on the Linux server) ---
+tools/*.exe
+tools/*.dll
+
+# --- editor / OS / misc ---
+.DS_Store
+*.log
+# ignore stray pngs (screenshots etc.) but KEEP the app's runtime images (radars, HUD icons,
+# landing/og image) so a fresh clone/Docker build actually has them
+*.png
+!static/**/*.png
+!static/*.png

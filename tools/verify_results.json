@@ -1,0 +1,8 @@
+{
+  "de_mirage":   { "n": 33, "miss_by_rot": {"0": 14, "90": 0, "180": 14, "270": 14}, "median": -23, "within15ofMed": 32, "max_resid": 17, "world_bounds": {"min": [-4169, -3864, -257], "max": [3114, 2051, 1431]} },
+  "de_vertigo":  { "n": 30, "miss_by_rot": {"0": 11, "90": 0, "180": 14, "270": 14}, "median": -15, "within15ofMed": 30, "max_resid": 2,  "world_bounds": {"min": [-13150, -9899, -832], "max": [12350, 9418, 17990]} },
+  "de_nuke":     { "n": 40, "miss_by_rot": {"0": 24, "90": 0, "180": 26, "270": 4},  "median": -17, "within15ofMed": 40, "max_resid": 8,  "world_bounds": {"min": [-6113, -5786, -1023], "max": [6528, 2494, 1881]} },
+  "de_overpass": { "n": 44, "miss_by_rot": {"0": 14, "90": 0, "180": 20, "270": 20}, "median": -11, "within15ofMed": 44, "max_resid": 10, "world_bounds": {"min": [-5952, -4714, -269], "max": [1816, 4383, 2742]} },
+  "de_ancient":  { "n": 24, "miss_by_rot": {"0": 12, "90": 0, "180": 12, "270": 13}, "median": 0,   "within15ofMed": 24, "max_resid": 15, "world_bounds": {"min": [-5104, -4640, -136], "max": [3224, 3800, 2222]} },
+  "de_inferno":  { "n": 40, "miss_by_rot": {"0": 37, "90": 0, "180": 38, "270": 40}, "median": -18, "within15ofMed": 31, "world_bounds": {"min": [-3548, -2787, -75], "max": [3960, 4244, 1727]} }
+}

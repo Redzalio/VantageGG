@@ -1,0 +1,21 @@
+# VantageGG — Caddy reverse proxy with automatic HTTPS (Let's Encrypt).
+# Lives on the VPS at /etc/caddy/Caddyfile (or mount into the official `caddy` container).
+# Requires: Cloudflare A record  vantagegg.com -> <VPS IP>  (DNS only / grey cloud),
+# and ports 80 + 443 open on the box. Caddy fetches + renews the cert automatically.
+
+vantagegg.com {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:8770
+    request_body {
+        max_size 2048MB        # must be >= MAX_UPLOAD_MB so 300-500 MB demos can upload
+    }
+    # demos parse in the background, but the upload transfer itself can take a while on big files:
+    timeouts {
+        read_body 30m
+    }
+}
+
+# www -> apex (optional; only works if you also add a `www` A record in Cloudflare)
+www.vantagegg.com {
+    redir https://vantagegg.com{uri} permanent
+}

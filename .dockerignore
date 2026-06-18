@@ -1,0 +1,40 @@
+# keep the image small + don't leak local data/secrets into it
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.git/
+.pytest_cache/
+# secrets + the SQLite DB -- supplied at runtime / mounted as a volume, never baked in
+.env
+*.env
+!.env.example
+cs2dp.sqlite*
+*.sqlite*
+data/
+# user data -- mounted as volumes at runtime, never baked in
+uploads/
+cache/
+incoming/
+nades/
+goals/
+playbook/
+reviews/
+team.json
+practice.json
+*.dem
+# Windows-only map-building tools (geometry is built offline on the dev's machine)
+tools/*.exe
+# dev-only notes, tests, screenshots (not needed in the runtime image)
+tests/
+research/
+# stray pngs (screenshots) excluded, but KEEP runtime images — radars, HUD icons, landing/og image —
+# or the hosted 2D replay renders blank maps
+*.png
+!static/**/*.png
+!static/*.png
+Claude_*.txt
+CS2*.txt
+# editor / OS cruft
+.DS_Store
+*.log

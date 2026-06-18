@@ -1,0 +1,5 @@
+# Dev/tooling deps (not needed to run the app). Install with:
+#   .venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+pytest>=8          # test suite (tests/)
+trimesh>=4         # tools/validate_alignment.py -- 3D mesh floor validation
+numpy>=1.26        # used by the alignment validator

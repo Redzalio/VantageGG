@@ -1,0 +1,21 @@
+# Private team deploy:  cp .env.example .env  &&  docker compose up -d  ->  http://<host>:8770
+# Parsed caches, uploaded demos, the nade library AND the SQLite DB persist in ./data on the host.
+# Secrets/host config come from .env (compose auto-loads it); never commit .env.
+services:
+  cs2demo:
+    build: .
+    image: cs2demo
+    ports:
+      - "8770:8770"
+    volumes:
+      - ./data:/data                      # one mount: cache/ uploads/ nades/ + cs2dp.sqlite*
+    environment:
+      # auth / hosting (optional -- unset = local single-user mode). Values come from .env.
+      - SECRET_KEY=${SECRET_KEY:-}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
+      - STEAM_API_KEY=${STEAM_API_KEY:-}
+      - AUTH_REQUIRED=${AUTH_REQUIRED:-0}
+      - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-0}
+      - MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-2048}
+      - MAX_VIDEO_UPLOAD_MB=${MAX_VIDEO_UPLOAD_MB:-100}
+    restart: unless-stopped

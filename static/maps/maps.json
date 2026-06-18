@@ -1,0 +1,187 @@
+{
+  "de_mirage": {
+    "image": "de_mirage.png",
+    "pos_x": -3230.0,
+    "pos_y": 1713.0,
+    "scale": 5.0,
+    "size": 1024
+  },
+  "de_inferno": {
+    "image": "de_inferno.png",
+    "pos_x": -2087.0,
+    "pos_y": 3870.0,
+    "scale": 4.9,
+    "size": 1024
+  },
+  "de_nuke": {
+    "image": "de_nuke.png",
+    "pos_x": -3453.0,
+    "pos_y": 2887.0,
+    "scale": 7.0,
+    "size": 1024,
+    "lower": {
+      "image": "de_nuke_lower.png",
+      "altitude_max": -495.0
+    }
+  },
+  "de_ancient": {
+    "image": "de_ancient.png",
+    "pos_x": -2953.0,
+    "pos_y": 2164.0,
+    "scale": 5.0,
+    "size": 1024
+  },
+  "de_anubis": {
+    "image": "de_anubis.png",
+    "pos_x": -2796.0,
+    "pos_y": 3328.0,
+    "scale": 5.22,
+    "size": 1024
+  },
+  "de_dust2": {
+    "image": "de_dust2.png",
+    "pos_x": -2476.0,
+    "pos_y": 3239.0,
+    "scale": 4.4,
+    "size": 1024
+  },
+  "de_train": {
+    "image": "de_train.png",
+    "pos_x": -2308.0,
+    "pos_y": 2078.0,
+    "scale": 4.082077,
+    "size": 1024,
+    "lower": {
+      "image": "de_train_lower.png",
+      "altitude_max": -50.0
+    }
+  },
+  "de_overpass": {
+    "image": "de_overpass.png",
+    "pos_x": -4831.0,
+    "pos_y": 1781.0,
+    "scale": 5.2,
+    "size": 1024
+  },
+  "de_vertigo": {
+    "image": "de_vertigo.png",
+    "pos_x": -3168.0,
+    "pos_y": 1762.0,
+    "scale": 4.0,
+    "size": 1024,
+    "lower": {
+      "image": "de_vertigo_lower.png",
+      "altitude_max": 11700.0
+    }
+  },
+  "de_basalt": {
+    "image": "de_basalt.png",
+    "pos_x": -2345.6,
+    "pos_y": 2391.8,
+    "scale": 4.37,
+    "size": 1024
+  },
+  "de_brewery": {
+    "image": "de_brewery.png",
+    "pos_x": -4122.4,
+    "pos_y": 4394.4,
+    "scale": 2.1820312,
+    "size": 1024
+  },
+  "de_edin": {
+    "image": "de_edin.png",
+    "pos_x": -383.30038,
+    "pos_y": 4420.2134,
+    "scale": 4.803717,
+    "size": 1024
+  },
+  "de_dogtown": {
+    "image": "de_dogtown.png",
+    "pos_x": -1741.0228,
+    "pos_y": 3295.1,
+    "scale": 2.0323243,
+    "size": 1024
+  },
+  "de_grail": {
+    "image": "de_grail.png",
+    "pos_x": -4395.903,
+    "pos_y": 4203.903,
+    "scale": 2.1756864,
+    "size": 1024
+  },
+  "de_jura": {
+    "image": "de_jura.png",
+    "pos_x": -2126.9092,
+    "pos_y": 2389.8,
+    "scale": 2.504188,
+    "size": 1024
+  },
+  "de_palais": {
+    "image": "de_palais.png",
+    "pos_x": -1353.2374,
+    "pos_y": 2044.8105,
+    "scale": 2.8003397,
+    "size": 1024
+  },
+  "de_whistle": {
+    "image": "de_whistle.png",
+    "pos_x": -1825.6,
+    "pos_y": 1104.82,
+    "scale": 2.8,
+    "size": 1024
+  },
+  "cs_office": {
+    "image": "cs_office.png",
+    "pos_x": -1838.0,
+    "pos_y": 1858.0,
+    "scale": 4.1,
+    "size": 1024
+  },
+  "cs_italy": {
+    "image": "cs_italy.png",
+    "pos_x": -2647.0,
+    "pos_y": 2592.0,
+    "scale": 4.6,
+    "size": 1024
+  },
+  "cs_agency": {
+    "image": "cs_agency.png",
+    "pos_x": -2597.7368,
+    "pos_y": 2079.3687,
+    "scale": 4.1817436,
+    "size": 1024
+  },
+  "ar_baggage": {
+    "image": "ar_baggage.png",
+    "pos_x": -1316.0,
+    "pos_y": 1288.0,
+    "scale": 2.539062,
+    "size": 1024,
+    "lower": {
+      "image": "ar_baggage_lower.png",
+      "altitude_max": -5.0
+    }
+  },
+  "ar_shoots": {
+    "image": "ar_shoots.png",
+    "pos_x": -1368.0,
+    "pos_y": 1952.0,
+    "scale": 2.6875,
+    "size": 1024
+  },
+  "ar_pool_day": {
+    "image": "ar_pool_day.png",
+    "pos_x": -1088.0,
+    "pos_y": 1600.0,
+    "scale": 2.125,
+    "size": 1024
+  },
+  "de_cache": {
+    "image": "de_cache.png",
+    "pos_x": -3888.4,
+    "pos_y": 2831.5,
+    "scale": 7.7108,
+    "size": 1024,
+    "generated": true
+  }
+}

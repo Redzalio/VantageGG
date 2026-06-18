@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VantageGG</title>
+<meta name="description" content="VantageGG — upload a CS2 demo and get 2D + 3D replay, deep stats, and coaching that tells you what to fix." />
+<!-- Link preview (Discord / Twitter / Steam unfurl). URL stays lowercase; the brand shows here as VantageGG. -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="VantageGG" />
+<meta property="og:title" content="VantageGG — CS2 demo review &amp; coaching" />
+<meta property="og:description" content="Upload a CS2 demo, replay it in 2D + 3D, and get stats, trends, and fix-it coaching for you and your team." />
+<meta property="og:url" content="https://vantagegg.com/" />
+<meta property="og:image" content="https://vantagegg.com/static/images/landing-dust-map.png" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="VantageGG — CS2 demo review &amp; coaching" />
+<meta name="twitter:description" content="Upload a CS2 demo, replay it in 2D + 3D, and get stats, trends, and fix-it coaching for you and your team." />
+<meta name="twitter:image" content="https://vantagegg.com/static/images/landing-dust-map.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="static/css/style.css" />
+<script type="importmap">
+{ "imports": {
+  "three": "/static/js/vendor/three.module.js",
+  "three-mesh-bvh": "/static/js/vendor/three-mesh-bvh.module.js"
+} }
+</script>
+</head>
+<body class="on-dashboard">
+  <header id="topbar">
+    <div class="brand" id="brandHome" title="Back to dashboard">Vantage<span>GG</span></div>
+    <div class="match">
+      <span id="mapName" class="mapname">--</span>
+      <span id="map3d" class="map3d" title="3D geometry status for this map"></span>
+      <span class="score"><b class="ct" id="scoreCT">0</b><i>:</i><b class="t" id="scoreT">0</b></span>
+      <span id="roundClock" class="rclock" title="Round time remaining"></span>
+      <span id="roundLabel" class="round"></span>
+    </div>
+    <div class="actions">
+      <button id="toggleNames" class="btn ghost on demo-only" title="Toggle player names">Names</button>
+      <button id="toggleAnalytics" class="btn demo-only">Analytics</button>
+      <button id="toggleUtil" class="btn demo-only">Utility</button>
+      <button id="toggleReview" class="btn demo-only">Review</button>
+      <button id="goalsBtn" class="btn">Goals</button>
+      <button id="searchBtn" class="btn demo-only">Search</button>
+      <button id="toggleTrends" class="btn">Trends</button>
+      <button id="sampleBtn" class="btn">Load sample</button>
+      <button id="libraryBtn" class="btn">Library</button>
+      <button id="uploadBtn" class="btn primary">Upload</button>
+      <input id="fileInput" type="file" accept=".dem,.zip" multiple hidden />
+      <span id="authBox" class="authbox" hidden></span>
+    </div>
+  </header>
+
+  <div id="proPreviewBanner" class="pro-preview-banner" hidden>
+    <span><b>&#10022; Pro preview</b> &mdash; you're trying 3D, utility &amp; advanced stats on the sample. Unlock them for your own demos.</span>
+    <a id="ppbGo" class="btn primary sm" href="/login/steam">Go Pro</a>
+    <button id="ppbClose" class="ppb-x" title="Dismiss">&times;</button>
+  </div>
+
+  <div id="adminPreviewBanner" class="admin-preview-banner" hidden>
+    <span><b>&#128065; Previewing as a free user</b> &mdash; Pro features show as locked. The server still treats you as admin.</span>
+    <button id="apbExit" class="btn sm">Exit preview</button>
+  </div>
+
+  <main id="stage">
+    <aside class="side left">
+      <div class="sbteam ct"><span>Counter-Terrorists</span></div>
+      <div id="sbCT" class="sblist"></div>
+      <div class="sbteam t"><span>Terrorists</span></div>
+      <div id="sbT" class="sblist"></div>
+    </aside>
+
+    <section class="viewport">
+      <canvas id="canvas"></canvas>
+      <canvas id="canvas3d" class="canvas3d"></canvas>
+      <canvas id="drawCanvas" class="draw-canvas"></canvas>
+      <div id="view3dHint" class="view3d-hint">Click to look around | <b>WASD</b> move | <b>E/Q</b> up/down | <b>Space</b> play/pause | <b>Shift</b> fast | <b>Esc</b> release mouse</div>
+      <div id="bombBanner" class="bomb-banner">&#9679; BOMB PLANTED</div>
+      <div id="specLabel" class="spec-label">Free cam</div>
+      <div id="fpCrosshair" class="fp-crosshair" aria-hidden="true">
+        <span class="xh xh-t"></span><span class="xh xh-b"></span>
+        <span class="xh xh-l"></span><span class="xh xh-r"></span><span class="xh xh-dot"></span>
+      </div>
+      <div id="fpHud" class="fp-hud" aria-hidden="true">
+        <div id="fphHp" class="fph-hp"></div>
+        <div id="fphWeap" class="fph-weap"></div>
+        <div id="fphAmmo" class="fph-ammo"></div>
+      </div>
+      <div id="tr3d" class="tr3d" aria-hidden="true">
+        <canvas id="miniCanvas" class="mini-canvas"></canvas>
+        <div id="killfeed3d"></div>
+      </div>
+      <div id="killfeed" class="killfeed-map"></div>   <!-- 2D on-map kill feed (top-right) -->
+      <div id="posLegend" class="pos-legend"></div>    <!-- #62b death/kill spots legend (top-left) -->
+      <div id="reviewSession" class="review-session" aria-hidden="true">
+        <div class="rs-top">
+          <span id="rsLabel" class="rs-label"></span>
+          <span id="rsProgress" class="rs-progress"></span>
+          <button id="rsExit" class="rs-x" title="End session (Esc)">&times;</button>
+        </div>
+        <div id="rsText" class="rs-text"></div>
+        <div class="rs-controls">
+          <button id="rsPrev" class="rs-btn" title="Previous moment">&#9664; Prev</button>
+          <button id="rsReveal" class="rs-btn primary" title="Play through the moment (Space)">&#9654; Reveal</button>
+          <button id="rsNext" class="rs-btn" title="Next moment">Next &#9654;</button>
+          <input id="rsNote" class="rs-note" maxlength="200" placeholder="note this moment (optional)..." />
+          <button id="rsSaveNote" class="rs-btn" title="Bookmark this moment with your note">+ Note</button>
+        </div>
+      </div>
+      <div id="roundStrip" class="round-strip"></div>
+      <div id="hud" class="hud">
+        <button id="playPause" class="rbtn">&#9654;</button>
+        <button id="prevRound" class="rbtn sm" title="Previous round ["><=</button>
+        <button id="nextRound" class="rbtn sm" title="Next round ]">=></button>
+        <div class="tlwrap">
+          <input id="timeline" class="timeline" type="range" min="0" max="100" step="0.05" value="0" />
+          <div id="tlMarkers" class="tl-markers"></div>
+        </div>
+        <span class="tlabel"><span id="timeLabel">0:00</span> / <span id="durLabel">0:00</span></span>
+        <select id="speed" class="speed" title="Playback speed">
+          <option value="0.25">0.25x</option><option value="0.5">0.5x</option>
+          <option value="1" selected>1x</option><option value="2">2x</option>
+          <option value="4">4x</option><option value="8">8x</option>
+        </select>
+        <button id="tlMode" class="rbtn sm on" title="Timeline scope: click to switch Round / Match">Round</button>
+        <button id="freeCam" class="rbtn sm on" title="Free camera (F)">Free</button>
+        <button id="toggle3d" class="rbtn sm" title="3D fly-around (double-click map)">3D</button>
+        <button id="camPreset" class="rbtn sm" title="3D camera (press C to cycle): Fly / Follow / Overhead / Utility / Death">Cam: Fly</button>
+        <button id="drawBtn" class="rbtn sm" title="Draw on the map (strategy board)">&#9998;</button>
+        <button id="settingsBtn" class="rbtn sm" title="Replay settings">&#9881;</button>
+      </div>
+      <div id="drawTools" class="draw-tools">
+        <button id="drawSave" class="rbtn sm" title="Save this drawing">&#128190; Save</button>
+        <button id="drawClear" class="rbtn sm" title="Clear (right-click on the map also clears)">Clear</button>
+        <span class="dw-lbl">Saved:</span><span id="drawList" class="draw-list"></span>
+      </div>
+      <div id="settingsPop" class="settings-pop"></div>
+      <div id="utilPanel" class="util-panel">
+        <div class="up-h">Utility <button id="utilClose" class="up-x">x</button></div>
+        <div class="up-tabs">
+          <button class="uptab on" data-umode="throws">Demo throws</button>
+          <button class="uptab" data-umode="library">Nade library</button>
+          <button class="uptab" data-umode="playbook">Playbook</button>
+        </div>
+        <div id="utilThrows">
+          <div id="utilTypes" class="up-chips"></div>
+          <div id="utilSide" class="up-chips"></div>
+          <div class="up-row"><label>Round</label><select id="utilRound"></select></div>
+          <div class="up-row"><label>Player</label><select id="utilPlayer"></select></div>
+          <div class="up-row"><label>Heatmap</label><button id="utilHeat" class="up-btn">off</button></div>
+          <div id="utilCount" class="up-count"></div>
+          <div id="utilList" class="up-list"></div>
+        </div>
+        <div id="utilLibrary" style="display:none">
+          <div id="libTypes" class="up-chips"></div>
+          <div class="up-actions">
+            <button id="libAdd" class="up-btn">+ Add lineup</button>
+            <button id="libFromDemo" class="up-btn">+ from demo</button>
+            <button id="libSuggest" class="up-btn" title="Find lineups you throw consistently across your demos">Suggest</button>
+            <button id="libImport" class="up-btn">Import</button>
+          </div>
+          <div id="libSuggestions" class="lib-suggest"></div>
+          <div id="libAddForm" class="lib-form" style="display:none"></div>
+          <textarea id="libImportBox" class="up-import" placeholder="Paste a CSNADES-style JSON array of lineups, then click Import again." style="display:none"></textarea>
+          <div id="libCount" class="up-count"></div>
+          <div id="libBrowse" class="up-list"></div>
+        </div>
+        <div id="utilPlaybook" style="display:none">
+          <div class="up-sub">Save a round you ran well as a play, then see how often you run it.</div>
+          <div class="up-row"><label>From round</label><select id="pbRound"></select>
+            <select id="pbSide"><option value="ct">CT</option><option value="t">T</option></select></div>
+          <input id="pbName" class="rv-in" maxlength="60" placeholder="Play name (e.g. A default)" />
+          <button id="pbAdd" class="up-btn rv-addbtn">+ Save round's utility as a play</button>
+          <div class="up-sub">Plays <span id="pbCount" class="up-count"></span></div>
+          <div id="pbList" class="up-list"></div>
+        </div>
+      </div>
+      <div id="reviewPanel" class="util-panel">
+        <div class="up-h">Review <button id="reviewClose" class="up-x">x</button></div>
+        <div class="rv-add">
+          <input id="rvNote" class="rv-in" maxlength="200" placeholder="Note this moment (optional)..." />
+          <input id="rvTag" class="rv-in rv-tagin" maxlength="24" placeholder="tag (e.g. exec, mistake)" list="rvTagList" />
+          <datalist id="rvTagList"></datalist>
+          <button id="rvAdd" class="up-btn rv-addbtn">+ Note current moment</button>
+        </div>
+        <div class="up-sub">Notes &amp; tags <span id="rvBmCount" class="up-count"></span></div>
+        <div id="rvTagFilter" class="rv-tagfilter"></div>
+        <div id="rvBookmarks" class="up-list rv-list"></div>
+        <div class="up-sub">Auto review queues <span class="up-count">(from analysis)</span></div>
+        <div id="rvQueues" class="up-list rv-queues"></div>
+      </div>
+    </section>
+
+    <aside class="side right">
+      <button id="sideCollapse" class="side-collapse" title="Hide this panel for more map room">&raquo;</button>
+      <h3>Controls</h3>
+      <ul class="help">
+        <li><kbd>Space</kbd> play / pause</li>
+        <li><kbd><-</kbd><kbd>-></kbd> seek 5s (+Shift = 1s)</li>
+        <li><kbd>[</kbd><kbd>]</kbd> prev / next round</li>
+        <li><kbd>N</kbd><kbd>P</kbd> cycle spectate</li>
+        <li><kbd>V</kbd> first-person (POV) toggle</li>
+        <li><kbd>F</kbd> free cam</li>
+        <li><kbd>+</kbd><kbd>-</kbd> speed</li>
+        <li>Drag = pan | Wheel = zoom</li>
+        <li>Click a player = spectate</li>
+        <li><kbd>3D</kbd> toggle 3D (or double-click map)</li>
+        <li><kbd>C</kbd> cycle 3D camera</li>
+        <li>In 3D: <kbd>WASD</kbd> move, <kbd>E</kbd>/<kbd>Q</kbd> up/down</li>
+      </ul>
+    </aside>
+    <button id="sideRestore" class="side-restore" title="Show the side panel">&laquo;</button>
+  </main>
+
+  <section id="dashboard" class="dashboard">
+    <div class="dash-inner">
+      <div class="dash-hero">
+        <div class="dash-hero-text">
+          <h1 class="dash-title" id="dashTitle">CS2 Demo Review</h1>
+          <p class="dash-sub" id="dashSub">Pick a match to review, or upload a new one.</p>
+        </div>
+        <div class="dash-hero-actions">
+          <button id="dashUpload" class="btn primary">Upload demo(s)</button>
+          <button id="dashSample" class="btn">Load sample</button>
+        </div>
+      </div>
+
+      <div id="dashQuick" class="dash-quick"></div>
+      <div id="dashFocus" class="dash-focus"></div>
+      <div id="dashJobs" class="dash-jobs"></div>
+      <div id="dashEmpty" class="dash-empty-state" hidden></div>
+      <div id="dashMe" class="dash-me"></div>
+
+      <div class="dash-section" id="dashMatchSec">
+        <div class="dash-sec-head"><h2>Recent matches</h2>
+          <button id="dashAllMatches" class="btn ghost sm">Open library</button></div>
+        <div id="dashMatches" class="dash-matches"></div>
+      </div>
+
+      <div class="dash-section" id="dashGoalSec">
+        <div class="dash-sec-head"><h2>Practice goals</h2>
+          <button id="dashGoals" class="btn ghost sm">All goals</button></div>
+        <div id="dashGoalsList" class="dash-goals"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="landing" class="landing">
+    <div class="land-inner">
+      <div class="land-hero">
+        <div class="land-hero-l">
+          <div class="land-badge">CS2 Demo Review</div>
+          <h1 class="land-h1">Upload a CS2 demo. Find the rounds your team keeps losing.</h1>
+          <p class="land-lead">Review 2D radar, basic stats, trades, utility, and round mistakes &mdash; free.
+            Upgrade when you want 3D replay, deeper trends, team playbooks, and coaching depth.</p>
+          <div class="land-cta">
+            <a class="btn primary land-signin" href="/login/steam">Sign in through Steam</a>
+            <button id="landSample" class="btn">See a sample match</button>
+          </div>
+          <div class="land-flow"><span>Upload</span><i>&rarr;</i><span>Parse</span><i>&rarr;</i><span>Review</span><i>&rarr;</i><span>Practice goals</span></div>
+        </div>
+        <div class="land-preview">
+          <div class="lp-prev-top">
+            <div>
+              <div class="lp-prev-h">Demo report preview</div>
+              <div class="lp-prev-map">NAVI vs G2 <span>Dust2 - 13 : 10</span></div>
+            </div>
+            <div class="lp-prev-pill">Team review</div>
+          </div>
+          <div class="lp-report">
+            <div class="lp-radar-img">
+              <img src="static/images/landing-dust-map.png" alt="Sample Dust2 radar replay preview">
+            </div>
+            <div class="lp-statgrid">
+              <div><b>72%</b><span>KAST</span></div>
+              <div><b>85</b><span>ADR</span></div>
+              <div><b>4/7</b><span>Openings lost</span></div>
+              <div><b>3</b><span>Utility gaps</span></div>
+            </div>
+          </div>
+          <div class="coach-card"><span class="cc-tag cc-bad">Retake</span><div class="cc-txt"><b>Lost B retake</b> - second player entered <b>4.2s late</b>.</div></div>
+          <div class="coach-card"><span class="cc-tag cc-warn">Openings</span><div class="cc-txt"><b>4 of 7</b> opening deaths came <b>before trade range</b>.</div></div>
+          <div class="coach-card"><span class="cc-tag cc-info">Utility</span><div class="cc-txt">No smoke on A execute in <b>3 repeated rounds</b>.</div></div>
+          <div class="lp-prev-foot">Each card jumps back to the exact replay moment.</div>
+        </div>
+      </div>
+
+      <div class="land-features">
+        <div class="land-feat"><div class="lf-ic">&#9654;</div><h3>2D &amp; 3D replay</h3>
+          <p>Scrub any round on the radar, then fly the real map in 3D to see exactly what happened.</p></div>
+        <div class="land-feat"><div class="lf-ic">&#9670;</div><h3>Coaching from your demos</h3>
+          <p>Per-round breakdowns, trade &amp; opening-duel analysis, and fix-it cards that jump to the moment.</p></div>
+        <div class="land-feat"><div class="lf-ic">&#9679;</div><h3>Nade library</h3>
+          <p>Save lineups with video and replay them in 3D. Auto-detects utility you throw consistently.</p></div>
+        <div class="land-feat"><div class="lf-ic">&#9650;</div><h3>Team workspaces</h3>
+          <p>Share demos with your team, build a playbook, and check round-by-round adherence.</p></div>
+      </div>
+
+      <div class="land-steps">
+        <div class="land-step"><span class="ls-n">1</span><div><b>Sign in with Steam</b><p>One click, no password.</p></div></div>
+        <div class="land-step"><span class="ls-n">2</span><div><b>Upload a .dem</b><p>Drag in a match, or a zip of them.</p></div></div>
+        <div class="land-step"><span class="ls-n">3</span><div><b>Review &amp; improve</b><p>Replay, stats, and a weekly practice plan.</p></div></div>
+      </div>
+
+      <div class="land-pricing">
+        <h2 class="land-ph">Simple pricing</h2>
+        <div class="lp-toggle" id="lpToggle" role="tablist" aria-label="Billing period">
+          <button class="lp-seg active" data-period="monthly">Monthly</button>
+          <button class="lp-seg" data-period="q">3-Monthly</button>
+          <button class="lp-seg" data-period="h">6-Monthly</button>
+          <button class="lp-seg" data-period="year">Yearly <span class="lp-seg-save">-20%</span></button>
+        </div>
+        <div class="lp-cards">
+          <div class="lp-card">
+            <div class="lp-name">Free</div>
+            <div class="lp-price">$0</div>
+            <div class="lp-sub">Know <b>what</b> happened.</div>
+            <ul class="lp-list">
+              <li>Limited demo uploads</li>
+              <li>2D radar replay</li>
+              <li>Scoreboard, kill feed, round navigation</li>
+              <li>Basic analytics: K/D, ADR, KAST, openings, trades</li>
+              <li>Sample match access</li>
+            </ul>
+            <a class="btn land-signin" href="/login/steam">Get started free</a>
+          </div>
+          <div class="lp-card lp-pro">
+            <div class="lp-tag">Most popular</div>
+            <div class="lp-name">Pro</div>
+            <div class="lp-price" id="lpProPrice">$10<span>/mo</span></div>
+            <div class="lp-bill" id="lpProBill">billed monthly</div>
+            <div class="lp-sub">Know <b>why</b> &mdash; and how to fix it.</div>
+            <ul class="lp-list">
+              <li>Everything in Free</li>
+              <li><b>3D map replay</b> for uploaded demos</li>
+              <li><b>Utility tools &amp; nade library</b></li>
+              <li>Advanced trends &amp; repeated mistakes</li>
+              <li>Practice goals &amp; coaching cards</li>
+              <li>Team workspaces &amp; playbook</li>
+            </ul>
+            <a class="btn primary land-signin" href="/login/steam">Sign in to start</a>
+            <div class="lp-soon">Early access: billing isn&rsquo;t live yet &mdash; approved users get Pro while testing.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div id="analyticsPanel" class="analytics-panel">
+    <button id="closeAnalytics" class="ap-close"><- Back to replay</button>
+    <div id="analyticsBody" class="analytics-body"></div>
+  </div>
+
+  <div id="dropHint" class="drophint"><div>Drop a <b>.dem</b> file to load</div></div>
+
+  <div id="nadeVideo" class="nv-modal">
+    <div class="nv-box">
+      <button id="nvClose" class="nv-x">x</button>
+      <div id="nvTitle" class="nv-title"></div>
+      <div id="nvBody" class="nv-body"></div>
+      <div id="nvMeta" class="nv-meta"></div>
+    </div>
+  </div>
+
+  <div id="map3dStatus" class="nv-modal">
+    <div class="nv-box">
+      <button id="m3Close" class="nv-x">x</button>
+      <div class="nv-title">3D map geometry status</div>
+      <div id="m3Body" class="m3-body"></div>
+    </div>
+  </div>
+
+  <div id="teamsModal" class="nv-modal">
+    <div class="nv-box teams-box">
+      <button id="teamsClose" class="nv-x">x</button>
+      <div class="nv-title" id="teamsTitle">Teams &amp; workspaces</div>
+      <div id="teamsBody" class="teams-body"></div>
+    </div>
+  </div>
+
+  <div id="adminModal" class="nv-modal">
+    <div class="nv-box admin-box">
+      <button id="adminClose" class="nv-x">x</button>
+      <div class="nv-title" id="admTitle">Admin</div>
+      <div id="adminBody" class="admin-body"></div>
+    </div>
+  </div>
+
+  <div id="trendsModal" class="nv-modal">
+    <div class="nv-box tr-box">
+      <button id="trClose" class="nv-x">x</button>
+      <div class="nv-title">Trends &amp; team -- improvement across matches</div>
+      <div class="tr-cols">
+        <div class="tr-col">
+          <div class="tr-h">Player trend <select id="trPlayer" class="lf-in"></select>
+            <select id="trMap" class="lf-in" title="filter by map"></select></div>
+          <div id="trBody"></div>
+          <div class="tr-h tr-tend-h">Tendencies <span class="round">across your matches</span></div>
+          <div id="trTend"></div>
+        </div>
+        <div class="tr-col">
+          <div class="tr-h">My squad <span class="round">auto-detected from who you play with</span></div>
+          <div id="trSquad"></div>
+          <div class="tr-h">My team</div>
+          <div id="trTeam"></div>
+        </div>
+      </div>
+      <div class="tr-h">Practice plan <span class="round">(current match -- check off as you drill)</span></div>
+      <div id="trPlan" class="tr-plan"></div>
+      <div class="tr-h">Cached matches <span id="trMatchCount" class="round"></span></div>
+      <div id="trMatches" class="tr-matches"></div>
+    </div>
+  </div>
+
+  <div id="libraryModal" class="nv-modal">
+    <div class="nv-box lib-box">
+      <button id="libClose" class="nv-x">x</button>
+      <div class="nv-title">Demo library <span id="demoLibCount" class="round"></span></div>
+      <div class="lib-actions">
+        <button id="libUpload" class="btn primary">Upload demos</button>
+        <span class="lib-hint">Drag &amp; drop .dem or .zip files anywhere, or upload above.</span>
+      </div>
+      <div id="libList" class="lib-list"></div>
+    </div>
+  </div>
+
+  <div id="confirmModal" class="nv-modal">
+    <div class="nv-box cf-box">
+      <div id="cfTitle" class="nv-title">Confirm</div>
+      <div id="cfBody" class="cf-body"></div>
+      <div class="cf-actions">
+        <button id="cfNo" class="btn">No</button>
+        <button id="cfYes" class="btn primary">Yes</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="proModal" class="nv-modal">
+    <div class="nv-box cf-box">
+      <button id="proX" class="nv-x">x</button>
+      <div id="proTitle" class="nv-title">Grant Pro</div>
+      <div id="proBody" class="cf-body"></div>
+      <div class="pro-dur-grid">
+        <button class="btn pro-dur" data-months="1">1 month</button>
+        <button class="btn pro-dur" data-months="3">3 months</button>
+        <button class="btn pro-dur" data-months="6">6 months</button>
+        <button class="btn pro-dur" data-months="12">1 year</button>
+        <button class="btn pro-dur pro-dur-inf" data-months="0">Indefinite</button>
+      </div>
+      <div class="cf-actions">
+        <button id="proCancel" class="btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="upgradeModal" class="nv-modal">
+    <div class="nv-box up-box">
+      <button id="upClose" class="nv-x">x</button>
+      <div class="nv-title">Upgrade to Pro</div>
+      <div id="upPlan" class="up-plan">Current plan: <b>Free</b></div>
+      <div id="upHighlight" class="up-highlight" hidden></div>
+      <div class="lp-toggle up-toggle" id="upToggle" role="tablist" aria-label="Billing period">
+        <button class="lp-seg active" data-period="monthly">Monthly</button>
+        <button class="lp-seg" data-period="q">3-Monthly</button>
+        <button class="lp-seg" data-period="h">6-Monthly</button>
+        <button class="lp-seg" data-period="year">Yearly <span class="lp-seg-save">-20%</span></button>
+      </div>
+      <div class="up-price" id="upPrice">$10<span>/mo</span></div>
+      <div class="up-bill" id="upBill">billed monthly</div>
+      <ul class="lp-list up-list">
+        <li><b>3D map replay</b> for your uploaded demos</li>
+        <li><b>Utility tools &amp; nade library</b></li>
+        <li>Advanced trends &amp; repeated-mistake detection</li>
+        <li>Practice goals &amp; coaching cards</li>
+        <li>Team workspaces &amp; playbook</li>
+        <li>Unlimited demo uploads</li>
+      </ul>
+      <button id="upCta" class="btn primary up-cta">Get Pro — Monthly</button>
+      <div class="up-soon">Early access: billing isn&rsquo;t live yet &mdash; approved testers get Pro free while we build out checkout.</div>
+    </div>
+  </div>
+
+  <div id="accountModal" class="nv-modal">
+    <div class="nv-box acct-box">
+      <button id="acctClose" class="nv-x">x</button>
+      <div class="nv-title">Account</div>
+      <div id="acctBody" class="acct-body"></div>
+    </div>
+  </div>
+
+  <div id="goalsModal" class="nv-modal">
+    <div class="nv-box gl-box">
+      <button id="goalsClose" class="nv-x">x</button>
+      <div class="nv-title">Practice goals <span id="goalsCount" class="round"></span></div>
+      <div class="gl-intro">Measurable targets the app grades against your uploaded matches &mdash; fix it, watch it improve across demos.</div>
+      <button id="glNewBtn" class="btn primary gl-newbtn">+ New goal</button>
+      <div id="glForm" class="gl-form" style="display:none"></div>
+      <div id="goalsList" class="gl-list"></div>
+      <div id="glRecur" class="gl-recur">
+        <div class="gl-recur-h">
+          <button id="glRecurToggle" class="gl-recur-tg" title="Mistakes that keep showing up across your matches">&#9662; Recurring mistakes</button>
+          <select id="glRecurPlayer" class="gl-recur-sel" title="Whose matches to scan"></select>
+        </div>
+        <div id="glRecurBody" class="gl-recur-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="searchModal" class="nv-modal">
+    <div class="nv-box sr-box">
+      <button id="searchClose" class="nv-x">x</button>
+      <div class="nv-title">Search this demo <span id="srMap" class="round"></span></div>
+      <div class="sr-sec">
+        <div class="sr-h">Filter rounds</div>
+        <div class="sr-filters">
+          <label>Winner <select id="srWinner"><option value="">Any</option><option value="CT">CT</option><option value="T">T</option></select></label>
+          <label>CT buy <select id="srBuyCt"><option value="">Any</option><option value="pistol">pistol</option><option value="eco">eco</option><option value="force">force</option><option value="full">full</option></select></label>
+          <label>T buy <select id="srBuyT"><option value="">Any</option><option value="pistol">pistol</option><option value="eco">eco</option><option value="force">force</option><option value="full">full</option></select></label>
+          <button id="srRun" class="up-btn primary">Search</button>
+          <button id="srSaveRoutine" class="up-btn" title="Save this filter as a re-runnable routine">Save routine</button>
+        </div>
+        <div id="srRoutines" class="sr-routines"></div>
+        <div id="srResultHead" class="sr-rhead"></div>
+        <div id="srResults" class="sr-results"></div>
+      </div>
+      <div class="sr-sec">
+        <div class="sr-h">Quick searches <span class="round">(from analysis &mdash; click to run a review session)</span></div>
+        <div id="srQuick" class="sr-quick"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="overlay" class="overlay">
+    <div class="card">
+      <div id="overlaySpin" class="spinner"></div>
+      <div id="overlayText" class="otext">Upload CS2 <b>.dem</b> files (or a <b>.zip</b> of them), open your <b>library</b>, or load the sample.</div>
+      <div class="obar"><i id="overlayBar"></i></div>
+      <div class="orow">
+        <button class="btn" onclick="document.getElementById('sampleBtn').click()">Load sample</button>
+        <button class="btn" onclick="document.getElementById('libraryBtn').click()">Library</button>
+        <button class="btn primary" onclick="document.getElementById('uploadBtn').click()">Upload</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="static/js/app.js"></script>
+  <script type="module" src="static/selftest.js"></script>
+</body>
+</html>
