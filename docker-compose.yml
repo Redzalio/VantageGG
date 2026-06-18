@@ -6,11 +6,15 @@ services:
     build: .
     image: cs2demo
     ports:
-      - "8770:8770"
+      # bind to localhost only — a reverse proxy (Caddy) fronts it with HTTPS. Use "8770:8770"
+      # (no 127.0.0.1) only if you want the app reachable directly on the host's public IP.
+      - "127.0.0.1:8770:8770"
     volumes:
       - ./data:/data                      # one mount: cache/ uploads/ nades/ + cs2dp.sqlite*
+    env_file:
+      - .env                              # pass EVERY var from .env (ADMIN_STEAM_IDS, TIERS_ENABLED, KEEP_DEM, ...)
     environment:
-      # auth / hosting (optional -- unset = local single-user mode). Values come from .env.
+      # explicit defaults so the app still runs if .env is absent (local single-user mode).
       - SECRET_KEY=${SECRET_KEY:-}
       - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
       - STEAM_API_KEY=${STEAM_API_KEY:-}
