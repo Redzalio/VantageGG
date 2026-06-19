@@ -229,7 +229,10 @@ def index_demo(data, key, created_at=None, owner_user_id=None, con=None):
         # AUTOMATIC per-user library membership: every uploader (including the 2nd person who uploads
         # the same match -> cache hit, but still re-saved) gets their own copy. Idempotent.
         if owner_user_id is not None:
-            c.execute("INSERT OR IGNORE INTO user_demos(user_id, sha1, created_at) VALUES(?,?,?)",
+            # archived=0: a fresh upload IS a full replay. ON CONFLICT also resets archived to 0 so
+            # RE-uploading a previously-deleted (stats-only) match restores it as a watchable replay.
+            c.execute("INSERT INTO user_demos(user_id, sha1, created_at, archived) VALUES(?,?,?,0) "
+                      "ON CONFLICT(user_id, sha1) DO UPDATE SET archived=0",
                       (owner_user_id, sha, datetime.datetime.now().isoformat(timespec="seconds")))
         c.commit()
         return sha
@@ -501,6 +504,26 @@ def set_archived(user_id, sha1, archived=1, con=None):
         c.commit()
         return c.execute("SELECT COUNT(*) n FROM user_demos WHERE sha1=? AND archived=0",
                          (sha1,)).fetchone()["n"]
+    finally:
+        if con is None:
+            c.close()
+
+
+def match_for_stats(sha1, con=None):
+    """Compact match record (summary + per-player aggregates) for one demo, from the index -- the
+    source for the retained .txt written when a replay is deleted. None if not indexed."""
+    c = con or connect()
+    try:
+        d = c.execute("SELECT map, rounds, score, created_at FROM demos WHERE sha1=?", (sha1,)).fetchone()
+        if not d:
+            return None
+        cols = ["kills", "deaths", "kd", "adr", "kast", "hltv", "open_wr", "traded_pct", "udr"]
+        players = []
+        for r in c.execute("SELECT steamid, name, " + ",".join(cols) + " FROM demo_players WHERE sha1=?",
+                           (sha1,)):
+            players.append({"steamid": r["steamid"], "name": r["name"], **{f: r[f] for f in cols}})
+        return {"map": d["map"], "rounds": d["rounds"], "score": d["score"],
+                "created_at": d["created_at"], "players": players}
     finally:
         if con is None:
             c.close()
@@ -942,8 +965,10 @@ def visible_predicate(scope, con=None):
         indexed = {r["sha1"] for r in c.execute("SELECT sha1 FROM demos")}
         uid, tids = scope.get("uid"), set(scope.get("team_ids") or [])
         visible, has_member = set(), set()
-        for r in c.execute("SELECT sha1, user_id, team_id FROM user_demos"):
-            has_member.add(r["sha1"])
+        for r in c.execute("SELECT sha1, user_id, team_id, archived FROM user_demos"):
+            has_member.add(r["sha1"])                   # still a member (for ownerless detection)
+            if r["archived"]:
+                continue                                # deleted their replay -> not in THEIR library
             if (uid is not None and r["user_id"] == uid) or (r["team_id"] is not None and r["team_id"] in tids):
                 visible.add(r["sha1"])
     finally:

@@ -1046,6 +1046,8 @@ const App = {
     const failPanel = `<div id="opsFails" class="ops-fails" hidden>${fails || `<div class="round">No failed jobs.</div>`}</div>`;
     return `<div class="ops-wrap">`
       + `<div class="ops-head">App data total: <b>${mb(total)}</b></div>${bars}${diskLine}`
+      + `<div class="ops-cleanup"><button id="opsReclaim" class="btn ghost sm">Scan for reclaimable raw demos</button>`
+      +   `<span id="opsReclaimMsg" class="round"></span></div>`
       + `<div class="ops-head ops-head2">Upload &amp; parse timing</div>`
       + `<div class="adm-stats ops-stats">${tiles.map(([k, v]) => `<div class="dstat"><div class="dstat-v">${v}</div><div class="dstat-k">${k}</div></div>`).join("")}</div>`
       + phases + failPanel
@@ -1064,6 +1066,24 @@ const App = {
       const err = el.querySelector(".ops-fail-err");
       if (err) el.onclick = () => err.classList.toggle("full");
     });
+    // orphaned/reclaimable raw .dem + stale upload temps -> scan, confirm, clean (never cache/stats)
+    const rec = $("opsReclaim");
+    if (rec) rec.onclick = async () => {
+      const msg = $("opsReclaimMsg");
+      const human = b => { const m = (b || 0) / (1 << 20); return m >= 1024 ? (m / 1024).toFixed(1) + " GB" : Math.round(m) + " MB"; };
+      if (msg) msg.textContent = "Scanning…";
+      const s = await fetch("/api/admin/orphans", { cache: "no-store" }).then(r => r.json()).catch(() => null);
+      if (!s || s.error) { if (msg) msg.textContent = "Scan failed."; return; }
+      const n = (s.n_dems || 0) + (s.n_temps || 0);
+      if (!n) { if (msg) msg.textContent = "Nothing to reclaim."; return; }
+      const ok = await this.askConfirm("Reclaim storage?",
+        `<div class="cf-line">Delete <b>${n}</b> reclaimable file${n > 1 ? "s" : ""} (raw .dem + stale upload temps) to free <b>${human(s.total_bytes)}</b>?</div>`
+        + `<div class="cf-line cf-mut">Never touches parsed replays you can still watch or your retained stats.</div>`, "Reclaim");
+      if (!ok) { if (msg) msg.textContent = ""; return; }
+      const r = await fetch("/api/admin/orphans/clean", { method: "POST" }).then(x => x.json()).catch(() => null);
+      if (r && r.ok) { this._toast && this._toast(`Reclaimed ${r.removed} file(s), freed ${human(r.freed_bytes)}.`); if (msg) msg.textContent = `Freed ${human(r.freed_bytes)}.`; }
+      else if (msg) msg.textContent = "Cleanup failed.";
+    };
   },
   _money(cur, n) {                                       // mirror pricing.py _fmt_money
     return Math.abs(n - Math.round(n)) < 0.005 ? `${cur}${Math.round(n)}` : `${cur}${n.toFixed(2)}`;
@@ -1631,36 +1651,25 @@ const App = {
       const stale = d.stale
         ? '<span class="lib-stale" title="Parsed with an older app version -- re-upload to refresh">outdated</span>'
         : "";
-      const archived = !!d.archived;
-      const meta = [(d.rounds || 0) + ' rounds', when].filter(Boolean).join(' · ') + (archived ? ' · replay removed' : '');
-      const label = [pretty, when].filter(Boolean).join(' · ');   // for the confirm dialogs, not the raw filename
-      const archBadge = archived
-        ? '<span class="lib-arch" title="Replay removed to save space — your stats are kept">archived</span>' : '';
-      // background = the map's loading-screen art at 50% opacity (rendered in a ::before layer via
+      const meta = [(d.rounds || 0) + ' rounds', when].filter(Boolean).join(' · ');
+      const label = [pretty, when].filter(Boolean).join(' · ');   // for the confirm dialog, not the raw filename
+      // background = the map's loading-screen art at 30% opacity (rendered in a ::before layer via
       // this CSS var); raw filename moves to the hover tooltip (#21: cards read like match history).
       const style = bg ? ' style="--cardbg:url(\'' + bg + '\')"' : '';
-      return '<div class="lib-row' + (bg ? ' has-bg' : '') + (archived ? ' archived' : '') + '" data-id="' + esc(d.id) + '" data-label="' + esc(label) + '"'
+      return '<div class="lib-row' + (bg ? ' has-bg' : '') + '" data-id="' + esc(d.id) + '" data-label="' + esc(label) + '"'
         + ' title="' + esc(d.name || d.id) + '"' + style + '>'
-        + '<div class="lib-mid"><div class="lib-name">' + esc(pretty) + stale + archBadge + '</div>'
+        + '<div class="lib-mid"><div class="lib-name">' + esc(pretty) + stale + '</div>'
         +   '<div class="lib-meta">' + esc(meta) + '</div></div>'
         + '<div class="lib-score">' + sc.ct + '<span>:</span>' + sc.t + '</div>'
-        + (archived
-            ? '<button class="btn ghost sm lib-reup" title="Re-upload the .dem to watch this replay again">Re-upload</button>'
-            : (((this.myTeams && this.myTeams.length)
-                  ? '<button class="lib-share btn ghost sm" title="Share this match with a team">Share</button>' : '')
-               + '<button class="btn primary lib-view">View</button>'
-               + '<button class="lib-arch-btn" title="Free space: remove the replay, keep your stats">&#128230;</button>'))
-        + '<button class="lib-del" title="Delete everything — replay and stats">&#128465;</button></div>';
+        + ((this.myTeams && this.myTeams.length)
+            ? '<button class="lib-share btn ghost sm" title="Share this match with a team">Share</button>' : '')
+        + '<button class="btn primary lib-view">View</button>'
+        + '<button class="lib-del" title="Delete replay (keeps your compact stats)">&#128465;</button></div>';
     }).join("");
     list.querySelectorAll(".lib-row").forEach(row => {
-      const v = row.querySelector(".lib-view");
-      if (v) v.onclick = () => this.viewLibraryDemo(row.dataset.id);
-      const reup = row.querySelector(".lib-reup");                  // archived -> open the upload picker
-      if (reup) reup.onclick = (e) => { e.stopPropagation(); const fi = $("fileInput"); if (fi) fi.click(); };
+      row.querySelector(".lib-view").onclick = () => this.viewLibraryDemo(row.dataset.id);
       const sh = row.querySelector(".lib-share");
       if (sh) sh.onclick = (e) => { e.stopPropagation(); this.shareDemo(row.dataset.id); };
-      const arch = row.querySelector(".lib-arch-btn");
-      if (arch) arch.onclick = (e) => { e.stopPropagation(); this.archiveLibraryDemo(row.dataset.id, row.dataset.label, row); };
       row.querySelector(".lib-del").onclick = (e) => {
         e.stopPropagation();
         this.deleteLibraryDemo(row.dataset.id, row.dataset.label || row.querySelector(".lib-name").textContent.trim(), row);
@@ -1668,38 +1677,25 @@ const App = {
     });
   },
 
-  // #22: free space by removing the heavy replay but keeping the match's stats (trends/profile).
-  async archiveLibraryDemo(id, name, rowEl) {
-    const body = `<div class="cf-line">Archive <b>${esc(name || id)}</b>?</div>`
-      + `<div class="cf-line cf-mut">Frees space by removing the replay — you won't be able to watch it back — `
-      + `but keeps this match's stats in your trends and profile. Re-upload the demo anytime to watch it again.</div>`;
-    if (!(await this.askConfirm("Remove replay, keep stats?", body, "Archive"))) return;
-    const res = await fetch("api/demo/" + encodeURIComponent(id) + "/archive", { method: "POST" })
-      .then(r => r.json()).catch(() => null);
-    if (!res || !res.ok) { this._toast && this._toast("Could not archive that demo."); return; }
-    const mb = (res.freed_bytes || 0) / (1 << 20);
-    const freed = res.freed_bytes ? ` — freed ${mb >= 1024 ? (mb / 1024).toFixed(1) + " GB" : Math.round(mb) + " MB"}` : "";
-    this._toast && this._toast(`Replay archived${freed}. Stats kept.`);
-    fetch("api/library").then(r => r.json()).then(j => this.renderLibrary((j && j.demos) || [])).catch(() => {});
-    if (document.body.classList.contains("on-dashboard")) this.loadDashboard();
-  },
-
+  // Delete = remove the replay (raw .dem + parsed cache) and drop it from the library to free storage,
+  // but the backend keeps a tiny compact .txt stats record so profile/goals/trends retain the match.
   async deleteLibraryDemo(id, name, rowEl) {
-    const body = `<div class="cf-line">Remove <b>${esc(name || id)}</b> from your library?</div>`
-      + `<div class="cf-line cf-mut">This removes the match and its replay from your library. `
-      + `It can't be undone — you'd need to re-upload the demo to view it again.</div>`;
-    if (!(await this.askConfirm("Remove this demo?", body, "Remove"))) return;
+    const body = `<div class="cf-line">Delete <b>${esc(name || id)}</b>?</div>`
+      + `<div class="cf-line cf-mut">This removes the replay from your library and frees storage, but keeps `
+      + `compact stats for your profile, goals, and long-term analytics.</div>`;
+    if (!(await this.askConfirm("Delete this replay?", body, "Delete"))) return;
     const res = await fetch("api/demo/" + encodeURIComponent(id), { method: "DELETE" })
       .then(r => r.json()).catch(() => null);
     if (!res || !res.ok) { this._toast && this._toast("Could not delete that demo."); return; }
-    const mb = (res.bytes || 0) / (1 << 20);
-    const freed = mb >= 1024 ? (mb / 1024).toFixed(1) + " GB" : Math.round(mb) + " MB";
+    const mb = (res.freed_bytes || 0) / (1 << 20);
+    const freed = res.freed_bytes ? ` — freed ${mb >= 1024 ? (mb / 1024).toFixed(1) + " GB" : Math.round(mb) + " MB"}` : "";
     if (rowEl) rowEl.remove();
     const n = $("libList").querySelectorAll(".lib-row").length;
     $("demoLibCount").textContent = n ? `(${n})` : "";
     if (!n) $("libList").innerHTML = '<div class="lib-empty">No saved demos yet. Upload one or more '
       + '<b>.dem</b> files (or a <b>.zip</b>) and they\'ll appear here.</div>';
-    this._toast && this._toast(`Deleted "${name}" — freed ${freed}.`);
+    this._toast && this._toast(`Replay removed${freed}. Stats kept.`);
+    if (document.body.classList.contains("on-dashboard")) this.loadDashboard();
   },
 
   viewLibraryDemo(id, opts) {

@@ -81,17 +81,21 @@ def test_delete_endpoint_refcounts(tmp_path, monkeypatch):
     with c.session_transaction() as s:
         s["uid"] = u1
     r = c.delete("/api/demo/" + "a" * 40)
-    assert r.status_code == 200 and r.get_json().get("shared") is True   # removed from u1, kept for u2
-    assert db.demo_member_count("a" * 40) == 1
+    assert r.status_code == 200 and r.get_json().get("shared") is True   # u2 still has a full replay
+    # u1 no longer sees it in their library; u2 still does (delete flags u1's copy, keeps u2's)
+    assert db.visible_predicate(_scope(u1))("a" * 40) is False
+    assert db.visible_predicate(_scope(u2))("a" * 40) is True
     con = db.connect()
     assert con.execute("SELECT COUNT(*) n FROM demos WHERE sha1=?", ("a" * 40,)).fetchone()["n"] == 1
     con.close()
     with c.session_transaction() as s:
         s["uid"] = u2
-    assert c.delete("/api/demo/" + "a" * 40).status_code == 200          # last member -> fully wiped
+    assert c.delete("/api/demo/" + "a" * 40).status_code == 200          # last full member -> free heavy files
+    # stats are KEPT (the demos index row survives for trends/profile), but neither user sees it now
     con = db.connect()
-    assert con.execute("SELECT COUNT(*) n FROM demos WHERE sha1=?", ("a" * 40,)).fetchone()["n"] == 0
+    assert con.execute("SELECT COUNT(*) n FROM demos WHERE sha1=?", ("a" * 40,)).fetchone()["n"] == 1
     con.close()
+    assert db.visible_predicate(_scope(u2))("a" * 40) is False
 
 
 def test_account_delete_keeps_coowned_demo(tmp_path, monkeypatch):

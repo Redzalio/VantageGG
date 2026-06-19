@@ -235,6 +235,7 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:none;bor
 .ops-disk{display:flex;align-items:center;font-size:12px;color:var(--mut);margin-top:8px}.ops-disk b{color:var(--txt)}
 .ops-stats{grid-template-columns:repeat(4,1fr)!important;margin-top:8px}
 .ops-recent{margin-top:8px;display:flex;flex-direction:column;gap:2px}
+.ops-cleanup{margin-top:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .ops-jrow{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--mut);padding:3px 0;border-top:1px solid var(--line)}
 .ops-jf{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--txt)}
 .ops-js{flex:0 0 auto;text-transform:uppercase;letter-spacing:.3px;font-size:9px}
@@ -984,16 +985,9 @@ textarea.lf-in{height:46px;resize:vertical;font-family:inherit}
   min-width:54px;text-align:center}
 .lib-score span{color:var(--mut);margin:0 2px;font-weight:600}
 .lib-view{flex:0 0 auto;padding:5px 14px;font-size:12px}
-.lib-del,.lib-arch-btn{flex:0 0 auto;background:none;border:1px solid var(--line);color:var(--mut);border-radius:6px;
+.lib-del{flex:0 0 auto;background:none;border:1px solid var(--line);color:var(--mut);border-radius:6px;
   width:30px;height:28px;font-size:14px;line-height:1;cursor:pointer;padding:0}
 .lib-del:hover{color:#ff6b6b;border-color:#ff6b6b;background:rgba(255,107,107,.08)}
-.lib-arch-btn:hover{color:var(--accent);border-color:var(--accent);background:rgba(232,116,59,.08)}
-/* #22 archived demo (replay removed, stats kept) */
-.lib-arch{display:inline-block;margin-left:8px;font-size:9px;font-weight:700;text-transform:uppercase;
-  letter-spacing:.4px;color:#0b0e12;background:#8a93a0;border-radius:6px;padding:1px 5px;vertical-align:1px}
-.lib-row.archived{opacity:.9}
-.lib-row.archived .lib-name{color:#aeb7c2}
-.lib-row.has-bg.archived::before{opacity:.16}      /* dimmer art for archived rows */
 /* 3D asset status modal */
 .m3-body{max-height:70vh;overflow:auto}
 .m3-sum{color:var(--mut);font-size:12px;margin-bottom:8px}

@@ -38,6 +38,7 @@ import billing                                          # Stripe subscription bi
 import practiceplan                                     # practice-plan done-state (stdlib only)
 import pricing                                           # editable Pro subscription prices (stdlib only)
 import reviews                                          # review bookmarks + auto-queues (stdlib only)
+import statsfile                                        # compact .txt stats retained when a replay is deleted
 import steamauth                                        # Steam OpenID 2.0 login (stdlib only, optional)
 import teams                                            # local team config (stdlib only)
 import tendencies                                       # cross-match tendency detection (stdlib only)
@@ -78,13 +79,15 @@ STATIC = os.path.join(HERE, "static")
 CACHE = os.environ.get("CACHE_DIR") or os.path.join(HERE, "cache")
 UPLOADS = os.environ.get("UPLOAD_DIR") or os.path.join(HERE, "uploads")
 IMPORT_DIR = os.environ.get("IMPORT_DIR") or os.path.join(HERE, "incoming")   # #69 drop .dem files here
+# Compact retained stats (.txt per deleted match) live on the data volume next to the DB so they persist.
+STATS = os.environ.get("STATS_DIR") or os.path.join(os.path.dirname(db.DB_PATH) or HERE, "stats")
 os.makedirs(CACHE, exist_ok=True)
 os.makedirs(UPLOADS, exist_ok=True)
-# KEEP_DEM=0 discards the raw .dem after parsing -- the parsed cache JSON is all the app needs to
-# replay/analyze, so this saves ~hundreds of MB per demo on a shared host. Trade-off: a future
-# parser/schema upgrade can't re-process old demos from disk; users re-upload to refresh. Default
-# keeps the .dem (safe + re-parseable). Reclaim existing .dem files with tools/purge_dems.py.
-KEEP_DEM = os.environ.get("KEEP_DEM", "1").strip().lower() not in ("0", "false", "no", "off")
+# KEEP_DEM=0 (DEFAULT) discards the raw .dem after parsing -- the parsed cache JSON is all the app needs
+# to replay/analyze, so we don't hoard ~hundreds of MB per demo on a shared host (the orphaned-.dem
+# issue). Trade-off: a parser/schema upgrade can't re-process old demos from disk; users re-upload to
+# refresh. Set KEEP_DEM=1 only if you explicitly want raw demos retained for re-parsing.
+KEEP_DEM = os.environ.get("KEEP_DEM", "0").strip().lower() not in ("0", "false", "no", "off")
 db.migrate()                                            # ensure the SQLite index schema exists
 
 
@@ -918,41 +921,49 @@ def api_library():
     mode, sc = _scope_or_block()
     if mode == "blocked":
         return _nostore({"error": "login required"}), 401
-    demos = library.list_demos(CACHE, SCHEMA_VERSION)
+    demos = library.list_demos(CACHE, SCHEMA_VERSION)    # cache-backed -> only watchable replays appear
     if sc is not None:
         ok = db.visible_predicate(sc)
-        arch = db.archived_library_rows(sc)              # #22: demos whose heavy replay was archived
-        arch_ids = {a["id"] for a in arch}
-        demos = [d for d in demos if ok(d.get("id")) and d.get("id") not in arch_ids]
-        demos += arch                                     # surface them (greyed) so stats stay discoverable
+        demos = [d for d in demos if ok(d.get("id"))]    # deleted (stats-only) demos have no cache -> excluded
     resp = jsonify({"demos": demos})
     resp.headers["Cache-Control"] = "no-store"
     return resp
 
 
+def _retain_compact_stats(sha):
+    """Write the tiny compact .txt stats for a match BEFORE its replay/cache is deleted, so the match
+    keeps contributing to trends/profile/goals. Best-effort -- never block a delete on a stats write."""
+    try:
+        m = db.match_for_stats(sha)
+        if m:
+            statsfile.write(STATS, sha, m)
+    except Exception as e:
+        print(f"[stats] retain failed for {sha}: {e}")
+
+
 @app.route("/api/demo/<demo_id>", methods=["GET", "DELETE"])
 def api_demo(demo_id):
     """GET: the saved parsed JSON for a library id (same shape as /api/sample), or 404.
-    DELETE: fully remove the demo from the library + delete its cache + .dem to reclaim disk."""
+    DELETE: remove the REPLAY (parsed cache + raw .dem) and drop it from the library to free storage,
+    but KEEP compact stats (index rows + a tiny .txt) so trends/profile/goals retain the match."""
     mode, sc = _scope_or_block()
     if mode == "blocked":
         return _nostore({"error": "login required"}), 401
     if request.method == "DELETE":
         if not db.can_delete(demo_id, sc):             # team viewers can't delete others' demos
             return _nostore({"error": "not allowed"}), 403
+        sha = db.resolve_sha(demo_id)
         uid = sc.get("uid") if isinstance(sc, dict) else None
-        if uid is not None:
-            # membership model: remove just THIS user's copy; keep the shared parse if others still have it
-            sha = db.resolve_sha(demo_id)
-            if db.remove_membership(uid, sha) > 0:     # other members remain
-                return _nostore({"ok": True, "removed_from_library": True, "shared": True})
-            demo_id = sha                              # last member gone -> wipe everything below
-        result = library.delete_demo(CACHE, UPLOADS, demo_id)
-        try:
-            db.remove_demo(demo_id)                     # drop it from the fast index too
-        except Exception as e:
-            print(f"[index] remove_demo failed for {demo_id}: {e}")
-        return _nostore(result), (200 if result.get("ok") else 400)
+        # Flag THIS user's copy stats-only (keeps it in their trend scope) instead of removing it.
+        # still_full = members who still hold a FULL replay; the shared cache survives until that's 0.
+        still_full = db.set_archived(uid, sha, 1) if uid is not None else 0
+        freed = 0
+        if still_full == 0:                            # nobody holds a full replay -> free the heavy files
+            _retain_compact_stats(sha)                 # tiny .txt first (cache about to go)
+            res = library.delete_demo(CACHE, UPLOADS, sha)   # parsed cache + raw .dem; KEEPS the index rows
+            freed = res.get("bytes", 0) if isinstance(res, dict) else 0
+        return _nostore({"ok": True, "removed_from_library": True, "freed_bytes": freed,
+                         "shared": still_full > 0})
     if sc is not None and not db.accessible(demo_id, sc):
         return jsonify({"error": "no demo with that id"}), 404   # 404 (not 403): don't leak existence
     data = library.load_demo(CACHE, demo_id)
@@ -961,28 +972,6 @@ def api_demo(demo_id):
     resp = jsonify(data)
     resp.headers["Cache-Control"] = "no-store"
     return resp
-
-
-@app.route("/api/demo/<demo_id>/archive", methods=["POST"])
-def api_demo_archive(demo_id):
-    """#22: archive the caller's copy -- free the heavy replay (parsed cache + raw .dem) but KEEP the
-    compact stats (the index rows that power trends/profile). Frees a Free-plan slot. The shared cache
-    is only deleted once no member still holds it as a full replay."""
-    mode, sc = _scope_or_block()
-    if mode == "blocked":
-        return _nostore({"error": "login required"}), 401
-    uid = sc.get("uid") if isinstance(sc, dict) else None
-    if uid is None:
-        return _nostore({"error": "Archiving needs an account."}), 400
-    if not db.can_delete(demo_id, sc):
-        return _nostore({"error": "not allowed"}), 403
-    sha = db.resolve_sha(demo_id)
-    still_full = db.set_archived(uid, sha, 1)              # members who still hold a full (un-archived) copy
-    freed = 0
-    if still_full == 0:                                   # nobody can watch it anymore -> drop the heavy files
-        res = library.delete_demo(CACHE, UPLOADS, sha)    # parsed cache JSON + raw .dem (KEEPS the index rows)
-        freed = res.get("bytes", 0) if isinstance(res, dict) else 0
-    return _nostore({"ok": True, "archived": True, "freed_bytes": freed, "shared": still_full > 0})
 
 
 def _load_demo_by_sha(sid):
@@ -1597,6 +1586,59 @@ def api_admin_recent():
         return _nostore({"error": "admin only"}), 403
     return _nostore({"demos": db.recent_demos(12),
                      "jobs": [jobs._public(j) for j in jobs.list_jobs(limit=12)]})
+
+
+def _scan_orphans():
+    """Reclaimable files in the upload dir: kept raw .dem (the parsed cache is the real watch source,
+    so the raw demo is reclaimable) + stale temp upload files left by failed/old jobs. NEVER includes
+    parsed cache JSON or the retained .txt stats. Files belonging to an ACTIVE job are left alone."""
+    import glob as _glob
+    active = {os.path.basename(j.get("upload_path") or "") for j in jobs.list_jobs(active_only=True)}
+    dems, temps, total = [], [], 0
+    for path in _glob.glob(os.path.join(UPLOADS, "*")):
+        name = os.path.basename(path)
+        if not os.path.isfile(path) or name in active:
+            continue
+        try:
+            sz = os.path.getsize(path)
+        except OSError:
+            continue
+        if name.lower().endswith(".dem") and not name.startswith("_"):
+            has_cache = os.path.exists(os.path.join(CACHE, name[:-4] + ".json"))
+            dems.append({"name": name, "bytes": sz, "has_cache": has_cache})
+            total += sz
+        elif name.startswith(("_jobup_", "_jobgz_", "_jobbz_", "_zip_", "_incoming_")):
+            temps.append({"name": name, "bytes": sz})       # temp from a failed/interrupted upload
+            total += sz
+    return {"dems": dems, "temps": temps, "n_dems": len(dems), "n_temps": len(temps),
+            "total_bytes": total, "active_jobs": len(active - {""})}
+
+
+@app.route("/api/admin/orphans")
+def api_admin_orphans():
+    """Admin: list reclaimable raw .dem + stale upload temps (storage that can be safely freed)."""
+    if not _helper_or_none():
+        return _nostore({"error": "admin only"}), 403
+    return _nostore(_scan_orphans())
+
+
+@app.route("/api/admin/orphans/clean", methods=["POST"])
+def api_admin_orphans_clean():
+    """Admin: delete the reclaimable raw .dem + stale temps from _scan_orphans (never cache or stats)."""
+    if not _helper_or_none():
+        return _nostore({"error": "admin only"}), 403
+    scan = _scan_orphans()
+    freed, removed = 0, 0
+    for f in scan["dems"] + scan["temps"]:
+        p = os.path.join(UPLOADS, f["name"])
+        try:
+            if os.path.isfile(p):
+                freed += os.path.getsize(p)
+                os.remove(p)
+                removed += 1
+        except OSError:
+            pass
+    return _nostore({"ok": True, "removed": removed, "freed_bytes": freed})
 
 
 @app.route("/api/admin/users/<int:uid>", methods=["DELETE"])
