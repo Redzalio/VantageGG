@@ -27,6 +27,12 @@
 </script>
 </head>
 <body class="on-dashboard">
+  <!-- site-wide, non-blocking upload/parse progress strip (#19): roam the app while a demo processes -->
+  <div id="upStrip" class="upstrip" hidden role="status" aria-live="polite">
+    <div id="upStripFill" class="upstrip-fill"></div>
+    <span id="upStripLabel" class="upstrip-label"></span>
+    <button id="upStripX" class="upstrip-x" aria-label="Dismiss progress">&times;</button>
+  </div>
   <header id="topbar">
     <div class="brand" id="brandHome" title="Back to dashboard">Vantage<span>GG</span></div>
     <div class="match">
@@ -48,7 +54,7 @@
       <button id="libraryBtn" class="btn">Library</button>
       <button id="uploadBtn" class="btn primary">Upload</button>
       <button id="tourHelp" class="btn ghost tour-help" title="Take the quick tour">?</button>
-      <input id="fileInput" type="file" accept=".dem,.zip" multiple hidden />
+      <input id="fileInput" type="file" accept=".dem,.zip,.gz,.bz2" multiple hidden />
       <span id="authBox" class="authbox" hidden></span>
     </div>
   </header>

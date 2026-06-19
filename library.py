@@ -149,6 +149,17 @@ def strip_gz(filename):
     return filename[:-3] if is_gz_name(filename) else filename
 
 
+def is_bz2_name(filename):
+    """A bzip2-compressed demo, e.g. 'match.dem.bz2' -- the format Valve matchmaking downloads ship in.
+    The worker decompresses it to a byte-identical .dem before parsing (same content-hash cache key)."""
+    return bool(filename) and filename.lower().endswith(".bz2")
+
+
+def strip_bz2(filename):
+    """Display/storage name for a bzip2 upload: 'match.dem.bz2' -> 'match.dem'."""
+    return filename[:-4] if is_bz2_name(filename) else filename
+
+
 # ---- the library index ------------------------------------------------------
 def load_index(cache_dir):
     """Load library.json as a list of rows; [] if missing/corrupt."""

@@ -628,6 +628,15 @@ def _process_upload_job(job):
             fd, parse_path = tempfile.mkstemp(prefix="_jobgz_", suffix=".dem", dir=UPLOADS)
             with _gzip.open(path, "rb") as fin, os.fdopen(fd, "wb") as fout:
                 _shutil.copyfileobj(fin, fout, length=1 << 20)
+        elif library.is_bz2_name(path):
+            # bzip2-compressed upload (Valve MM): decompress to a byte-identical .dem in the WORKER
+            # before parsing -- same lossless-cache-key reasoning as the .gz path above.
+            jobs.set_progress(jid, status="parsing", progress="decompressing")
+            import bz2 as _bz2
+            import shutil as _shutil
+            fd, parse_path = tempfile.mkstemp(prefix="_jobbz_", suffix=".dem", dir=UPLOADS)
+            with _bz2.open(path, "rb") as fin, os.fdopen(fd, "wb") as fout:
+                _shutil.copyfileobj(fin, fout, length=1 << 20)
         data = _parse_or_load_dem(parse_path, name,
                                   progress=lambda stage: jobs.set_progress(jid, status=stage, progress=stage))
         jobs.set_progress(jid, status="analyzing", progress="saving to library")
@@ -638,7 +647,7 @@ def _process_upload_job(job):
         # leftover -- both the uploaded file (.dem or .gz) and the decompressed temp.
         for p in {path, parse_path}:
             try:
-                if p and os.path.exists(p) and os.path.basename(p).startswith(("_jobup_", "_jobgz_")):
+                if p and os.path.exists(p) and os.path.basename(p).startswith(("_jobup_", "_jobgz_", "_jobbz_")):
                     os.remove(p)
             except OSError:
                 pass
@@ -821,11 +830,21 @@ def upload():
     for f in files:
         name = f.filename
         is_zip, is_dem, is_gz = library.is_zip_name(name), library.is_dem_name(name), library.is_gz_name(name)
-        if not (is_zip or is_dem or is_gz):
-            created.append({"filename": name, "ok": False, "error": "expected a .dem, .dem.gz or .zip file"})
+        is_bz2 = library.is_bz2_name(name)
+        if not (is_zip or is_dem or is_gz or is_bz2):
+            created.append({"filename": name, "ok": False, "error": "expected a .dem, .dem.gz, .dem.bz2 or .zip file"})
             continue
         try:
-            if is_gz:
+            if is_bz2:
+                # bzip2-compressed demo (Valve MM download). Save as-is + enqueue; the worker bz2-
+                # decompresses to a byte-identical .dem before parsing (same as the .gz path).
+                dispname = library.strip_bz2(name)
+                fd, btmp = tempfile.mkstemp(prefix="_jobup_", suffix=".dem.bz2", dir=UPLOADS)
+                os.close(fd)
+                ums, bts = _timed_save(f, btmp)
+                created.append({"id": jobs.create_job(dispname, btmp, owner_user_id=owner, upload_ms=ums, size_bytes=bts),
+                                "filename": dispname, "status": "queued", "ok": True})
+            elif is_gz:
                 # client-gzipped demo (CompressionStream): save the .gz as-is + enqueue; the worker
                 # gunzips before parsing (keeps this web tier light -- it does no decompression/parse).
                 dispname = library.strip_gz(name)

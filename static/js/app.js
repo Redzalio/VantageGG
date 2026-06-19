@@ -1413,13 +1413,25 @@ const App = {
   },
 
   // --- loading --------------------------------------------------------------
+  // #20: keep the last-viewed demo's parsed JSON in memory for 5 minutes so bouncing around the app
+  // (dashboard <-> library <-> replay, or re-opening the sample) doesn't re-download + re-parse a big
+  // payload every time. In-memory, not sessionStorage -- a parsed demo can be tens of MB.
+  _cachedDemo(id) {
+    const c = this._demoCache;
+    return (c && c.id === id && (Date.now() - c.ts) < 5 * 60 * 1000) ? c.json : null;
+  },
+  _cacheDemo(id, json) { this._demoCache = { id, json, ts: Date.now() }; },
+
   async loadSample() {
+    const hit = this._cachedDemo("__sample__");
+    if (hit) { this.loadDemo(hit, true); return; }         // reuse within the 5-min window (no 72MB refetch)
     this.showOverlay("Loading sample demo...");
     try {
       const json = await fetch("api/sample?t=" + Date.now()).then(r => {
         if (!r.ok) throw new Error("sample not found");
         return r.json();
       });
+      this._cacheDemo("__sample__", json);
       this.loadDemo(json, true);                          // sample -> unlock Pro features for preview
     } catch (err) {
       this.showOverlay("Could not load sample: " + err.message, true);
@@ -1434,7 +1446,7 @@ const App = {
     const list = files instanceof FileList ? [...files]
       : Array.isArray(files) ? files : [files];
     if (!list.length) return;
-    this.showOverlay(`Uploading ${list.length === 1 ? list[0].name : list.length + " files"}...`, false, 0);
+    this._upStrip("uploading", { pct: 0, label: list.length === 1 ? "Uploading…" : `Uploading ${list.length} files…` });
     const queued = [];
     for (let i = 0; i < list.length; i++) {
       const f = list[i];
@@ -1444,8 +1456,8 @@ const App = {
         const up = await this._prepUpload(f, prefix);     // gzip the .dem in-browser if we can
         res = await this._uploadOne(up.blob, up.name, prefix);
       }
-      catch (e) { this.showOverlay(`Upload failed -- ${f.name} (is the server running?)`, true); return; }
-      if (res.error) { this.showOverlay(res.upsell ? res.error : ("Server error: " + res.error), true); return; }
+      catch (e) { this._upStrip("hide"); this.showOverlay(`Upload failed -- ${f.name} (is the server running?)`, true); return; }
+      if (res.error) { this._upStrip("hide"); this.showOverlay(res.upsell ? res.error : ("Server error: " + res.error), true); return; }
       if (res.jobs) queued.push(...res.jobs);
       else if (res.demos) this.onUploaded(res.demos);     // legacy ?sync response (not used by default)
     }
@@ -1463,12 +1475,12 @@ const App = {
     }
     try {
       const total = file.size; let read = 0;
-      this.setOverlay(`Compressing ${prefix}${file.name}...`, 0);
+      this._upStrip("uploading", { pct: 0, label: "Compressing…" });
       const counter = new TransformStream({
         transform: (chunk, ctrl) => {
           read += chunk.byteLength;
-          this.setOverlay(`Compressing ${prefix}${file.name}... ${Math.round(read / total * 100)}%`,
-            Math.round(read / total * 100));
+          const pct = Math.round(read / total * 100);
+          this._upStrip("uploading", { pct, label: `Compressing… ${pct}%` });
           ctrl.enqueue(chunk);
         },
       });
@@ -1490,8 +1502,8 @@ const App = {
       xhr.upload.onprogress = (e) => {
         if (!e.lengthComputable) return;
         const pct = Math.round(e.loaded / e.total * 100);
-        if (pct >= 100) this.setOverlay(`Queued ${prefix}${name} for parsing...`, 100, true);
-        else this.setOverlay(`Uploading ${prefix}${name}... ${pct}%`, pct);
+        if (pct >= 100) this._upStrip("uploading", { pct: 100, label: "Queued for parsing…" });
+        else this._upStrip("uploading", { pct, label: `Uploading… ${pct}%` });
       };
       xhr.onload = () => {
         let j = null; try { j = JSON.parse(xhr.responseText); } catch (e) { /* non-JSON */ }
@@ -1510,33 +1522,38 @@ const App = {
     const bad = (jobList || []).filter(j => j && j.ok === false);
     if (!ok.length) {
       const f = bad[0];
-      this.showOverlay("Upload rejected -- " +
-        (f ? `${f.filename || "file"}: ${f.error || "not accepted"}` : "no demos accepted"), true);
+      this._upStrip("failed", { label: "Upload rejected" + (f && f.error ? ` — ${f.error}` : ""), autohide: 9000 });
       return;
     }
-    // Don't block the screen during parsing: dismiss the overlay so the user can keep browsing.
-    // The dashboard's "Processing…" chip shows background progress; a toast fires when ready.
+    // The strip stays up through parsing (non-blocking) so the user can keep browsing the app.
     const n = ok.length;
-    this.hideOverlay();
-    this._toast && this._toast(`Uploaded ${n} demo${n > 1 ? "s" : ""} — parsing in the background…`
-      + (bad.length ? ` (${bad.length} rejected)` : ""));
-    if (document.body.classList.contains("on-dashboard")) this.loadDashboard();   // show the live chip
+    if (document.body.classList.contains("on-dashboard")) this.loadDashboard();
     const ids = new Set(ok.map(j => j.id));
+    const t0 = Date.now();
+    const el = () => { const s = Math.round((Date.now() - t0) / 1000); return s < 60 ? s + "s" : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+    this._upStrip("parsing", { label: `Parsing ${n} demo${n > 1 ? "s" : ""}… (${el()})` });
     const poll = async () => {
       const all = await fetch("api/jobs").then(r => r.json()).then(j => j.jobs || []).catch(() => null);
       if (!all) { setTimeout(poll, 3000); return; }
       const mine = all.filter(j => ids.has(j.id));
-      if (mine.filter(j => ["queued", "parsing", "analyzing"].includes(j.status)).length) {
-        setTimeout(poll, 2500); return;                       // still working -> watch quietly
+      const working = mine.filter(j => ["queued", "parsing", "analyzing"].includes(j.status));
+      if (working.length) {
+        const stage = working.some(j => j.status === "analyzing") ? "Finishing"
+          : working.some(j => j.status === "parsing") ? "Parsing" : "Queued";
+        this._upStrip("parsing", { label: `${stage} ${working.length} demo${working.length > 1 ? "s" : ""}… (${el()})` });
+        setTimeout(poll, 2500); return;                       // honest stage + elapsed (parser has no sub-%)
       }
       const done = mine.filter(j => j.status === "done");
       const failed = mine.filter(j => j.status === "failed");
       if (failed.length) console.warn("Parse failures:\n" +
         failed.map(j => `  ${j.filename}: ${(j.error || "").split("\n")[0]}`).join("\n"));
-      if (done.length) this._toast && this._toast(
-        `${done.length} demo${done.length > 1 ? "s" : ""} ready${failed.length ? ` (${failed.length} failed)` : ""} — open Library to view.`);
-      else if (failed.length) { const f = failed[0];
-        this._toast && this._toast(`Parse failed — ${f.filename}: ${(f.error || "").split("\n")[0] || "error"}`); }
+      if (done.length) {
+        this._upStrip("done", { label: `✓ ${done.length} demo${done.length > 1 ? "s" : ""} ready${failed.length ? ` (${failed.length} failed)` : ""}`, autohide: 6000 });
+        this._toast && this._toast(`${done.length} demo${done.length > 1 ? "s" : ""} ready — open Library to view.`);
+      } else if (failed.length) {
+        const f = failed[0];
+        this._upStrip("failed", { label: `✕ Parse failed — ${(f.error || "").split("\n")[0] || "error"}`.slice(0, 90), autohide: 9000 });
+      }
       if (document.body.classList.contains("on-dashboard")) this.loadDashboard();   // surface the new match
     };
     setTimeout(poll, 2500);
@@ -1636,15 +1653,21 @@ const App = {
   viewLibraryDemo(id, opts) {
     opts = opts || {};
     $("libraryModal").classList.remove("show");
+    const afterLoad = () => {                              // jump straight into per-match analytics if asked
+      if (opts.analytics) {
+        if (this.entitled("advancedAnalytics")) openAnalytics(this);
+        else this._upsell("advancedAnalytics");
+      }
+    };
+    const hit = this._cachedDemo(id);                      // #20: reuse within the 5-min window
+    if (hit) { this.loadDemo(hit, false); afterLoad(); return Promise.resolve(); }
     this.showOverlay("Loading demo...", false, 0);
     return fetch("api/demo/" + encodeURIComponent(id))
       .then(r => { if (!r.ok) throw new Error("not found"); return r.json(); })
       .then(json => {
+        this._cacheDemo(id, json);                         // remember for the 5-min reuse window
         this.loadDemo(json, false);                       // uploaded demo -> normal Free/Pro gating
-        if (opts.analytics) {                             // jump straight into per-match analytics
-          if (this.entitled("advancedAnalytics")) openAnalytics(this);
-          else this._upsell("advancedAnalytics");
-        }
+        afterLoad();
       })
       .catch(() => this.showOverlay("Could not load that demo (it may have been removed).", true));
   },
@@ -3965,6 +3988,21 @@ const App = {
     if (pct != null) $("overlayBar").style.width = pct + "%";
   },
   hideOverlay() { $("overlay").classList.remove("show"); },
+  // #19 site-wide, non-blocking upload/parse progress strip. state: uploading | parsing | done | failed | hide.
+  // 'uploading' is determinate (opts.pct); 'parsing' is an honest indeterminate stage bar (the parser
+  // emits no sub-percent, so we show stage + elapsed, not a fake countdown). done/failed auto-hide.
+  _upStrip(state, opts = {}) {
+    const el = $("upStrip"); if (!el) return;
+    clearTimeout(this._upStripT);
+    if (state === "hide") { el.hidden = true; document.body.classList.remove("upstrip-on"); return; }
+    const fill = $("upStripFill"), lab = $("upStripLabel"), x = $("upStripX");
+    el.hidden = false; document.body.classList.add("upstrip-on");
+    el.className = "upstrip up-" + state + (state === "parsing" ? " indet" : "");
+    if (state === "uploading" && opts.pct != null) fill.style.width = Math.max(2, Math.min(100, opts.pct)) + "%";
+    if (lab) lab.textContent = opts.label || "";
+    if (x) x.onclick = () => this._upStrip("hide");
+    if (opts.autohide) this._upStripT = setTimeout(() => this._upStrip("hide"), opts.autohide);
+  },
 };
 
 App.init();

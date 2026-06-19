@@ -1065,6 +1065,23 @@ textarea.lf-in{height:46px;resize:vertical;font-family:inherit}
   background:var(--accent);padding:2px 8px;border-radius:5px;text-shadow:none;
   box-shadow:0 1px 4px rgba(0,0,0,.5)}
 .fph-scope[hidden]{display:none}
+/* #19 site-wide upload/parse progress strip -- fixed to the very top, non-blocking (roam while parsing) */
+.upstrip{position:fixed;top:0;left:0;right:0;z-index:60;height:26px;display:flex;align-items:center;gap:10px;
+  padding:0 12px;background:rgba(12,15,19,.94);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);
+  font-size:12px;color:var(--txt);box-shadow:0 2px 10px rgba(0,0,0,.35);overflow:hidden}
+.upstrip[hidden]{display:none}
+body.upstrip-on{padding-top:26px}
+.upstrip-fill{position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(90deg,var(--accent),#ff9b5a);
+  opacity:.22;transition:width .25s ease;pointer-events:none;z-index:0}
+.upstrip.indet .upstrip-fill{width:38%!important;opacity:.18;animation:upstrip-slide 1.15s ease-in-out infinite}
+.upstrip.up-done .upstrip-fill{width:100%!important;background:#3cdc78;opacity:.28;animation:none}
+.upstrip.up-failed .upstrip-fill{width:100%!important;background:#ff5a4d;opacity:.24;animation:none}
+.upstrip-label{position:relative;z-index:1;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+.upstrip.up-done .upstrip-label{color:#8ff0bd}
+.upstrip.up-failed .upstrip-label{color:#ffb0ab}
+.upstrip-x{position:relative;z-index:1;flex:0 0 auto;background:none;border:0;color:var(--mut);font-size:16px;line-height:1;cursor:pointer;padding:2px 6px}
+.upstrip-x:hover{color:var(--txt)}
+@keyframes upstrip-slide{0%{left:-40%}100%{left:100%}}
 /* top-right 3D overlay stack: minimap on top, kill feed below (3D only) */
 .tr3d{position:absolute;top:12px;right:12px;z-index:6;display:none;flex-direction:column;align-items:flex-end;
   gap:8px;pointer-events:none}
