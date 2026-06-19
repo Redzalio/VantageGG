@@ -963,9 +963,12 @@ textarea.lf-in{height:46px;resize:vertical;font-family:inherit}
 .lib-row{display:flex;align-items:center;gap:12px;padding:11px 13px;background:#0c1116;
   border:1px solid var(--line);border-radius:9px;position:relative;overflow:hidden}
 .lib-row.has-bg{min-height:54px}
-/* map art as a 50%-opacity layer behind the card content (url comes from the inline --cardbg var) */
-.lib-row.has-bg::before{content:"";position:absolute;inset:0;background:var(--cardbg) center 35%/cover no-repeat;opacity:.5;z-index:0;pointer-events:none}
-.lib-row.has-bg > *{position:relative;z-index:1}      /* content stays above the 50% image */
+/* map art as a subtle layer behind the card content (url from the inline --cardbg var). Kept low
+   so the picture is a hint, not a distraction. The ::after adds a left->right dark gradient over it
+   so the title/meta read crisply on the left while the art peeks through on the right. */
+.lib-row.has-bg::before{content:"";position:absolute;inset:0;background:var(--cardbg) center 35%/cover no-repeat;opacity:.3;z-index:0;pointer-events:none}
+.lib-row.has-bg::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(13,16,21,.82),rgba(13,16,21,.12) 82%);z-index:0;pointer-events:none}
+.lib-row.has-bg > *{position:relative;z-index:1}      /* content stays above the image + gradient */
 .lib-row:hover{border-color:#3a4757}
 .lib-map{flex:0 0 92px;font-weight:700;font-size:13px;text-transform:capitalize;letter-spacing:.2px;
   color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
