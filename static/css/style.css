@@ -74,7 +74,8 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:none;bor
 /* topbar */
 #topbar{display:flex;align-items:center;gap:18px;padding:0 16px;height:54px;
   background:var(--panel);border-bottom:1px solid var(--line);flex:0 0 auto}
-.brand{font-weight:700;font-size:18px;letter-spacing:.5px}
+.brand{font-weight:700;font-size:18px;letter-spacing:.5px;display:flex;align-items:center;gap:7px}
+.brand-logo{height:22px;width:auto;display:block;flex-shrink:0}
 .brand span{color:var(--accent)}   /* "GG" sits flush against "Vantage" (same size/weight), just accent-colored */
 .match{display:flex;align-items:center;gap:14px;margin-left:8px}
 .mapname{font-weight:600;color:var(--mut);text-transform:capitalize}
