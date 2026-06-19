@@ -407,6 +407,11 @@ const App = {
   hideDashboard() { document.body.classList.remove("on-dashboard", "on-landing"); },
   // pick the right "home" view for the current auth state (landing if logged out on an auth-enabled site)
   goHome() {
+    // close any full-screen overlay first, or it stays covering the dashboard (e.g. the analytics
+    // panel was left visible after clicking the brand from inside analytics).
+    if ($("analyticsPanel") && $("analyticsPanel").classList.contains("show")) closeAnalytics(this);
+    ["libraryModal", "teamsModal", "goalsModal", "trendsModal", "adminModal", "upgradeModal", "searchModal"]
+      .forEach(id => { const m = $(id); if (m) m.classList.remove("show"); });
     const me = this.me || {};
     if (me.auth_enabled && !(me.authenticated && me.user)) this.showLanding();
     else this.showDashboard();
@@ -2507,7 +2512,8 @@ const App = {
   // can sit just past the final frame; without the clamp, t > duration wraps to 0 (round 1).
   _roundSeekT(r) {
     const tgt = r.freeze_end_t ?? r.start_t ?? 0;
-    return Math.max(0, Math.min((this.demo.duration || 0) - 0.05, tgt));
+    const lead = Math.max(r.start_t ?? 0, tgt - 2.0);    // start ~2s before round-go (clamp to round start)
+    return Math.max(0, Math.min((this.demo.duration || 0) - 0.05, lead));
   },
   updateRoundStrip(rnum) {
     if (this._curRound === rnum) return;
@@ -2520,41 +2526,17 @@ const App = {
     });
   },
   buildTimelineMarkers() {
-    const L = this._tlLayers || (this._tlLayers =
-      { kills: true, utility: false, bomb: true, insights: false, swing: false });
-    const tr = this.demo.tickrate || 64;
-    const A = this.demo.analytics;
-    // window the markers cover: whole match, or just the current round (mode-aware).
+    // Round start is the only key timeline marker (kept clean -- the old kills/utility/bomb/insight/
+    // "key moments" layers were clutter). Distinct .rb line; drawn in BOTH modes (every round start in
+    // match mode; just this round's start in round mode, where the window is one round).
+    if (!this.demo) { $("tlMarkers").innerHTML = ""; return; }
     const b = this.tlBounds();
     const lo = b.min, hi = b.max, span = Math.max(0.001, hi - lo);
-    const inWin = t => t >= lo - 0.001 && t <= hi + 0.001;
     const pct = t => ((t - lo) / span * 100).toFixed(2);
     let h = "";
-    // round boundary line(s): every round start in match mode; just this round's edges in round mode.
-    if (this.tlMode === "match")
-      for (const r of this.demo.rounds) h += `<i class="rb" style="left:${pct(r.start_t)}%"></i>`;
-    if (L.kills)
-      for (const k of this.demo.kills) if (inWin(k.t)) h += `<i class="tlm kk" title="kill" style="left:${pct(k.t)}%"></i>`;
-    if (L.utility)
-      for (const e of this.demo.utilityList()) if (inWin(e.t))
-        h += `<i class="tlm uu ${esc(e.type)}" title="${esc(e.type)} thrown" style="left:${pct(e.t)}%"></i>`;
-    if (L.bomb)
-      for (const e of this.demo.events)
-        if ((e.type === "bomb_planted" || e.type === "bomb_defused") && inWin(e.t))
-          h += `<i class="tlm bb ${e.type === "bomb_defused" ? "def" : "plant"}" title="${e.type.replace("_", " ")}" style="left:${pct(e.t)}%"></i>`;
-    if (L.insights && A && A.insights) {
-      const seen = new Set();
-      for (const lst of Object.values(A.insights)) for (const ic of lst) {
-        if (ic.tick == null || ic.polarity === "good") continue;
-        const t = ic.tick / tr, key = Math.round(t);
-        if (seen.has(key) || !inWin(t)) continue; seen.add(key);
-        h += `<i class="tlm ii" title="insight: ${esc((ic.type || "").replace(/_/g, " "))}" style="left:${pct(t)}%"></i>`;
-      }
-    }
-    if (L.swing && A && A.round_cards)
-      for (const rc of A.round_cards)
-        if (rc.watch_t != null && inWin(rc.watch_t))
-          h += `<i class="tlm sw" title="key moment R${rc.number}" style="left:${pct(rc.watch_t)}%"></i>`;
+    for (const r of this.demo.rounds)
+      if (r.start_t >= lo - 0.001 && r.start_t <= hi + 0.001)
+        h += `<i class="rb" title="Round ${r.number} start" style="left:${pct(r.start_t)}%"></i>`;
     $("tlMarkers").innerHTML = h;
   },
 
@@ -2622,10 +2604,6 @@ const App = {
       ["Names", "showNames"], ["Trajectories", "showTrajectories"],
       ["Traces", "showTraces"], ["Utility", "showUtil"],
     ];
-    const L = this._tlLayers || (this._tlLayers =
-      { kills: true, utility: false, bomb: true, insights: false, swing: false });
-    const tlLayers = [["kills", "Kills"], ["utility", "Utility throws"], ["bomb", "Bomb plant/defuse"],
-      ["insights", "Insight flags"], ["swing", "Key moments"]];
     // bullet-impact players grouped by side into a collapsible header (auto-open if any are selected)
     const teamGroup = (tm, label) => {
       const ps = this.demo.players.map((p, i) => [p, i]).filter(([p]) => p.team === tm);
@@ -2647,32 +2625,23 @@ const App = {
       `<label class="sp-row" title="Recent movement trails"><input type="checkbox" id="trailChk" ${this.view3d.trails ? "checked" : ""}/> Trails</label>` +
       `<label class="sp-row" title="Mark every death this round"><input type="checkbox" id="deathChk" ${this.view3d.showDeaths ? "checked" : ""}/> Mark deaths</label>` +
       `<label class="sp-row" title="2D minimap overlay in 3D"><input type="checkbox" id="miniChk" ${this._miniOn !== false ? "checked" : ""}/> Minimap</label>` +
-      `<label class="sp-row" title="Spawns/axes/bounds (debug)"><input type="checkbox" id="calChk" ${this.view3d.calMode ? "checked" : ""}/> Calibration</label>` +
       `</div>` +
       `<div class="sp-row sp-size">Dot size <input id="dotSizeSl" type="range" min="0.6" max="2" step="0.1" value="${r.dotSize}"/></div>` +
       `<div class="sp-row sp-size">Map zoom <input id="miniZoomSl" type="range" min="1" max="4" step="0.25" value="${this._miniZoom || 1}" title="minimap: 1 = whole map; higher zooms on the player"/></div>` +
       `<div class="sp-row sp-size">Map size <input id="miniSizeSl" type="range" min="1" max="2.4" step="0.1" value="${this._miniSize || 1}" title="how big the minimap is on screen"/></div>` +
       `<div class="sp-h sp-sub">Bullet impacts (3D)</div>` +
       `<label class="sp-row"><input type="checkbox" id="impAll"/> All players</label>` +
-      (this.demo ? teamGroup(3, "Counter-Terrorists") + teamGroup(2, "Terrorists") : "") +
-      `<div class="sp-h sp-sub">Timeline markers</div>` +
-      `<div class="sp-grid">` +
-      tlLayers.map(([k, lbl]) =>
-        `<label class="sp-row"><input type="checkbox" data-tl="${k}" ${L[k] ? "checked" : ""}/> <span class="tlk tlk-${k}"></span> ${lbl}</label>`).join("") +
-      `</div>`;
+      (this.demo ? teamGroup(3, "Counter-Terrorists") + teamGroup(2, "Terrorists") : "");
     $("settingsPop").querySelectorAll("[data-set]").forEach((cb, i) =>
       cb.onchange = () => {
         const key = this._settings[i][1]; r[key] = cb.checked;
         if (key === "showNames") $("toggleNames").classList.toggle("on", cb.checked);
       });
-    $("settingsPop").querySelectorAll("[data-tl]").forEach(cb =>
-      cb.onchange = () => { this._tlLayers[cb.dataset.tl] = cb.checked; if (this.demo) this.buildTimelineMarkers(); });
     $("aimChk").onchange = (e) => { this.view3d.showAim = e.target.checked; };
     $("coneChk").onchange = (e) => { this.view3d.showCone = e.target.checked; };
     $("xrayChk").onchange = (e) => { this.view3d.xray = e.target.checked; };
     $("trailChk").onchange = (e) => { this.view3d.trails = e.target.checked; };
     $("deathChk").onchange = (e) => { this.view3d.showDeaths = e.target.checked; };
-    $("calChk").onchange = (e) => { this.view3d.setCalMode(e.target.checked); };
     $("dotSizeSl").oninput = (e) => { r.dotSize = parseFloat(e.target.value); };
     $("miniChk").onchange = (e) => { this._miniOn = e.target.checked; };
     $("miniZoomSl").oninput = (e) => { this._miniZoom = parseFloat(e.target.value); };

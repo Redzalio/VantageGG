@@ -1128,14 +1128,16 @@ export class View3D {
       });
   }
 
-  // X-ray look: when ON, players draw THROUGH walls at a soft fixed opacity (so they read as
-  // "behind cover" not solid); when OFF, they're solid and occluded by geometry normally.
+  // Player model opacity policy (single source). Models are ALWAYS translucent so they read cleanly:
+  //   x-ray OFF -> 0.5, occluded by walls normally (the "looks much better" default);
+  //   x-ray ON  -> 0.1, drawn THROUGH walls (faint "behind cover" ghost).
+  // Toggling x-ray must never snap back to 1.0 (the old bug); opacity stays 0.5/0.1.
   _applyXray(mat) {
     const x = this.xray;
-    mat.depthTest = !x;          // off => visible through walls
-    mat.depthWrite = !x;         // off when translucent so they don't self-occlude oddly
-    mat.transparent = x;
-    mat.opacity = x ? 0.35 : 1;  // ~35% behind walls
+    mat.depthTest = !x;          // x-ray on => draw through geometry
+    mat.depthWrite = !x;         // no depth-write when seeing through walls
+    mat.transparent = true;
+    mat.opacity = x ? 0.1 : 0.5;
   }
 
   render(state) {
