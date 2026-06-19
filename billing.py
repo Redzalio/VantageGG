@@ -24,16 +24,6 @@ except ImportError:                      # lib not installed (e.g. minimal local
 
 import db
 
-
-def _plain(o):
-    """Recursively convert a Stripe object into plain dicts/lists. Stripe's StripeObject is NOT a dict
-    subclass in v10+ (no .get()), so we normalize before our handler logic touches it."""
-    if isinstance(o, list):
-        return [_plain(x) for x in o]
-    if hasattr(o, "keys"):
-        return {k: _plain(o[k]) for k in o.keys()}
-    return o
-
 # period key (pricing.py) -> Stripe price lookup_key (set on the prices in tools/stripe_seed.py)
 LOOKUP = {"monthly": "pro_monthly", "q": "pro_q", "h": "pro_h", "year": "pro_year"}
 
@@ -137,7 +127,9 @@ def _retrieve_sub(sub_id):
     if not s or not sub_id:
         return None
     try:
-        return s.Subscription.retrieve(sub_id)
+        # Stripe v10 objects aren't dicts and have no .get()/.keys()/.to_dict_recursive(); their
+        # __str__ IS full recursive JSON, so round-trip to a plain dict the handler can use.
+        return json.loads(str(s.Subscription.retrieve(sub_id)))
     except Exception:
         return None
 

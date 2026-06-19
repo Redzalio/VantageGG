@@ -115,17 +115,6 @@ def test_checkout_session_params(monkeypatch):
     assert captured["success_url"].endswith("/?checkout=success")
 
 
-def test_plain_converts_stripe_object_without_get():
-    """Stripe v10 objects are mapping-like but have no .get(); _plain normalizes to dicts/lists."""
-    class SO:  # mimic StripeObject: keys() + [] but NO .get
-        def __init__(self, d): self._d = d
-        def keys(self): return self._d.keys()
-        def __getitem__(self, k): return self._d[k]
-    p = billing._plain(SO({"a": 1, "b": SO({"c": 2}), "d": [SO({"e": 3})]}))
-    assert p == {"a": 1, "b": {"c": 2}, "d": [{"e": 3}]}
-    assert p.get("b").get("c") == 2          # now a real dict -> .get works
-
-
 def test_grant_reads_item_level_period_end(tmp_path):
     """Recent Stripe API versions put current_period_end on the subscription ITEM, not the top level."""
     _tmp(tmp_path)
