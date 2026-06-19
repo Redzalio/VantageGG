@@ -1588,11 +1588,14 @@ def api_admin_recent():
                      "jobs": [jobs._public(j) for j in jobs.list_jobs(limit=12)]})
 
 
-def _scan_orphans():
+def _scan_orphans(min_age_s=1800):
     """Reclaimable files in the upload dir: kept raw .dem (the parsed cache is the real watch source,
     so the raw demo is reclaimable) + stale temp upload files left by failed/old jobs. NEVER includes
-    parsed cache JSON or the retained .txt stats. Files belonging to an ACTIVE job are left alone."""
+    parsed cache JSON or the retained .txt stats. Files belonging to an ACTIVE job are skipped, and
+    so is anything modified within min_age_s (default 30 min) -- a decompress temp of an IN-FLIGHT
+    parse isn't the job's upload_path, so the age guard keeps a running parse safe."""
     import glob as _glob
+    now = time.time()
     active = {os.path.basename(j.get("upload_path") or "") for j in jobs.list_jobs(active_only=True)}
     dems, temps, total = [], [], 0
     for path in _glob.glob(os.path.join(UPLOADS, "*")):
@@ -1601,6 +1604,8 @@ def _scan_orphans():
             continue
         try:
             sz = os.path.getsize(path)
+            if now - os.path.getmtime(path) < min_age_s:   # too fresh -> may be an in-flight parse
+                continue
         except OSError:
             continue
         if name.lower().endswith(".dem") and not name.startswith("_"):

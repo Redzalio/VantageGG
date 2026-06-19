@@ -98,10 +98,14 @@ def test_orphan_scan_and_clean(tmp_path, monkeypatch):
     monkeypatch.setattr(app, "CACHE", str(tmp_path / "cache"))
     monkeypatch.setattr(app, "UPLOADS", str(tmp_path / "uploads"))
     os.makedirs(app.CACHE); os.makedirs(app.UPLOADS)
-    # a kept raw .dem (reclaimable), a stale temp, and a cache file + .txt that must NOT be touched
+    # a kept raw .dem (reclaimable), a stale temp, and a cache file that must NOT be touched
     open(os.path.join(app.UPLOADS, "abc123def456abcd.dem"), "wb").write(b"D" * 4000)
     open(os.path.join(app.UPLOADS, "_jobup_stale.dem.gz"), "wb").write(b"T" * 2000)
     open(os.path.join(app.CACHE, "abc123def456abcd.json"), "w").write("{}")
+    import time as _t                                          # age them past the 30-min in-flight guard
+    old = _t.time() - 7200
+    os.utime(os.path.join(app.UPLOADS, "abc123def456abcd.dem"), (old, old))
+    os.utime(os.path.join(app.UPLOADS, "_jobup_stale.dem.gz"), (old, old))
 
     scan = app._scan_orphans()
     assert scan["n_dems"] == 1 and scan["n_temps"] == 1
