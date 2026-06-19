@@ -739,11 +739,12 @@ const App = {
   async renderAdmin() {
     const body = $("adminBody");
     body.innerHTML = `<div class="lib-empty">Loading&hellip;</div>`;
-    let ov, users;
+    let ov, users, ops;
     try {
-      [ov, users] = await Promise.all([
+      [ov, users, ops] = await Promise.all([
         fetch("/api/admin/overview", { cache: "no-store" }).then(r => r.json()),
         fetch("/api/admin/users", { cache: "no-store" }).then(r => r.json()),
+        fetch("/api/admin/ops", { cache: "no-store" }).then(r => r.json()).catch(() => null),
       ]);
     } catch (e) { body.innerHTML = `<div class="dash-empty">Admin data unavailable.</div>`; return; }
     if (!ov || ov.error) { body.innerHTML = `<div class="dash-empty">${esc((ov && ov.error) || "admin only")}</div>`; return; }
@@ -786,6 +787,7 @@ const App = {
       + `<div class="adm-stats">${tiles.map(([k, v]) => `<div class="dstat"><div class="dstat-v">${v}</div><div class="dstat-k">${k}</div></div>`).join("")}</div>`
       + `<div class="adm-jobs">${proPct}% on Pro${cfg.tiers_enabled ? "" : ` · <span class="round">tiers OFF (everyone has full access)</span>`}</div>`
       + `<div class="dash-sec-head adm-uhead"><h2>Growth &amp; activity</h2></div>${growth}`
+      + `<div class="dash-sec-head adm-uhead"><h2>Storage &amp; parsing</h2></div>${this._renderOps(ops)}`
       + `<div class="dash-sec-head adm-uhead"><h2>Users</h2>`
       +   `<input id="admUserSearch" class="adm-search" type="search" placeholder="Search name or SteamID…" autocomplete="off"></div>`
       + `<div class="adm-users" id="admUsers"></div>`
@@ -797,6 +799,34 @@ const App = {
     search.oninput = () => { this._admFilter = search.value; this._renderAdmUserList(); };
     this._renderAdmUserList();
     if (this.isAdmin) this._renderAdminPricing();
+  },
+  // Admin "Storage & parsing" section: where the bytes go + upload/parse timing (from the jobs table).
+  _renderOps(ops) {
+    if (!ops || ops.error) return `<div class="dash-empty">Ops data unavailable.</div>`;
+    const mb = b => b == null ? "0" : (b >= (1 << 30) ? (b / (1 << 30)).toFixed(2) + " GB" : Math.max(0, Math.round(b / (1 << 20))) + " MB");
+    const st = ops.storage || [], total = ops.storage_total || 0, disk = ops.disk || {};
+    const max = Math.max(1, ...st.map(s => s.bytes || 0));
+    const bars = st.map(s => `<div class="ops-row"><span class="ops-l">${esc(s.label)}</span>`
+      + `<span class="ops-bar"><i style="width:${Math.round((s.bytes || 0) / max * 100)}%"></i></span>`
+      + `<span class="ops-v">${mb(s.bytes)}</span></div>`).join("");
+    const diskLine = disk.total
+      ? `<div class="ops-disk">Disk: <b>${mb(disk.used)}</b> used &middot; <b>${mb(disk.free)}</b> free of ${mb(disk.total)}`
+        + `<span class="ops-bar wide"><i style="width:${Math.round(disk.used / disk.total * 100)}%"></i></span></div>`
+      : "";
+    const t = ops.timing || {};
+    const s = v => v == null ? "—" : v + "s";
+    const tiles = [["Parsed", t.parsed], ["Failed", t.failed], ["Workers", t.workers],
+                   ["Avg", s(t.avg_s)], ["Median", s(t.median_s)], ["Slowest", s(t.max_s)]];
+    const recent = (t.recent || []).map(r =>
+      `<div class="ops-jrow"><span class="ops-jf">${esc(r.filename || "?")}</span>`
+      + `<span class="ops-js st-${r.status}">${esc(r.status)}</span>`
+      + `<span class="ops-jd">${r.dur_s != null ? Math.round(r.dur_s) + "s" : ""}</span></div>`).join("");
+    return `<div class="ops-wrap">`
+      + `<div class="ops-head">App data total: <b>${mb(total)}</b></div>${bars}${diskLine}`
+      + `<div class="ops-head ops-head2">Upload &amp; parse timing</div>`
+      + `<div class="adm-stats ops-stats">${tiles.map(([k, v]) => `<div class="dstat"><div class="dstat-v">${v}</div><div class="dstat-k">${k}</div></div>`).join("")}</div>`
+      + (recent ? `<div class="ops-recent">${recent}</div>` : "")
+      + `</div>`;
   },
   _money(cur, n) {                                       // mirror pricing.py _fmt_money
     return Math.abs(n - Math.round(n)) < 0.005 ? `${cur}${Math.round(n)}` : `${cur}${n.toFixed(2)}`;

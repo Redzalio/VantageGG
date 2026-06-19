@@ -1215,6 +1215,64 @@ def api_admin_overview():
     return _nostore(ov)
 
 
+@app.route("/api/admin/ops")
+def api_admin_ops():
+    """Ops view: where storage is going + upload/parse timing (derived from the jobs table -- the
+    created/started/finished timestamps are already recorded, so no extra logging is needed)."""
+    import datetime as _dt
+    import shutil
+    if not _helper_or_none():
+        return _nostore({"error": "admin only"}), 403
+    cats = [
+        ("Parsed demo cache", CACHE),
+        ("Raw uploads (.dem)", UPLOADS),
+        ("Nade library + clips", getattr(nades, "LIB_DIR", os.path.join(HERE, "nades"))),
+        ("3D map geometry", os.path.join(HERE, "static", "maps3d")),
+        ("Radars + images", os.path.join(HERE, "static", "maps")),
+    ]
+    storage = [{"label": lbl, "bytes": _dir_bytes(p)} for lbl, p in cats]
+    dbb = 0
+    for ext in ("", "-wal", "-shm"):
+        try:
+            dbb += os.path.getsize(db.DB_PATH + ext)
+        except OSError:
+            pass
+    storage.append({"label": "Database (SQLite)", "bytes": dbb})
+    storage.sort(key=lambda s: -s["bytes"])
+    disk = {}
+    try:
+        du = shutil.disk_usage(DATA_DIR)
+        disk = {"total": du.total, "used": du.used, "free": du.free}
+    except Exception:
+        pass
+
+    alljobs = jobs.list_jobs(limit=500)
+
+    def _dur(j):
+        try:
+            a = _dt.datetime.fromisoformat(j["started_at"])
+            b = _dt.datetime.fromisoformat(j["finished_at"])
+            return (b - a).total_seconds()
+        except Exception:
+            return None
+    durs = sorted(d for j in alljobs if j.get("status") == "done"
+                  for d in (_dur(j),) if d is not None and d >= 0)
+    timing = {
+        "parsed": len(durs),
+        "failed": sum(1 for j in alljobs if j.get("status") == "failed"),
+        "active": sum(1 for j in alljobs if j.get("status") in ("queued", "parsing", "analyzing")),
+        "workers": jobs.WORKERS,
+        "avg_s": round(sum(durs) / len(durs), 1) if durs else None,
+        "median_s": round(durs[len(durs) // 2], 1) if durs else None,
+        "min_s": round(durs[0], 1) if durs else None,
+        "max_s": round(durs[-1], 1) if durs else None,
+        "recent": [{"filename": j.get("filename"), "status": j.get("status"), "dur_s": _dur(j)}
+                   for j in alljobs[:12]],
+    }
+    return _nostore({"storage": storage, "storage_total": sum(s["bytes"] for s in storage),
+                     "disk": disk, "timing": timing})
+
+
 @app.route("/api/admin/recent")
 def api_admin_recent():
     """Recent demos + recent parse jobs (incl. failures). Kept for ops/debugging; the admin UI no
