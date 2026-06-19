@@ -4070,4 +4070,16 @@ const App = {
 
 App.init();
 window.App = App;   // expose for debugging/inspection
+
+// One-time essential-cookies notice (no trackers, so it's informational). Shown until acknowledged.
+(function cookieNotice() {
+  const el = document.getElementById("cookieNotice");
+  if (!el) return;
+  let acked = false;
+  try { acked = localStorage.getItem("cs2dp_cookie_ack") === "1"; } catch (e) { /* private mode */ }
+  if (acked) return;
+  el.hidden = false;
+  const ok = document.getElementById("cookieOk");
+  if (ok) ok.onclick = () => { el.hidden = true; try { localStorage.setItem("cs2dp_cookie_ack", "1"); } catch (e) {} };
+})();
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }

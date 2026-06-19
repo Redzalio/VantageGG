@@ -33,6 +33,7 @@ import mapstatus                                        # 3D-asset status (stdli
 import matchindex                                       # cross-match trends (stdlib only)
 import db                                               # SQLite metadata index (stdlib only)
 import jobs                                             # background parse-job queue (stdlib only)
+import legal                                            # Terms/Privacy/Cookie/Refund pages (stdlib only)
 import nades                                            # local nade-lineup library (stdlib only)
 import appconfig                                        # admin-editable site settings (Free upload cap)
 import billing                                          # Stripe subscription billing (opt-in via env)
@@ -472,6 +473,17 @@ def index():
                         '<body class="{}">'.format("on-landing" if show_landing else "on-dashboard"), 1)
     resp = Response(html, mimetype="text/html")
     resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.route("/<any(terms, privacy, cookies, refunds):slug>")
+def legal_page(slug):
+    """Public, logged-out-accessible policy pages (Terms/Privacy/Cookies/Refunds)."""
+    page = legal.render(slug)
+    if page is None:
+        return jsonify({"error": "not found"}), 404
+    resp = Response(page, mimetype="text/html")
+    resp.headers["Cache-Control"] = "public, max-age=3600"
     return resp
 
 
