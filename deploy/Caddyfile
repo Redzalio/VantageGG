@@ -8,6 +8,13 @@ vantagegg.com {
     request_body {
         max_size 2200MB        # > MAX_UPLOAD_MB so 300-500 MB demos pass through to the app
     }
+    # Long-cache the big, stable map assets (3D geometry ~20MB each + radar PNGs) so repeat visits
+    # don't re-download them every time. The app serves these with no-cache by default (right for
+    # app.js/index.html, wrong for immutable geometry). 30 days, still revalidates after.
+    @mapassets path /static/maps3d/* /static/maps/*
+    header @mapassets Cache-Control "public, max-age=2592000"
+    # Security header that belongs at the TLS edge (the app sets the rest).
+    header Strict-Transport-Security "max-age=31536000; includeSubDomains"
     reverse_proxy 127.0.0.1:8770
 }
 
