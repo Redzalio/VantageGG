@@ -993,6 +993,12 @@ const App = {
       + `<div class="adm-jobs">${proPct}% on Pro${cfg.tiers_enabled ? "" : ` · <span class="round">tiers OFF (everyone has full access)</span>`}</div>`
       + `<div class="dash-sec-head adm-uhead"><h2>Growth &amp; activity</h2></div>${growth}`
       + `<div class="dash-sec-head adm-uhead"><h2>Storage &amp; parsing</h2></div>${this._renderOps(ops)}`
+      + (this.isAdmin
+          ? `<div class="dash-sec-head adm-uhead"><h2>Free-plan limit</h2></div>`
+            + `<div class="adm-limit"><label>Demos a free user can upload `
+            +   `<input id="admFreeLimit" type="number" min="1" max="1000" value="${cfg.free_upload_limit}"></label>`
+            + `<button id="admFreeLimitSave" class="btn primary sm">Save</button>`
+            + `<span class="round" id="admFreeLimitMsg"></span></div>` : "")
       + `<div class="dash-sec-head adm-uhead"><h2>Users</h2>`
       +   `<input id="admUserSearch" class="adm-search" type="search" placeholder="Search name or SteamID…" autocomplete="off"></div>`
       + `<div class="adm-users" id="admUsers"></div>`
@@ -1000,6 +1006,15 @@ const App = {
       + `<div class="dash-sec-head adm-uhead"><h2>Deployment</h2></div><div class="adm-cfg">${cfgHtml}</div>`;
     $("admPreviewFree").onclick = () => this.togglePreviewFree(true);
     this._bindOps();                       // wire the failed-job drilldown (19B)
+    const flSave = $("admFreeLimitSave");  // admin-settable Free-plan upload limit
+    if (flSave) flSave.onclick = async () => {
+      const msg = $("admFreeLimitMsg"), val = parseInt($("admFreeLimit").value, 10);
+      if (!(val >= 1)) { if (msg) msg.textContent = "Enter a whole number ≥ 1."; return; }
+      const r = await fetch("/api/admin/config", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ free_upload_limit: val }) }).then(x => x.json()).catch(() => null);
+      if (r && r.ok) { if (msg) msg.textContent = `Saved — free users can upload ${r.free_upload_limit} demos.`; this._refreshMe && this._refreshMe(); }
+      else if (msg) msg.textContent = (r && r.error) || "Save failed.";
+    };
     const search = $("admUserSearch");
     search.value = this._admFilter || "";
     search.oninput = () => { this._admFilter = search.value; this._renderAdmUserList(); };

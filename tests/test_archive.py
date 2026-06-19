@@ -123,3 +123,30 @@ def test_orphan_scan_and_clean(tmp_path, monkeypatch):
     assert not os.path.exists(os.path.join(app.UPLOADS, "abc123def456abcd.dem"))
     assert not os.path.exists(os.path.join(app.UPLOADS, "_jobup_stale.dem.gz"))
     assert os.path.exists(os.path.join(app.CACHE, "abc123def456abcd.json"))   # cache untouched
+
+
+def test_admin_sets_free_upload_limit(tmp_path, monkeypatch):
+    import appconfig
+    db.DB_PATH = str(tmp_path / "cfg.sqlite")
+    db.migrate()
+    monkeypatch.setattr(appconfig, "CONFIG_PATH", str(tmp_path / "appconfig.json"))
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    assert appconfig.free_upload_limit() == 10                       # default (not the legacy env)
+    monkeypatch.setenv("ADMIN_STEAM_IDS", "76561190000000400")
+    admin = db.upsert_user("76561190000000400", "Admin")
+    c = app.app.test_client()
+    with c.session_transaction() as s:
+        s["uid"] = admin
+    app._rl_hits.clear()
+    r = c.post("/api/admin/config", json={"free_upload_limit": 25})
+    assert r.status_code == 200 and r.get_json()["free_upload_limit"] == 25
+    assert appconfig.free_upload_limit() == 25                       # persisted + live
+    # a non-admin cannot change it
+    monkeypatch.setenv("ADMIN_STEAM_IDS", "999")
+    rando = db.upsert_user("76561190000000401", "Rando")
+    c2 = app.app.test_client()
+    with c2.session_transaction() as s:
+        s["uid"] = rando
+    app._rl_hits.clear()
+    assert c2.post("/api/admin/config", json={"free_upload_limit": 50}).status_code == 403
+    assert appconfig.free_upload_limit() == 25                       # unchanged

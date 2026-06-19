@@ -34,6 +34,7 @@ import matchindex                                       # cross-match trends (st
 import db                                               # SQLite metadata index (stdlib only)
 import jobs                                             # background parse-job queue (stdlib only)
 import nades                                            # local nade-lineup library (stdlib only)
+import appconfig                                        # admin-editable site settings (Free upload cap)
 import billing                                          # Stripe subscription billing (opt-in via env)
 import practiceplan                                     # practice-plan done-state (stdlib only)
 import pricing                                           # editable Pro subscription prices (stdlib only)
@@ -230,8 +231,9 @@ def upload_allowance(user):
         return {"unlimited": True, "used": None, "limit": None}
     uid = user.get("id") if user else None
     used = db.user_demo_count(uid) if uid else 0
-    return {"unlimited": False, "used": used, "limit": FREE_UPLOAD_LIMIT,
-            "remaining": max(0, FREE_UPLOAD_LIMIT - used)}
+    limit = appconfig.free_upload_limit()                # admin-settable at runtime (#22)
+    return {"unlimited": False, "used": used, "limit": limit,
+            "remaining": max(0, limit - used)}
 
 
 def _dir_bytes(path):
@@ -1476,7 +1478,7 @@ def api_admin_overview():
         ov["maps3d"] = None
     # live config readout so the admin can confirm the deployment without SSHing in
     ov["config"] = {
-        "tiers_enabled": TIERS_ENABLED, "free_upload_limit": FREE_UPLOAD_LIMIT,
+        "tiers_enabled": TIERS_ENABLED, "free_upload_limit": appconfig.free_upload_limit(),
         "auth_required": steamauth.auth_required(), "auth_enabled": steamauth.auth_enabled(),
         "keep_dem": KEEP_DEM, "session_cookie_secure": bool(app.config.get("SESSION_COOKIE_SECURE")),
         "public_base_url": os.environ.get("PUBLIC_BASE_URL") or "(inferred from request)",
@@ -1644,6 +1646,22 @@ def api_admin_orphans_clean():
         except OSError:
             pass
     return _nostore({"ok": True, "removed": removed, "freed_bytes": freed})
+
+
+@app.route("/api/admin/config", methods=["POST"])
+def api_admin_config():
+    """Admin: update editable site settings (currently the Free-plan upload limit). Takes effect
+    immediately for new uploads + the shown quota -- no env edit, no redeploy."""
+    if not _admin_or_none():
+        return _nostore({"error": "admin only"}), 403
+    body = request.get_json(silent=True) or {}
+    out = {"ok": True}
+    if "free_upload_limit" in body:
+        try:
+            out["free_upload_limit"] = appconfig.set_free_upload_limit(int(body["free_upload_limit"]))
+        except (TypeError, ValueError):
+            return _nostore({"error": "free_upload_limit must be a whole number"}), 400
+    return _nostore(out)
 
 
 @app.route("/api/admin/users/<int:uid>", methods=["DELETE"])

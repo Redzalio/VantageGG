@@ -237,8 +237,9 @@ def test_free_upload_blocked_at_cap(tmp_path, monkeypatch):
     monkeypatch.setenv("ADMIN_STEAM_IDS", "")
     monkeypatch.setenv("AUTH_REQUIRED", "1")
     import app
+    import appconfig
     monkeypatch.setattr(app, "TIERS_ENABLED", True)
-    monkeypatch.setattr(app, "FREE_UPLOAD_LIMIT", 2)
+    monkeypatch.setattr(appconfig, "free_upload_limit", lambda: 2)   # admin-settable cap
     db.DB_PATH = str(tmp_path / "q.sqlite")
     db.migrate()
     uid = db.upsert_user("111", "Free")                       # free tier, 2 owned demos = at the cap
