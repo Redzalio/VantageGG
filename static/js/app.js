@@ -382,7 +382,7 @@ const App = {
     $("dashMatchSec").style.display = empty ? "none" : "";
     $("dashGoalSec").style.display = (empty || !showGoals) ? "none" : "";
     this._renderDashFocus(d, empty);
-    this._renderDashMe(empty ? null : d.me);
+    this._renderDashMe(empty ? null : d.me, matches.length);
     this._renderDashJobs(d.active_jobs || []);
     if (empty) this._renderDashEmpty();
     else {
@@ -408,6 +408,7 @@ const App = {
     if (last && last.id && ids.has(last.id)) {
       parts.push(`<button class="dq-continue" data-id="${esc(last.id)}">&#9654; Continue &mdash; ${esc(last.map || "last match")}</button>`);
     }
+    parts.push(`<button class="btn ghost sm" data-q="analytics">Analytics</button>`);
     parts.push(`<button class="btn ghost sm" data-q="library">Library</button>`);
     if (this.entitled("goals")) parts.push(`<button class="btn ghost sm" data-q="goals">Goals</button>`);
     if (this.me && this.me.authenticated) parts.push(`<button class="btn ghost sm" data-q="teams">Teams</button>`);
@@ -423,6 +424,7 @@ const App = {
     el.querySelectorAll("[data-q]").forEach(b => b.onclick = () => {
       const q = b.dataset.q;
       if (q === "library") this.openLibrary();
+      else if (q === "analytics") this.entitled("advancedAnalytics") ? this.openTrends() : this._upsell("advancedAnalytics");
       else if (q === "goals") this.entitled("goals") ? this.openGoals() : this._upsell("goals");
       else if (q === "teams") this.entitled("teams") ? this.openTeams() : this._upsell("teams");
       else if (q === "admin") this.openAdmin();
@@ -488,9 +490,22 @@ const App = {
   // The signed-in player's own analytics, two ways: their LATEST match (per-match, with arrows showing
   // how that game compared to their norm) and their AVERAGE across ALL their demos (with the
   // improving/declining trend). Both at the top of the dashboard.
-  _renderDashMe(me) {
+  _renderDashMe(me, hasMatches) {
     const el = $("dashMe");
-    if (!me || !me.n_matches) { el.innerHTML = ""; el.classList.remove("show"); return; }
+    if (!me || !me.n_matches) {
+      // Never leave a blank gap when the user HAS demos but we couldn't auto-match their Steam
+      // account to a player in them: still surface the analytics entry point.
+      if (hasMatches) {
+        el.classList.add("show");
+        el.innerHTML = `<div class="mf-head"><span>Your analytics</span>`
+          + `<button class="btn ghost sm" id="dashMeOpen">Open analytics</button></div>`
+          + `<div class="mf-empty">We couldn't match your Steam account to a player in your demos yet. `
+          + `Open analytics to pick your player and see per-match + all-demo stats.</div>`;
+        const ob = $("dashMeOpen");
+        if (ob) ob.onclick = () => this.entitled("advancedAnalytics") ? this.openTrends() : this._upsell("advancedAnalytics");
+      } else { el.innerHTML = ""; el.classList.remove("show"); }
+      return;
+    }
     el.classList.add("show");
     const a = me.averages || {}, tr = me.trend || {};
     const series = me.series || [];
@@ -518,14 +533,24 @@ const App = {
       + tile(dn(a.adr), "ADR", tr.adr)
       + tile(a.kast != null ? a.kast + "%" : "&mdash;", "KAST", tr.kast)
       + `</div>`;
+    const lastKey = last && (last.key || last.id);
     el.innerHTML = `<div class="mf-head"><span>Your analytics</span>`
       + `<button class="btn ghost sm" id="dashMeTrends">Full trends</button></div>`
       + `<div class="mf-groups">`
-      + `<div class="mf-group"><div class="mf-glabel">Latest match`
-        + (last && last.map ? ` <i class="mf-sub">${esc(this._fmtMap(last.map))}</i>` : "") + `</div>${latestStats}</div>`
+      + `<div class="mf-group${lastKey ? " mf-clickable" : ""}"${lastKey ? ` data-key="${esc(lastKey)}" title="Open this match's analytics"` : ""}>`
+        + `<div class="mf-glabel">Latest match`
+        + (last && last.map ? ` <i class="mf-sub">${esc(this._fmtMap(last.map))}</i>` : "")
+        + (lastKey ? ` <span class="mf-go">view &rsaquo;</span>` : "") + `</div>${latestStats}</div>`
       + `<div class="mf-group"><div class="mf-glabel">Average <i class="mf-sub">${n} demo${n === 1 ? "" : "s"}</i></div>${avgStats}</div>`
       + `</div>`;
     $("dashMeTrends").onclick = () => this.entitled("advancedAnalytics") ? this.openTrends(me.steamid) : this._upsell("advancedAnalytics");
+    if (lastKey) { const g = el.querySelector(".mf-group.mf-clickable"); if (g) g.onclick = () => this._openMatchAnalytics(lastKey); }
+  },
+  // load a specific demo and jump straight into its per-match analytics (from the dashboard / trends).
+  _openMatchAnalytics(key) {
+    if (!key) return;
+    const tm = $("trendsModal"); if (tm) tm.classList.remove("show");
+    this.viewLibraryDemo(key, { analytics: true });
   },
 
   // ---- first-time walkthrough -----------------------------------------------
@@ -1485,12 +1510,19 @@ const App = {
     this._toast && this._toast(`Deleted "${name}" — freed ${freed}.`);
   },
 
-  viewLibraryDemo(id) {
+  viewLibraryDemo(id, opts) {
+    opts = opts || {};
     $("libraryModal").classList.remove("show");
     this.showOverlay("Loading demo...", false, 0);
-    fetch("api/demo/" + encodeURIComponent(id))
+    return fetch("api/demo/" + encodeURIComponent(id))
       .then(r => { if (!r.ok) throw new Error("not found"); return r.json(); })
-      .then(json => this.loadDemo(json, false))           // uploaded demo -> normal Free/Pro gating
+      .then(json => {
+        this.loadDemo(json, false);                       // uploaded demo -> normal Free/Pro gating
+        if (opts.analytics) {                             // jump straight into per-match analytics
+          if (this.entitled("advancedAnalytics")) openAnalytics(this);
+          else this._upsell("advancedAnalytics");
+        }
+      })
       .catch(() => this.showOverlay("Could not load that demo (it may have been removed).", true));
   },
 
@@ -1833,10 +1865,15 @@ const App = {
       const sum = `<div class="tr-sum">${series.length} match${series.length === 1 ? "" : "es"} | rating <b>${a.hltv}</b> ${arr(delta("hltv"))} | ADR ${a.adr} ${arr(delta("adr"))} `
         + `| KAST ${a.kast}% ${arr(delta("kast"))} | open ${a.open_wr}% ${arr(delta("open_wr"))} | traded ${a.traded_pct}% ${arr(delta("traded_pct"))}</div>`;
       const head = `<div class="tr-row tr-head"><span class="tr-m">map</span><span>rating</span><span>ADR</span><span>KAST</span><span>open</span><span>traded</span></div>`;
-      const rows = series.slice().reverse().map(s =>
-        `<div class="tr-row"><span class="tr-m">${esc(s.map || "?")} <i class="round">${esc((s.created_at || "").slice(5, 10))}</i></span>`
-        + `<span>${s.hltv}</span><span>${s.adr}</span><span>${s.kast}%</span><span>${s.open_wr}%</span><span>${s.traded_pct}%</span></div>`).join("");
-      $("trBody").innerHTML = sum + head + rows;
+      const rows = series.slice().reverse().map(s => {
+        const k = s.key || s.id || "";
+        return `<div class="tr-row${k ? " tr-click" : ""}"${k ? ` data-key="${esc(k)}" title="Open this match's analytics"` : ""}>`
+          + `<span class="tr-m">${esc(s.map || "?")} <i class="round">${esc((s.created_at || "").slice(5, 10))}</i></span>`
+          + `<span>${s.hltv}</span><span>${s.adr}</span><span>${s.kast}%</span><span>${s.open_wr}%</span><span>${s.traded_pct}%</span></div>`;
+      }).join("");
+      const body = $("trBody");
+      body.innerHTML = sum + `<div class="tr-hint">Click a match to open its per-match analytics &rsaquo;</div>` + head + rows;
+      body.querySelectorAll(".tr-row.tr-click").forEach(r => { r.onclick = () => this._openMatchAnalytics(r.dataset.key); });
     }).catch(() => { $("trBody").innerHTML = `<div class="empty">trend unavailable</div>`; });
   },
   // #44 cross-match tendencies / repeated patterns for the selected player (anti-strat scouting)

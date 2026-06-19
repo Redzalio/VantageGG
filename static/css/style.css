@@ -283,6 +283,12 @@ body.on-dashboard #topbar .match{display:none}
 .mf-k{color:var(--mut);font-size:12px;margin-top:5px;display:flex;align-items:center;gap:6px}
 .mf-up{color:#5fcf80;font-weight:700;font-size:11px}
 .mf-dn{color:#ff6f6f;font-weight:700;font-size:11px}
+.mf-group.mf-clickable{cursor:pointer;border-radius:10px;margin:-6px;padding:6px;transition:background .12s}
+.mf-group.mf-clickable:hover{background:rgba(255,255,255,.035)}
+.mf-go{color:var(--acc,#e8843a);font-size:11px;font-weight:700;margin-left:4px}
+.tr-row.tr-click{cursor:pointer}
+.tr-row.tr-click:hover{background:rgba(255,255,255,.05)}
+.tr-hint{color:var(--mut);font-size:11px;margin:6px 0 8px}
 @media(max-width:600px){.mf-stats{grid-template-columns:repeat(2,1fr)}}
 
 /* first-time walkthrough (spotlight tour) */
