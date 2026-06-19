@@ -98,6 +98,9 @@ export class Cs2Demo {
         helmet: a.helmet,
         kit: a.kit,
         name: this.players[i].name,
+        // jersey number by CURRENT side: CT 1-5, T 6-10 (_k is the stable per-team rank, so each
+        // side always holds exactly the five ranks 0-4 even after the halftime swap) (#12)
+        num: a.team === 3 ? (this.players[i]._k || 0) + 1 : (this.players[i]._k || 0) + 6,
         color: this.colorFor(i, a.team),
       });
     }

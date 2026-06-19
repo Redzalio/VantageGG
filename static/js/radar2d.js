@@ -353,6 +353,15 @@ export class Radar2D {
     ctx.strokeStyle = followed ? "#fff" : "rgba(0,0,0,.7)";
     ctx.stroke();
 
+    // jersey number centred in the dot (CT 1-5 / T 6-10) -- only when the dot is big enough to read,
+    // so zoomed-out overviews don't turn into a wall of digits (#12). Dark glyph reads on both palettes.
+    if (p.num && r >= 7 * this.dpr) {
+      ctx.fillStyle = "rgba(8,11,15,0.92)";
+      ctx.font = `bold ${(r * 1.15).toFixed(0)}px Inter, system-ui, sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(String(p.num), sx, sy + 0.5 * this.dpr);
+    }
+
     // low-hp ring
     if (p.hp < 100) {
       ctx.beginPath();

@@ -35,6 +35,13 @@ const NADE_FX = {
   decoy:   { dur: 0.5,  rad: 40,  color: 0x99a3b0 },
 };
 
+// Grenade head smoothing: the in-flight head is linearly interpolated between trajectory samples
+// (parser emits them ~60ms apart) so it GLIDES along the arc instead of stepping point-to-point.
+// The lead shifts the sampled time slightly forward so the head sits at the tip of the drawn arc
+// (which already leads by ~the same amount); 0 = exactly on the clock. Keep small -- a larger value
+// reads as "nades thrown early".
+const NADE_HEAD_LEAD = 0.05;
+
 // An HE detonating inside a smoke briefly "parts" it -- a clear hole opens around the
 // blast, holds, then heals as the smoke fills back in (CS2 mechanic, ~1s).
 const SMOKE_PART_DUR = 0.95;    // seconds the hole stays open
@@ -121,6 +128,7 @@ export class View3D {
     // CONTRACT: the main agent's per-player UI mutates this set (player indices to show bullet
     // impacts for; "all" = every alive index). We only READ it. Empty => no impacts drawn.
     this.impactSet = new Set();
+    this.impactsOn = false;           // experimental master flag (#18): impacts only render when ON
     this._impactQueue = null;         // background precompute queue of enabled shots
     this._impactSig = "";             // signature of impactSet -> rebuild queue when it changes
     this.camPreset = "free";          // free | follow | overhead
@@ -534,7 +542,7 @@ export class View3D {
   // while paused) so they're cached BEFORE the clock reaches them -> impacts appear in real time
   // instead of trickling in. Rebuilds the queue whenever the enabled-player set changes.
   _pumpImpactPrecompute() {
-    if (!this._geo || !this.impactSet.size || !this.demo) { this._impactSig = ""; this._impactQueue = null; return; }
+    if (!this._geo || !this.impactsOn || !this.impactSet.size || !this.demo) { this._impactSig = ""; this._impactQueue = null; return; }
     this._ensureBVH();
     const sig = Array.from(this.impactSet).sort((a, b) => a - b).join(",");
     if (sig !== this._impactSig) {                       // selection changed -> (re)build the work list
@@ -734,10 +742,24 @@ export class View3D {
       if (!g.pts || g.pts.length < 2) continue;
       const fx = NADE_FX[g.type] || NADE_FX.he;
       this._setArc(this._fxLine(), g.pts, fx.color, t + 0.05);
-      let cur = g.pts[0];
-      for (const p of g.pts) { if (p[0] > t) break; cur = p; }
+      // Interpolate the head between the two bracketing samples (a <= ht < b) so it glides; without
+      // this the head snaps between ~60ms-spaced points and reads as a stutter (#14).
+      const ht = t + NADE_HEAD_LEAD;
+      let a = g.pts[0], b = g.pts[0];
+      for (let i = 0; i < g.pts.length; i++) {
+        if (g.pts[i][0] > ht) { b = g.pts[i]; break; }
+        a = g.pts[i]; b = g.pts[i];
+      }
+      const az = a.length > 3 ? a[3] : 0, bz = b.length > 3 ? b[3] : 0;
+      let hx = a[1], hy = a[2], hz = az;
+      if (b[0] > a[0]) {
+        const f = Math.min(1, Math.max(0, (ht - a[0]) / (b[0] - a[0])));
+        hx = a[1] + (b[1] - a[1]) * f;
+        hy = a[2] + (b[2] - a[2]) * f;
+        hz = az + (bz - az) * f;
+      }
       const head = this._fxSphere();
-      const hv = this._toThree(cur[1], cur[2], cur.length > 3 ? cur[3] : 0);
+      const hv = this._toThree(hx, hy, hz);
       head.position.copy(hv); head.scale.setScalar(6 * S);
       head.material.color.setHex(fx.color); head.material.opacity = 1;
     }
@@ -795,7 +817,7 @@ export class View3D {
     // bullet impacts (sv_showimpacts style) for ENABLED players only. Raycast each in-window shot
     // ONCE (cached on the shot), then draw a marker fading over IMPACT_DUR. Needs the map mesh.
     this._pumpImpactPrecompute();   // resolve enabled shots ahead of playback so they show in real time
-    if (this._geo && this.impactSet.size) {
+    if (this._geo && this.impactsOn && this.impactSet.size) {
       this._ensureBVH();                               // one-time: accelerate map raycasts (else ~0.5s/ray)
       let newRays = 0;
       const rayStart = performance.now();
@@ -944,16 +966,17 @@ export class View3D {
     ctx.beginPath(); ctx.arc(cx, cy, 3.8, 0, Math.PI * 2); ctx.fillStyle = "#ffd45b"; ctx.fill();
     ctx.strokeStyle = "#ff5b5b"; ctx.beginPath(); ctx.moveTo(cx - 16, cy + 10); ctx.lineTo(cx + 16, cy - 10); ctx.stroke();
   }
-  _drawLabel(lbl, name, hp, nameHex, flashFrac, gun) {
+  _drawLabel(lbl, name, hp, nameHex, flashFrac, gun, num) {
     const fq = Math.round((flashFrac || 0) * 8);   // quantize so the ring redraws in ~8 steps, not every frame
-    const key = name + "|" + hp + "|" + nameHex + "|" + fq + "|" + (gun || "");
+    const key = name + "|" + hp + "|" + nameHex + "|" + fq + "|" + (gun || "") + "|" + (num || "");
     if (lbl.last === key) return;               // only redraw on change (cheap most frames)
     lbl.last = key;
     const ctx = lbl.ctx, W = 256;
     ctx.clearRect(0, 0, W, 128);
     if (flashFrac > 0) this._drawCrossedEye(ctx, W / 2, 15, flashFrac);   // above the healthbar/name
     ctx.fillStyle = "rgba(8,11,15,0.72)"; ctx.fillRect(6, 32, W - 12, 90);
-    const nm = name.length > 16 ? name.slice(0, 15) + "..." : name;
+    const nm0 = name.length > 14 ? name.slice(0, 13) + "..." : name;
+    const nm = num ? num + "  " + nm0 : nm0;     // jersey number prefix (#12), e.g. "3  s1mple"
     ctx.font = "bold 26px Inter, system-ui, sans-serif";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillStyle = nameHex; ctx.fillText(nm, W / 2, 52);
@@ -1175,7 +1198,13 @@ export class View3D {
       // text -- the sidebar loadout icons show what they hold.
       const fpk = p.flash > 0.5 ? Math.min(1, p.flash / (this.demo.flashPeakAt(i, state.t) || 5)) : 0;
       this._drawLabel(pl.label, this.demo.players[i].name, Math.max(0, Math.round(p.hp)),
-        p.team === 3 ? "#8fb8ff" : "#ff8f8f", fpk, p.weapon);
+        p.team === 3 ? "#8fb8ff" : "#ff8f8f", fpk, p.weapon, p.num);
+      // Keep the nameplate a roughly constant on-screen size: sprites are sized in WORLD units, so a
+      // fixed scale dwarfs the model up close and shrinks to nothing at range. Scale ~linearly with
+      // camera distance (clamped), and fold in the dot-size slider so it drives 3D too (#11/#12).
+      const camDist = this.camera.position.distanceTo(pl.group.position);
+      const lscl = (this.labelScale || 1) * Math.min(8.5, Math.max(3.2, camDist * 0.085));
+      pl.label.sprite.scale.set(lscl, lscl * 0.5, 1);
       // POV cone flat on the floor, team-coloured, yawed to facing (toggle: this.showCone)
       pl.cone.visible = this.showCone;
       pl.cone.rotation.y = p.yaw * Math.PI / 180;

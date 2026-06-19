@@ -2479,6 +2479,13 @@ const App = {
       if (p.reload) { ammo.textContent = "RELOADING"; ammo.classList.add("reloading"); }
       else { ammo.innerHTML = `<span class="cur">${p.clip}</span> / ${cap}`; ammo.classList.remove("reloading"); }
     } else { ammo.textContent = ""; ammo.classList.remove("reloading"); }
+    // scope badge: snipers/AUG/SG show a zoom indicator when scoped in (data straight from the demo) (#13)
+    const scopeEl = $("fphScope");
+    if (scopeEl) {
+      const z = p.zoom || (p.scoped ? 1 : 0);
+      if (z > 0) { scopeEl.hidden = false; scopeEl.textContent = z >= 2 ? "SCOPED ×2" : "SCOPED"; }
+      else { scopeEl.hidden = true; }
+    }
     // POV "blindness": a white veil scaled by how flashed the spectated player is (peaks ~40%).
     const peak = (this.demo.flashPeakAt && this.demo.flashPeakAt(this.view3d.followIdx, this.t)) || 5;
     this._setPovFlash(p.flash > 0 ? Math.min(1, p.flash / peak) * 0.4 : 0);
@@ -2576,6 +2583,7 @@ const App = {
         showNames: r.showNames, showTrajectories: r.showTrajectories, showTraces: r.showTraces,
         showUtil: r.showUtil, dotSize: r.dotSize,
         showAim: v.showAim, showCone: v.showCone, xray: v.xray, trails: v.trails, showDeaths: v.showDeaths,
+        impactsOn: v.impactsOn,
         miniOn: this._miniOn, miniZoom: this._miniZoom, miniSize: this._miniSize, tlLayers: this._tlLayers,
       }));
     } catch (e) { /* localStorage unavailable (private mode) -- ignore */ }
@@ -2588,7 +2596,8 @@ const App = {
     const b = (o, k, val) => { if (typeof val === "boolean") o[k] = val; };   // only apply real booleans
     b(r, "showNames", s.showNames); b(r, "showTrajectories", s.showTrajectories);
     b(r, "showTraces", s.showTraces); b(r, "showUtil", s.showUtil);
-    if (typeof s.dotSize === "number") r.dotSize = s.dotSize;
+    if (typeof s.dotSize === "number") { r.dotSize = s.dotSize; v.labelScale = s.dotSize; if (this.miniRadar) this.miniRadar.dotSize = s.dotSize; }
+    b(v, "impactsOn", s.impactsOn);
     b(v, "showAim", s.showAim); b(v, "showCone", s.showCone); b(v, "xray", s.xray);
     b(v, "trails", s.trails); b(v, "showDeaths", s.showDeaths);
     if (typeof s.miniOn === "boolean") this._miniOn = s.miniOn;
@@ -2629,7 +2638,8 @@ const App = {
       `<div class="sp-row sp-size">Dot size <input id="dotSizeSl" type="range" min="0.6" max="2" step="0.1" value="${r.dotSize}"/></div>` +
       `<div class="sp-row sp-size">Map zoom <input id="miniZoomSl" type="range" min="1" max="4" step="0.25" value="${this._miniZoom || 1}" title="minimap: 1 = whole map; higher zooms on the player"/></div>` +
       `<div class="sp-row sp-size">Map size <input id="miniSizeSl" type="range" min="1" max="2.4" step="0.1" value="${this._miniSize || 1}" title="how big the minimap is on screen"/></div>` +
-      `<div class="sp-h sp-sub">Bullet impacts (3D)</div>` +
+      `<div class="sp-h sp-sub">Bullet impacts (3D) &middot; <span class="sp-exp">experimental</span></div>` +
+      `<label class="sp-row" title="Raycast where each shot hits the map. Off by default — can be heavy on big demos."><input type="checkbox" id="impMaster" ${this.view3d.impactsOn ? "checked" : ""}/> Enable bullet impacts</label>` +
       `<label class="sp-row"><input type="checkbox" id="impAll"/> All players</label>` +
       (this.demo ? teamGroup(3, "Counter-Terrorists") + teamGroup(2, "Terrorists") : "");
     $("settingsPop").querySelectorAll("[data-set]").forEach((cb, i) =>
@@ -2642,11 +2652,19 @@ const App = {
     $("xrayChk").onchange = (e) => { this.view3d.xray = e.target.checked; };
     $("trailChk").onchange = (e) => { this.view3d.trails = e.target.checked; };
     $("deathChk").onchange = (e) => { this.view3d.showDeaths = e.target.checked; };
-    $("dotSizeSl").oninput = (e) => { r.dotSize = parseFloat(e.target.value); };
+    $("dotSizeSl").oninput = (e) => {
+      const v = parseFloat(e.target.value);
+      r.dotSize = v;
+      if (this.miniRadar) this.miniRadar.dotSize = v;   // minimap dots track it too
+      this.view3d.labelScale = v;                       // and 3D nameplates (#12 live resize)
+    };
     $("miniChk").onchange = (e) => { this._miniOn = e.target.checked; };
     $("miniZoomSl").oninput = (e) => { this._miniZoom = parseFloat(e.target.value); };
     $("miniSizeSl").oninput = (e) => { this._miniSize = parseFloat(e.target.value); this._applyMiniSize(); };
-    // bullet-impacts: per-player + "all" -> drives view3d.impactSet (the 3D view reads it)
+    // bullet-impacts: per-player + "all" -> drives view3d.impactSet (the 3D view reads it).
+    // The experimental master flag gates whether ANY of it renders (#18) -- selections persist.
+    const impMaster = $("impMaster");
+    if (impMaster) impMaster.onchange = (e) => { this.view3d.impactsOn = e.target.checked; };
     const impSet = this.view3d.impactSet || (this.view3d.impactSet = new Set());
     const impAll = $("impAll");
     const syncImpAll = () => { if (impAll && this.demo) impAll.checked = impSet.size > 0 && impSet.size === this.demo.players.length; };
@@ -2854,7 +2872,11 @@ const App = {
     if (await this.askConfirm(title, body, yes)) this.jumpUtil(g, pov);
   },
   jumpUtil(g, pov) {
-    this.t = Math.max(0, g.t0 - 1.5);
+    // Start ~1.75s before the throw so the wind-up is visible, but never seek back past the round
+    // start (otherwise a throw early in a round jumps into the previous round's freezetime) (#15).
+    const r = this.demo.roundAt ? this.demo.roundAt(g.t0) : null;
+    const lead = g.t0 - 1.75;
+    this.t = Math.max(0, r && r.start_t != null ? Math.max(r.start_t, lead) : lead);
     if (g.thrower >= 0) {
       this.setSpectate(g.thrower);
       if (pov) this.setCamPreset("fp");   // enter 3D + ride the thrower's first-person camera
