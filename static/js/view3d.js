@@ -47,16 +47,17 @@ const IMPACT_DUR = 10;          // seconds an impact marker stays visible (fades
 const IMPACT_RAD = 3;           // world-units marker radius
 const IMPACT_COLOR = 0xffe066;  // yellow tracer-burn dot
 const IMPACT_FAR = 8000;        // world-units max ray length when searching for the surface hit
-const IMPACT_RAYS_PER_FRAME = 40;   // hard cap on NEW raycasts/frame (belt)
-// ...and a per-frame TIME budget for those raycasts. This is the real governor: raycasting the full
-// map mesh (no BVH; big maps are millions of tris) costs several ms each, so 40/frame froze the view.
-// Capping to a few ms/frame keeps playback smooth -- impacts just fill in over a few frames instead.
-const IMPACT_MS_BUDGET = 4;
-// With the BVH in place each raycast is cheap, so we also PRECOMPUTE all enabled players' shot
-// impacts in the background (a chunk per frame, even while paused) -- by the time the clock reaches
-// a shot its impact is already cached and appears in real time, with no "filling in" delay.
-const IMPACT_PRECOMPUTE_PER_FRAME = 300;
-const IMPACT_PRECOMPUTE_MS = 6;
+// These caps predate the BVH (below), when each raycast hit the full map mesh (millions of tris,
+// several ms each) and 40/frame froze the view. With the BVH every ray is ~O(log tris) and cheap,
+// so the caps are now generous: the few shots actually ON SCREEN this frame must never "fill in"
+// late (that read as "bullet impacts are delayed"). The time budget stays as a smoothness belt.
+const IMPACT_RAYS_PER_FRAME = 400;   // hard cap on NEW raycasts/frame (belt)
+const IMPACT_MS_BUDGET = 8;          // per-frame time budget for those raycasts (real governor)
+// We also PRECOMPUTE all enabled players' shot impacts in the background (a chunk per frame, even
+// while paused) -- by the time the clock reaches a shot its impact is already cached and appears in
+// real time, with no "filling in" delay. Cheap-ray BVH lets us resolve a whole match in ~1s.
+const IMPACT_PRECOMPUTE_PER_FRAME = 800;
+const IMPACT_PRECOMPUTE_MS = 8;
 
 // CS scope HORIZONTAL FOV in degrees, from CS's weapon scripts (default FOV is 90). The demo's
 // per-frame `zoom` level (1 = first right-click, 2 = second) picks the exact level:

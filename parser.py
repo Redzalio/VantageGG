@@ -21,7 +21,12 @@ from demoparser2 import DemoParser
 from schema import SCHEMA_VERSION       # replay JSON schema version (shared, dep-free module)
 from roundlib import norm_weapon, pair_rounds   # shared round construction + weapon naming
 
-SAMPLE_RATE = 8           # frames/sec emitted
+SAMPLE_RATE = 16          # frames/sec emitted. 16 (not 8) halves the model<->event desync: events
+                          # (throws, shots, deaths) are tick-exact, but player MODELS only update at
+                          # this rate, so at 8fps a model could visibly lag the throw/shot it caused
+                          # by up to 125ms -- read as "the nade/impact happened before the player did
+                          # it". 16fps cuts that to <=62ms. sample_rate is stored per-demo, so existing
+                          # 8fps caches keep playing correctly (the frontend derives dt from it).
 DEFAULT_TICKRATE = 64
 
 # Optimistic tick prop list; safe_parse_ticks() drops names this build rejects.
