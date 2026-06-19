@@ -129,6 +129,7 @@ export class View3D {
     // impacts for; "all" = every alive index). We only READ it. Empty => no impacts drawn.
     this.impactSet = new Set();
     this.impactsOn = false;           // experimental master flag (#18): impacts only render when ON
+    this.labelScale = 1;              // nameplate size multiplier (its own slider, NOT the 2D dot one)
     this._impactQueue = null;         // background precompute queue of enabled shots
     this._impactSig = "";             // signature of impactSet -> rebuild queue when it changes
     this.camPreset = "free";          // free | follow | overhead

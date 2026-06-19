@@ -2583,7 +2583,7 @@ const App = {
         showNames: r.showNames, showTrajectories: r.showTrajectories, showTraces: r.showTraces,
         showUtil: r.showUtil, dotSize: r.dotSize,
         showAim: v.showAim, showCone: v.showCone, xray: v.xray, trails: v.trails, showDeaths: v.showDeaths,
-        impactsOn: v.impactsOn,
+        impactsOn: v.impactsOn, labelScale: v.labelScale,
         miniOn: this._miniOn, miniZoom: this._miniZoom, miniSize: this._miniSize, tlLayers: this._tlLayers,
       }));
     } catch (e) { /* localStorage unavailable (private mode) -- ignore */ }
@@ -2596,7 +2596,8 @@ const App = {
     const b = (o, k, val) => { if (typeof val === "boolean") o[k] = val; };   // only apply real booleans
     b(r, "showNames", s.showNames); b(r, "showTrajectories", s.showTrajectories);
     b(r, "showTraces", s.showTraces); b(r, "showUtil", s.showUtil);
-    if (typeof s.dotSize === "number") { r.dotSize = s.dotSize; v.labelScale = s.dotSize; if (this.miniRadar) this.miniRadar.dotSize = s.dotSize; }
+    if (typeof s.dotSize === "number") { r.dotSize = s.dotSize; if (this.miniRadar) this.miniRadar.dotSize = s.dotSize; }
+    if (typeof s.labelScale === "number") v.labelScale = s.labelScale;
     b(v, "impactsOn", s.impactsOn);
     b(v, "showAim", s.showAim); b(v, "showCone", s.showCone); b(v, "xray", s.xray);
     b(v, "trails", s.trails); b(v, "showDeaths", s.showDeaths);
@@ -2636,6 +2637,7 @@ const App = {
       `<label class="sp-row" title="2D minimap overlay in 3D"><input type="checkbox" id="miniChk" ${this._miniOn !== false ? "checked" : ""}/> Minimap</label>` +
       `</div>` +
       `<div class="sp-row sp-size">Dot size <input id="dotSizeSl" type="range" min="0.6" max="2" step="0.1" value="${r.dotSize}"/></div>` +
+      `<div class="sp-row sp-size">Nameplate size <input id="nameScaleSl" type="range" min="0.5" max="2.2" step="0.1" value="${this.view3d.labelScale || 1}" title="size of the floating name/HP labels above players in 3D"/></div>` +
       `<div class="sp-row sp-size">Map zoom <input id="miniZoomSl" type="range" min="1" max="4" step="0.25" value="${this._miniZoom || 1}" title="minimap: 1 = whole map; higher zooms on the player"/></div>` +
       `<div class="sp-row sp-size">Map size <input id="miniSizeSl" type="range" min="1" max="2.4" step="0.1" value="${this._miniSize || 1}" title="how big the minimap is on screen"/></div>` +
       `<div class="sp-h sp-sub">Bullet impacts (3D) &middot; <span class="sp-exp">experimental</span></div>` +
@@ -2655,9 +2657,9 @@ const App = {
     $("dotSizeSl").oninput = (e) => {
       const v = parseFloat(e.target.value);
       r.dotSize = v;
-      if (this.miniRadar) this.miniRadar.dotSize = v;   // minimap dots track it too
-      this.view3d.labelScale = v;                       // and 3D nameplates (#12 live resize)
+      if (this.miniRadar) this.miniRadar.dotSize = v;   // minimap dots track it too (both are 2D dots)
     };
+    $("nameScaleSl").oninput = (e) => { this.view3d.labelScale = parseFloat(e.target.value); };   // 3D nameplates only
     $("miniChk").onchange = (e) => { this._miniOn = e.target.checked; };
     $("miniZoomSl").oninput = (e) => { this._miniZoom = parseFloat(e.target.value); };
     $("miniSizeSl").oninput = (e) => { this._miniSize = parseFloat(e.target.value); this._applyMiniSize(); };
