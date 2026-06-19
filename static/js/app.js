@@ -484,25 +484,45 @@ const App = {
       else if (e === "team") this.entitled("teams") ? this.openTeams() : this._upsell("teams");
     });
   },
-  // "Your form" -- the signed-in player's own rating/K-D/ADR/KAST + improving/declining arrows
+  // The signed-in player's own analytics, two ways: their LATEST match (per-match, with arrows showing
+  // how that game compared to their norm) and their AVERAGE across ALL their demos (with the
+  // improving/declining trend). Both at the top of the dashboard.
   _renderDashMe(me) {
     const el = $("dashMe");
     if (!me || !me.n_matches) { el.innerHTML = ""; el.classList.remove("show"); return; }
     el.classList.add("show");
     const a = me.averages || {}, tr = me.trend || {};
-    const arrow = (v) => (v == null || v === 0) ? "" : (v > 0
-      ? `<span class="mf-up" title="improving">&#9650; ${Math.abs(v)}</span>`
-      : `<span class="mf-dn" title="declining">&#9660; ${Math.abs(v)}</span>`);
+    const series = me.series || [];
+    const last = series[series.length - 1] || null;          // most-recent match (series is ASC by date)
+    const arrow = (v) => (v == null || v === 0 || isNaN(v)) ? "" : (v > 0
+      ? `<span class="mf-up" title="above your average">&#9650; ${Math.abs(v)}</span>`
+      : `<span class="mf-dn" title="below your average">&#9660; ${Math.abs(v)}</span>`);
+    const dn = (v, d) => (v == null) ? "&mdash;" : v;        // value-or-dash
     const tile = (val, label, t) => `<div class="mf-stat"><div class="mf-v">${val}</div>`
       + `<div class="mf-k">${label}${t !== undefined ? " " + arrow(t) : ""}</div></div>`;
     const n = me.n_matches;
-    el.innerHTML = `<div class="mf-head"><span>Your form <i class="mf-sub">last ${n} match${n === 1 ? "" : "es"}</i></span>`
-      + `<button class="btn ghost sm" id="dashMeTrends">Full trends</button></div>`
-      + `<div class="mf-stats">`
-      + tile(a.hltv != null ? a.hltv : "&mdash;", "Rating", tr.hltv)
-      + tile(a.kd != null ? a.kd : "&mdash;", "K/D")
-      + tile(a.adr != null ? a.adr : "&mdash;", "ADR", tr.adr)
+    // per-match arrows = latest vs the player's own average (so a green up = a better-than-usual game)
+    const d2 = (x, y) => (x == null || y == null) ? null : +(x - y).toFixed(2);
+    const d0 = (x, y) => (x == null || y == null) ? null : Math.round(x - y);
+    const latestStats = last ? `<div class="mf-stats">`
+        + tile(dn(last.hltv), "Rating", d2(last.hltv, a.hltv))
+        + tile(dn(last.kd), "K/D", d2(last.kd, a.kd))
+        + tile(dn(last.adr), "ADR", d0(last.adr, a.adr))
+        + tile(last.kast != null ? last.kast + "%" : "&mdash;", "KAST", d0(last.kast, a.kast))
+        + `</div>`
+      : `<div class="mf-empty">No match stats yet.</div>`;
+    const avgStats = `<div class="mf-stats">`
+      + tile(dn(a.hltv), "Rating", tr.hltv)
+      + tile(dn(a.kd), "K/D")
+      + tile(dn(a.adr), "ADR", tr.adr)
       + tile(a.kast != null ? a.kast + "%" : "&mdash;", "KAST", tr.kast)
+      + `</div>`;
+    el.innerHTML = `<div class="mf-head"><span>Your analytics</span>`
+      + `<button class="btn ghost sm" id="dashMeTrends">Full trends</button></div>`
+      + `<div class="mf-groups">`
+      + `<div class="mf-group"><div class="mf-glabel">Latest match`
+        + (last && last.map ? ` <i class="mf-sub">${esc(this._fmtMap(last.map))}</i>` : "") + `</div>${latestStats}</div>`
+      + `<div class="mf-group"><div class="mf-glabel">Average <i class="mf-sub">${n} demo${n === 1 ? "" : "s"}</i></div>${avgStats}</div>`
       + `</div>`;
     $("dashMeTrends").onclick = () => this.entitled("advancedAnalytics") ? this.openTrends(me.steamid) : this._upsell("advancedAnalytics");
   },
