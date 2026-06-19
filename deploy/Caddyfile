@@ -18,8 +18,7 @@ vantagegg.com {
     @mapassets path /static/maps3d/* /static/maps/*
     handle @mapassets {
         reverse_proxy 127.0.0.1:8770 {
-            header_down -Cache-Control
-            header_down Cache-Control "public, max-age=2592000"
+            header_down Cache-Control "public, max-age=2592000"   # replaces the app's no-cache for these
         }
     }
     handle {
