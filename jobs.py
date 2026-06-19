@@ -12,12 +12,20 @@ The actual parse is injected by app.py via start_worker(process_fn) to avoid imp
 process_fn(job_dict) -> demo_sha1 (or None); it may call set_progress() and raises on failure.
 """
 import datetime
+import multiprocessing
 import os
 import threading
 import traceback
 import uuid
 
 import db
+
+# Per-job wall-clock cap. A malformed/oversized demo must not pin a worker slot forever (queue DoS).
+# We run each parse in a forked subprocess and kill it past this deadline. 0 disables the cap.
+PARSE_TIMEOUT = int(os.environ.get("PARSE_TIMEOUT_SECONDS", "600") or 600)
+# Subprocess isolation needs fork (Linux worker container). On Windows/local + under tests we run the
+# parse in-process (tests force this in their setup), so the timeout/kill path is Linux-prod-only.
+RUN_IN_SUBPROCESS = hasattr(os, "fork") and PARSE_TIMEOUT > 0
 
 # How many demos parse at once. The claim (UPDATE ... WHERE status='queued') is atomic, so N workers
 # never double-process a job. Each big-demo parse peaks ~1-3 GB, so size N to the box's RAM/cores.
@@ -127,20 +135,61 @@ def _claim_one():
         con.close()
 
 
+def _run_job(job):
+    """Invoke the injected parse fn. Used in-process (Windows/tests) and inside the fork subprocess."""
+    return (_process_fn or (lambda j: None))(job)
+
+
+def _child_target(job, q):
+    """Subprocess entry: run the parse, push ('ok', sha) | ('err', text) onto the result queue."""
+    try:
+        q.put(("ok", _run_job(job) or ""))
+    except Exception as e:
+        q.put(("err", (f"{e}\n{traceback.format_exc()}")[:4000]))
+
+
+def _run_with_timeout(job):
+    """Run the parse in a forked subprocess with a wall-clock cap; kill it (freeing the worker slot)
+    if it overruns. Returns ('ok', sha) | ('err', text). Result payloads are tiny so the join-then-get
+    order is safe."""
+    ctx = multiprocessing.get_context("fork")
+    q = ctx.Queue()
+    p = ctx.Process(target=_child_target, args=(job, q), daemon=True)
+    p.start()
+    p.join(PARSE_TIMEOUT)
+    if p.is_alive():
+        p.terminate()
+        p.join(5)
+        if p.is_alive():
+            p.kill()
+        return ("err", "parse exceeded PARSE_TIMEOUT_SECONDS=%ds and was killed "
+                       "(malformed or oversized demo)" % PARSE_TIMEOUT)
+    try:
+        return q.get(timeout=5)
+    except Exception:
+        return ("err", "parse worker exited without a result (exit code %s)" % p.exitcode)
+
+
 def process_next():
-    """Claim + run the next queued job synchronously. Returns the job id processed, or None if the
-    queue is empty. Called by the worker loop; also called directly in tests."""
+    """Claim + run the next queued job. Returns the job id processed, or None if the queue is empty.
+    On the Linux worker each parse runs in a killable subprocess (PARSE_TIMEOUT); elsewhere/in tests
+    it runs in-process. Called by the worker loop and directly in tests."""
     job = _claim_one()
     if job is None:
         return None
     jid = job["id"]
-    try:
-        sha = (_process_fn or (lambda j: None))(job)
-        _update(jid, status="done", progress="done", finished_at=_now(), demo_sha1=sha or "")
-    except Exception as e:
-        _update(jid, status="failed", progress="failed", finished_at=_now(),
-                error=(f"{e}\n{traceback.format_exc()}")[:4000])
-        print(f"[job {jid}] FAILED: {e}")
+    if RUN_IN_SUBPROCESS:
+        kind, payload = _run_with_timeout(job)
+    else:
+        try:
+            kind, payload = ("ok", _run_job(job) or "")
+        except Exception as e:
+            kind, payload = ("err", (f"{e}\n{traceback.format_exc()}")[:4000])
+    if kind == "ok":
+        _update(jid, status="done", progress="done", finished_at=_now(), demo_sha1=payload)
+    else:
+        _update(jid, status="failed", progress="failed", finished_at=_now(), error=payload)
+        print(f"[job {jid}] FAILED: {payload.splitlines()[0] if payload else ''}")
     return jid
 
 

@@ -13,6 +13,26 @@ def _tmp(tmp_path):
     db.DB_PATH = str(tmp_path / "jobs.sqlite")
     db.migrate()
     jobs._process_fn = None
+    jobs.RUN_IN_SUBPROCESS = False    # run parses in-process for deterministic tests (no fork)
+
+
+def test_child_target_reports_ok_and_err(tmp_path):
+    """The subprocess entry point pushes ('ok', sha) on success and ('err', text) on failure."""
+    _tmp(tmp_path)
+
+    class Q:
+        def __init__(self): self.items = []
+        def put(self, x): self.items.append(x)
+
+    jobs._process_fn = lambda j: "sha_x"
+    q = Q(); jobs._child_target({"id": "1"}, q)
+    assert q.items == [("ok", "sha_x")]
+
+    def boom(j):
+        raise RuntimeError("bad demo bytes")
+    jobs._process_fn = boom
+    q2 = Q(); jobs._child_target({"id": "1"}, q2)
+    assert q2.items[0][0] == "err" and "bad demo bytes" in q2.items[0][1]
 
 
 def test_create_and_get_queued(tmp_path):
