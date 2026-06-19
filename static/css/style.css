@@ -284,6 +284,19 @@ body.on-dashboard #topbar .match{display:none}
 .mf-up{color:#5fcf80;font-weight:700;font-size:11px}
 .mf-dn{color:#ff6f6f;font-weight:700;font-size:11px}
 @media(max-width:600px){.mf-stats{grid-template-columns:repeat(2,1fr)}}
+
+/* first-time walkthrough (spotlight tour) */
+.tour-help{width:34px;min-width:34px;padding-left:0;padding-right:0;text-align:center;font-weight:700;border-radius:50%}
+.tour{position:fixed;inset:0;z-index:1000}
+.tour[hidden]{display:none}
+.tour-spot{position:fixed;border-radius:8px;box-shadow:0 0 0 9999px rgba(4,8,12,.72);transition:left .2s ease,top .2s ease,width .2s ease,height .2s ease;pointer-events:none}
+.tour-card{position:fixed;width:320px;max-width:calc(100vw - 16px);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px;box-shadow:0 14px 44px rgba(0,0,0,.55)}
+.tour-card.tour-center{left:50%;top:50%;transform:translate(-50%,-50%)}
+.tour-step{color:var(--mut);font-size:11px;font-weight:700;letter-spacing:.04em;margin-bottom:6px}
+.tour-title{margin:0 0 6px;font-size:17px}
+.tour-body{margin:0 0 14px;color:var(--mut);font-size:13px;line-height:1.5}
+.tour-actions{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.tour-nav{display:flex;gap:8px}
 @media(max-width:760px){.mf-groups{grid-template-columns:1fr;gap:14px}}
 .dash-jobs{display:none;background:var(--panel);border:1px solid var(--accent);border-radius:12px;padding:14px 16px;margin-bottom:20px}
 .dash-jobs.show{display:block}

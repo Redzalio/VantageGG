@@ -394,6 +394,7 @@ const App = {
     if ((d.active_jobs || []).length && document.body.classList.contains("on-dashboard")) {
       this._dashJobTimer = setTimeout(() => this.loadDashboard(), 2000);
     }
+    this._maybeAutoTour();                                // first-time walkthrough (once per new user)
   },
   _lastReview() {
     try { return JSON.parse(localStorage.getItem("cs2dp_last_review") || "null"); } catch (e) { return null; }
@@ -526,6 +527,102 @@ const App = {
       + `</div>`;
     $("dashMeTrends").onclick = () => this.entitled("advancedAnalytics") ? this.openTrends(me.steamid) : this._upsell("advancedAnalytics");
   },
+
+  // ---- first-time walkthrough -----------------------------------------------
+  // A lightweight spotlight tour over real UI elements. Auto-runs once for new users (localStorage
+  // flag), re-launchable from the "?" button. Steps whose target is missing/hidden are skipped.
+  _tourSteps() {
+    return [
+      { title: "Welcome to VantageGG", body: "Upload a CS2 demo and get a 2D + 3D replay, deep stats, and coaching that tells you what to fix. Here's the 20-second tour." },
+      { el: "#uploadBtn", title: "Upload your demos", body: "Drop a CS2 <b>.dem</b> (or a .zip of several). Parsing runs in the background &mdash; you don't have to wait on the page." },
+      { el: "#sampleBtn", title: "Or load the sample", body: "No demo handy? Load a full sample match and explore the replay and stats right now." },
+      { el: "#toggleTrends", title: "Trends & analytics", body: "Once you have a few matches, track rating, ADR, KAST and more over time &mdash; and see what's improving." },
+      { el: "#goalsBtn", title: "Practice goals", body: "Turn recurring mistakes into measurable goals and check progress every match." },
+      { el: "#libraryBtn", title: "Your library", body: "All your parsed matches live here. Open one for the 2D/3D replay, scoreboard, and per-round breakdown." },
+      { title: "You're set", body: "Replay this tour anytime from the <b>?</b> button up top. Start by uploading a demo or loading the sample." },
+    ];
+  },
+  startTour(fromUser) {
+    const vis = (s) => { if (!s.el) return true; const t = document.querySelector(s.el); return t && t.offsetParent !== null; };
+    const steps = this._tourSteps().filter(vis);
+    if (!steps.length) return;
+    this._tour = { steps, i: 0, fromUser: !!fromUser };
+    if (!this._tourEl) this._buildTourDom();
+    this._tourEl.hidden = false;
+    this._tourShow(0);
+    window.addEventListener("keydown", this._tourKey);
+    window.addEventListener("resize", this._tourReflow);
+  },
+  _buildTourDom() {
+    const wrap = document.createElement("div");
+    wrap.id = "tour"; wrap.className = "tour"; wrap.hidden = true;
+    wrap.innerHTML = `<div class="tour-spot"></div>`
+      + `<div class="tour-card"><div class="tour-step"></div>`
+      + `<h3 class="tour-title"></h3><p class="tour-body"></p>`
+      + `<div class="tour-actions"><button class="btn ghost sm tour-skip">Skip</button>`
+      + `<div class="tour-nav"><button class="btn ghost sm tour-back">Back</button>`
+      + `<button class="btn primary sm tour-next">Next</button></div></div></div>`;
+    document.body.appendChild(wrap);
+    this._tourEl = wrap;
+    wrap.querySelector(".tour-skip").onclick = () => this._tourEnd();
+    wrap.querySelector(".tour-back").onclick = () => this._tourShow(this._tour.i - 1);
+    wrap.querySelector(".tour-next").onclick = () => {
+      if (this._tour.i >= this._tour.steps.length - 1) this._tourEnd();
+      else this._tourShow(this._tour.i + 1);
+    };
+    this._tourKey = (e) => {
+      if (!this._tour) return;
+      if (e.key === "Escape") this._tourEnd();
+      else if (e.key === "Enter" || e.key === "ArrowRight") { e.preventDefault(); wrap.querySelector(".tour-next").click(); }
+      else if (e.key === "ArrowLeft") this._tourShow(this._tour.i - 1);
+    };
+    this._tourReflow = () => { if (this._tour) this._tourShow(this._tour.i); };
+  },
+  _tourShow(i) {
+    const t = this._tour; if (!t) return;
+    i = Math.max(0, Math.min(t.steps.length - 1, i)); t.i = i;
+    const step = t.steps[i], el = this._tourEl;
+    el.querySelector(".tour-step").textContent = `${i + 1} / ${t.steps.length}`;
+    el.querySelector(".tour-title").innerHTML = step.title;
+    el.querySelector(".tour-body").innerHTML = step.body;
+    el.querySelector(".tour-back").style.visibility = i === 0 ? "hidden" : "";
+    el.querySelector(".tour-next").textContent = i >= t.steps.length - 1 ? "Done" : "Next";
+    const spot = el.querySelector(".tour-spot"), card = el.querySelector(".tour-card");
+    const target = step.el && document.querySelector(step.el);
+    if (target) {
+      target.scrollIntoView({ block: "nearest", inline: "nearest" });
+      const r = target.getBoundingClientRect(), pad = 6, cardW = 320;
+      el.style.background = "transparent";              // the spot's ring does the dimming
+      spot.style.display = "";
+      spot.style.left = (r.left - pad) + "px"; spot.style.top = (r.top - pad) + "px";
+      spot.style.width = (r.width + pad * 2) + "px"; spot.style.height = (r.height + pad * 2) + "px";
+      card.classList.remove("tour-center");
+      const left = Math.min(Math.max(8, r.left + r.width / 2 - cardW / 2), window.innerWidth - cardW - 8);
+      card.style.left = left + "px";
+      if (window.innerHeight - r.bottom > 190) { card.style.top = (r.bottom + 12) + "px"; card.style.bottom = ""; }
+      else { card.style.top = ""; card.style.bottom = (window.innerHeight - r.top + 12) + "px"; }
+    } else {
+      spot.style.display = "none";
+      el.style.background = "rgba(4,8,12,.72)";          // full dim for centered steps
+      card.classList.add("tour-center");
+      card.style.left = ""; card.style.top = ""; card.style.bottom = "";
+    }
+  },
+  _tourEnd() {
+    if (this._tourEl) this._tourEl.hidden = true;
+    window.removeEventListener("keydown", this._tourKey);
+    window.removeEventListener("resize", this._tourReflow);
+    this._tour = null;
+    try { localStorage.setItem("cs2dp_tour_v1", "done"); } catch (e) { /* private mode */ }
+  },
+  _maybeAutoTour() {
+    if (this._tourChecked) return;
+    this._tourChecked = true;
+    let seen = null;
+    try { seen = localStorage.getItem("cs2dp_tour_v1"); } catch (e) { seen = "done"; }   // private mode: don't nag
+    if (!seen) setTimeout(() => { if (document.body.classList.contains("on-dashboard")) this.startTour(false); }, 700);
+  },
+
   _renderDashJobs(list) {
     const el = $("dashJobs");
     if (!list.length) { el.innerHTML = ""; el.classList.remove("show"); return; }
@@ -1106,6 +1203,7 @@ const App = {
       e.target.value = "";                              // allow re-picking the same file(s)
     };
     $("libraryBtn").onclick = () => this.openLibrary();
+    { const th = $("tourHelp"); if (th) th.onclick = () => this.startTour(true); }
     $("sideCollapse").onclick = () => this.setRightPanel(false);
     $("sideRestore").onclick = () => this.setRightPanel(true);
     if (localStorage.getItem("cs2dp_rpanel") === "0") this.setRightPanel(false);   // restore saved state
