@@ -23,6 +23,14 @@ def test_below_thresholds_drop():
     assert nadeclusters.cluster_throws([_t(), _t(), _t()], ["d1", "d1", "d1"]) == []  # < min_matches
 
 
+def test_single_demo_two_throws_surfaces_at_min2():
+    """#26: a spot thrown TWICE in ONE demo surfaces with the suggest settings (min_throws=2,
+    min_matches=1) but NOT with the default min_throws=3 -- which is why real demos used to look empty."""
+    throws = [_t(lx=100, ly=100), _t(lx=120, ly=105)]   # same spot, same demo
+    assert nadeclusters.cluster_throws(throws, ["d1", "d1"], min_throws=2, min_matches=1)[0]["count"] == 2
+    assert nadeclusters.cluster_throws(throws, ["d1", "d1"]) == []          # default min_throws=3 -> dropped
+
+
 def test_steamid_filter():
     throws = [_t(sid="S1"), _t(sid="S1"), _t(sid="S2"), _t(sid="S2"), _t(sid="S2")]
     res = nadeclusters.cluster_throws(throws, ["d1", "d2", "d1", "d2", "d3"], steamid="S2")

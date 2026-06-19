@@ -1305,7 +1305,11 @@ def nades_suggest():
     player = request.args.get("player") or None
     mp = request.args.get("map") or None
     sha = request.args.get("sha") or None      # restrict to the demo being watched (not other demos on the map)
-    cl = nadeclusters.find_consistent(CACHE, steamid=player, map_filter=mp, min_matches=1, only_sha=sha)
+    # min_throws=2 for the single-demo view: a spot thrown TWICE in one match is already a repeatable
+    # setup worth one-click-adding. (3+ across a single demo almost never happens, so suggestions used
+    # to come back empty on real demos -- the sample only filled up because it's a synthetic match.)
+    cl = nadeclusters.find_consistent(CACHE, steamid=player, map_filter=mp,
+                                      min_throws=2, min_matches=1, only_sha=sha)
     return _nostore({"total": len(cl), "map": mp, "sha": sha,
                      "suggestions": [dict(c, nade=nadeclusters.to_nade(c)) for c in cl[:40]]})
 

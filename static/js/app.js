@@ -2001,17 +2001,28 @@ const App = {
       el.innerHTML = `<div class="empty">Upload a couple of your own matches and your squad auto-builds from who you play with.</div>`;
       return;
     }
-    const you = (sq.you && sq.you.steamid) ? `<div class="sqd-row sqd-you"><span class="sqd-n"><b>${esc(sq.you.name || "You")}</b></span><span class="round">you</span></div>` : "";
+    const nm = (sid, inner, title) => `<span class="sqd-n lnk" data-sid="${esc(sid)}" title="${esc(title)}">${inner}</span>`;
+    const you = (sq.you && sq.you.steamid) ? `<div class="sqd-row sqd-you">${nm(sq.you.steamid, "<b>" + esc(sq.you.name || "You") + "</b>", "View your trend")}<span class="round">you</span></div>` : "";
     const members = (sq.squad || []).map(p =>
-      `<div class="sqd-row"><span class="sqd-n">${esc(p.name)}</span><span class="round">${p.shared} match${p.shared === 1 ? "" : "es"}</span>`
+      `<div class="sqd-row">${nm(p.steamid, esc(p.name), "View " + (p.name || "player") + "'s trend")}<span class="round">${p.shared} match${p.shared === 1 ? "" : "es"}</span>`
       + `<button class="sqd-btn sqd-rm" data-sid="${esc(p.steamid)}" data-name="${esc(p.name)}" title="Remove from squad">&times;</button></div>`).join("")
       || `<div class="empty">No regular teammates yet — play 2+ matches with someone.</div>`;
     const cands = (sq.candidates || []).slice(0, 8).map(p =>
-      `<div class="sqd-row sqd-cand"><span class="sqd-n">${esc(p.name)}</span><span class="round">${p.shared} match${p.shared === 1 ? "" : "es"}</span>`
+      `<div class="sqd-row sqd-cand">${nm(p.steamid, esc(p.name), "View " + (p.name || "player") + "'s trend")}<span class="round">${p.shared} match${p.shared === 1 ? "" : "es"}</span>`
       + `<button class="sqd-btn sqd-add" data-sid="${esc(p.steamid)}" data-name="${esc(p.name)}" title="Add to squad">+</button></div>`).join("");
     el.innerHTML = you + members + (cands ? `<div class="sqd-sub">Suggestions</div>${cands}` : "");
     el.querySelectorAll(".sqd-add").forEach(b => b.onclick = () => this._curateSquad(b.dataset.sid, b.dataset.name, "add"));
     el.querySelectorAll(".sqd-rm").forEach(b => b.onclick = () => this._curateSquad(b.dataset.sid, b.dataset.name, "remove"));
+    el.querySelectorAll(".sqd-n.lnk").forEach(s => s.onclick = () => this._showPlayerTrend(s.dataset.sid));   // #24
+  },
+  // #24: clicking a teammate's name focuses their profile/trend in the trends view.
+  _showPlayerTrend(sid) {
+    if (!sid) return;
+    const sel = $("trPlayer");
+    if (sel && [...sel.options].some(o => o.value === String(sid))) sel.value = String(sid);
+    this.renderTrend(String(sid), ($("trMap") && $("trMap").value) || "all");
+    this.renderTendencies(String(sid));
+    const tb = $("trBody"); if (tb) tb.scrollIntoView({ block: "nearest", behavior: "smooth" });
   },
   async _curateSquad(steamid, name, action) {
     try {
@@ -3476,7 +3487,7 @@ const App = {
       <span class="side-${s.side}">${s.side.toUpperCase()}</span> <b>${esc(s.type)}</b>
       <span class="round">${esc(s.name || "")} &middot; ${s.count}&times; thrown</span>
       <button class="up-btn sg-add" data-sg="${i}">+ add</button></div>`).join("")
-      : `<div class="rv-empty">No repeated ${tf === "all" ? "utility" : esc(tf)} thrown 3+ times in this ${esc(mapn)} demo.</div>`;
+      : `<div class="rv-empty">No repeated ${tf === "all" ? "utility" : esc(tf)} in this ${esc(mapn)} demo yet — a lineup shows up here once it's thrown 2+ times from the same spot.${tf !== "all" ? " (Type filter: " + esc(tf) + ".)" : ""}</div>`;
     el.innerHTML = head(rows);
     el.querySelector(".sg-close").onclick = () => this.closeSuggest();
     el.querySelectorAll(".lib-sg").forEach(row => row.onclick = (e) => {
