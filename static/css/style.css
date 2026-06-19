@@ -960,14 +960,18 @@ textarea.lf-in{height:46px;resize:vertical;font-family:inherit}
 .lib-list{max-height:64vh;overflow:auto;display:flex;flex-direction:column;gap:6px}
 .lib-empty{color:var(--mut);font-size:13px;text-align:center;padding:26px 12px;line-height:1.5}
 .lib-empty b{color:var(--txt)}
-.lib-row{display:flex;align-items:center;gap:12px;padding:9px 11px;background:#0c1116;
-  border:1px solid var(--line);border-radius:9px}
-.lib-row:hover{border-color:#26303d;background:#0e141b}
+.lib-row{display:flex;align-items:center;gap:12px;padding:11px 13px;background:#0c1116;
+  border:1px solid var(--line);border-radius:9px;position:relative;background-size:cover;background-position:center 35%}
+.lib-row.has-bg{min-height:54px}
+.lib-row:hover{border-color:#3a4757}                 /* no background reset -> the map art stays on hover */
 .lib-map{flex:0 0 92px;font-weight:700;font-size:13px;text-transform:capitalize;letter-spacing:.2px;
   color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lib-mid{flex:1;min-width:0}
-.lib-name{font-size:13px;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lib-name{font-size:15px;font-weight:700;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:.2px}
 .lib-meta{color:var(--mut);font-size:11px;margin-top:2px}
+.lib-row.has-bg .lib-name{color:#fff}
+.lib-row.has-bg .lib-meta{color:#cdd6e0}
+.lib-row.has-bg .lib-name,.lib-row.has-bg .lib-meta,.lib-row.has-bg .lib-score{text-shadow:0 1px 3px rgba(0,0,0,.85)}
 .lib-stale{display:inline-block;margin-left:8px;font-size:9px;font-weight:700;text-transform:uppercase;
   letter-spacing:.4px;color:#1a1207;background:var(--accent);border-radius:6px;padding:1px 5px;vertical-align:1px}
 .lib-score{flex:0 0 auto;font-weight:800;font-size:16px;color:var(--txt);font-variant-numeric:tabular-nums;

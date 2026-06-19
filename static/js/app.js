@@ -1596,6 +1596,23 @@ const App = {
         '<div class="lib-empty">Could not load the library (is the server running?)</div>'; });
   },
 
+  // de_dust2 -> "Dust2", de_mirage -> "Mirage" (clean card titles instead of raw filenames, #21)
+  _prettyMap(map) {
+    if (!map) return "Unknown map";
+    const m = String(map).replace(/^(de|cs|ar)_/i, "");
+    return m ? m.charAt(0).toUpperCase() + m.slice(1) : "Unknown map";
+  },
+  // map -> loading-screen background image for the library card (null = no art, card stays solid). #21
+  _mapBg(map) {
+    const BG = {
+      de_ancient: "de_ancient.jpg", de_anubis: "de_anubis.jpg", de_cache: "de_cache.png",
+      de_dust2: "de_dust2.webp", de_mirage: "de_mirage.webp", de_inferno: "de_inferno.avif",
+      de_nuke: "de_nuke.jpg", de_overpass: "de_overpass.webp",
+    };
+    const f = BG[String(map || "").toLowerCase()];
+    return f ? "static/img/mapbg/" + f : null;
+  },
+
   renderLibrary(demos) {
     $("demoLibCount").textContent = demos.length ? `(${demos.length})` : "";
     const list = $("libList");
@@ -1607,19 +1624,25 @@ const App = {
     list.innerHTML = demos.map(d => {
       const sc = d.score || { ct: 0, t: 0 };
       const when = this._fmtDate(d.date);
+      const pretty = this._prettyMap(d.map);
+      const bg = this._mapBg(d.map);
       const stale = d.stale
         ? '<span class="lib-stale" title="Parsed with an older app version -- re-upload to refresh">outdated</span>'
         : "";
-      return '<div class="lib-row" data-id="' + esc(d.id) + '">'
-        + '<div class="lib-map">' + esc(d.map || "?") + '</div>'
-        + '<div class="lib-mid"><div class="lib-name">' + esc(d.name || d.id) + stale + '</div>'
-        +   '<div class="lib-meta">' + (d.rounds || 0) + ' rounds'
-        +     (when ? ' &middot; ' + esc(when) : '') + '</div></div>'
+      const meta = [(d.rounds || 0) + ' rounds', when].filter(Boolean).join(' · ');
+      const label = [pretty, when].filter(Boolean).join(' · ');   // for the delete confirm, not the raw filename
+      // background = a dark left->right gradient over the map's loading-screen art (text stays readable);
+      // raw filename moves to the hover tooltip (#21: cards read like match history, not a file list).
+      const style = bg ? ' style="background-image:linear-gradient(90deg,rgba(13,16,21,.93),rgba(13,16,21,.60)),url(' + bg + ')"' : '';
+      return '<div class="lib-row' + (bg ? ' has-bg' : '') + '" data-id="' + esc(d.id) + '" data-label="' + esc(label) + '"'
+        + ' title="' + esc(d.name || d.id) + '"' + style + '>'
+        + '<div class="lib-mid"><div class="lib-name">' + esc(pretty) + stale + '</div>'
+        +   '<div class="lib-meta">' + esc(meta) + '</div></div>'
         + '<div class="lib-score">' + sc.ct + '<span>:</span>' + sc.t + '</div>'
         + ((this.myTeams && this.myTeams.length)
             ? '<button class="lib-share btn ghost sm" title="Share this match with a team">Share</button>' : '')
         + '<button class="btn primary lib-view">View</button>'
-        + '<button class="lib-del" title="Delete this demo and free its disk space">&#128465;</button></div>';
+        + '<button class="lib-del" title="Remove this demo from your library">&#128465;</button></div>';
     }).join("");
     list.querySelectorAll(".lib-row").forEach(row => {
       row.querySelector(".lib-view").onclick = () => this.viewLibraryDemo(row.dataset.id);
@@ -1627,16 +1650,16 @@ const App = {
       if (sh) sh.onclick = (e) => { e.stopPropagation(); this.shareDemo(row.dataset.id); };
       row.querySelector(".lib-del").onclick = (e) => {
         e.stopPropagation();
-        this.deleteLibraryDemo(row.dataset.id, row.querySelector(".lib-name").textContent.trim(), row);
+        this.deleteLibraryDemo(row.dataset.id, row.dataset.label || row.querySelector(".lib-name").textContent.trim(), row);
       };
     });
   },
 
   async deleteLibraryDemo(id, name, rowEl) {
-    const body = `<div class="cf-line">Delete <b>${esc(name || id)}</b>?</div>`
-      + `<div class="cf-line cf-mut">Removes the parsed demo, its cache, and the raw .dem from disk. `
-      + `You can re-upload the .dem later (e.g. to refresh it with crouch data).</div>`;
-    if (!(await this.askConfirm("Delete this demo?", body, "Delete"))) return;
+    const body = `<div class="cf-line">Remove <b>${esc(name || id)}</b> from your library?</div>`
+      + `<div class="cf-line cf-mut">This removes the match and its replay from your library. `
+      + `It can't be undone — you'd need to re-upload the demo to view it again.</div>`;
+    if (!(await this.askConfirm("Remove this demo?", body, "Remove"))) return;
     const res = await fetch("api/demo/" + encodeURIComponent(id), { method: "DELETE" })
       .then(r => r.json()).catch(() => null);
     if (!res || !res.ok) { this._toast && this._toast("Could not delete that demo."); return; }

@@ -15,7 +15,7 @@ vantagegg.com {
     # don't re-download them. The app serves these no-cache by default (right for app.js, wasteful for
     # immutable geometry) -- so we DELETE the upstream Cache-Control and set our own (header_down
     # replaces; otherwise the app's no-cache also rides along and wins). 30 days, revalidates after.
-    @mapassets path /static/maps3d/* /static/maps/*
+    @mapassets path /static/maps3d/* /static/maps/* /static/img/*
     handle @mapassets {
         reverse_proxy 127.0.0.1:8770 {
             header_down Cache-Control "public, max-age=2592000"   # replaces the app's no-cache for these
