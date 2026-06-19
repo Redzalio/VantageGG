@@ -966,17 +966,16 @@ export class View3D {
     ctx.beginPath(); ctx.arc(cx, cy, 3.8, 0, Math.PI * 2); ctx.fillStyle = "#ffd45b"; ctx.fill();
     ctx.strokeStyle = "#ff5b5b"; ctx.beginPath(); ctx.moveTo(cx - 16, cy + 10); ctx.lineTo(cx + 16, cy - 10); ctx.stroke();
   }
-  _drawLabel(lbl, name, hp, nameHex, flashFrac, gun, num) {
+  _drawLabel(lbl, name, hp, nameHex, flashFrac, gun) {
     const fq = Math.round((flashFrac || 0) * 8);   // quantize so the ring redraws in ~8 steps, not every frame
-    const key = name + "|" + hp + "|" + nameHex + "|" + fq + "|" + (gun || "") + "|" + (num || "");
+    const key = name + "|" + hp + "|" + nameHex + "|" + fq + "|" + (gun || "");
     if (lbl.last === key) return;               // only redraw on change (cheap most frames)
     lbl.last = key;
     const ctx = lbl.ctx, W = 256;
     ctx.clearRect(0, 0, W, 128);
     if (flashFrac > 0) this._drawCrossedEye(ctx, W / 2, 15, flashFrac);   // above the healthbar/name
     ctx.fillStyle = "rgba(8,11,15,0.72)"; ctx.fillRect(6, 32, W - 12, 90);
-    const nm0 = name.length > 14 ? name.slice(0, 13) + "..." : name;
-    const nm = num ? num + "  " + nm0 : nm0;     // jersey number prefix (#12), e.g. "3  s1mple"
+    const nm = name.length > 16 ? name.slice(0, 15) + "..." : name;   // no jersey number here (it lives on the 2D dot)
     ctx.font = "bold 26px Inter, system-ui, sans-serif";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillStyle = nameHex; ctx.fillText(nm, W / 2, 52);
@@ -1198,7 +1197,7 @@ export class View3D {
       // text -- the sidebar loadout icons show what they hold.
       const fpk = p.flash > 0.5 ? Math.min(1, p.flash / (this.demo.flashPeakAt(i, state.t) || 5)) : 0;
       this._drawLabel(pl.label, this.demo.players[i].name, Math.max(0, Math.round(p.hp)),
-        p.team === 3 ? "#8fb8ff" : "#ff8f8f", fpk, p.weapon, p.num);
+        p.team === 3 ? "#8fb8ff" : "#ff8f8f", fpk, p.weapon);
       // Keep the nameplate a roughly constant on-screen size: sprites are sized in WORLD units, so a
       // fixed scale dwarfs the model up close and shrinks to nothing at range. Scale ~linearly with
       // camera distance (clamped), and fold in the dot-size slider so it drives 3D too (#11/#12).
