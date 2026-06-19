@@ -538,13 +538,13 @@ body.on-landing #topbar .actions > *:not(#authBox){display:none}
 .nslot{position:relative;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;
   border-radius:3px;background:#0c1116;border:1px solid var(--line);color:#39424d}
 .nslot svg{width:12px;height:12px;display:block}
-.nslot.have{color:#cfd6de;background:#12181f}
+.nslot.have{color:#cfd6de;background:#12181f;opacity:.4}   /* owned but not in hand -> dimmed */
 .nslot.ns-flash.have{color:#ffd45b;border-color:#5a4a22}
 .nslot.ns-smoke.have{color:#d2d6dd;border-color:#3c4654}
 .nslot.ns-he.have{color:#ff8a3d;border-color:#5a3a22}
 .nslot.ns-molotov.have{color:#ff6a2b;border-color:#5a3320}
 .nslot.ns-decoy.have{color:#9aa4b2;border-color:#3a434e}
-.nslot.sel{box-shadow:0 0 6px 1px currentColor;border-color:currentColor}   /* the SELECTED (active) nade glows */
+.nslot.sel{box-shadow:0 0 6px 1px currentColor;border-color:currentColor;opacity:1}   /* in hand -> full brightness + glow */
 .nslot .nx{position:absolute;right:-2px;bottom:-3px;font-size:8px;font-style:normal;font-weight:700;
   color:#fff;background:#222a33;border:1px solid #0c1116;border-radius:4px;padding:0 1px;line-height:1.2}
 /* gun + armor/kit icons (icon-only; exact name on hover) */
@@ -993,6 +993,7 @@ textarea.lf-in{height:46px;resize:vertical;font-family:inherit}
 
 /* viewport */
 .viewport{position:relative;background:#05070a;min-width:0;overflow:hidden}
+.pov-flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;z-index:5;transition:opacity .1s linear}
 #canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:none}
 #canvas:active{cursor:grabbing}
 .canvas3d{position:absolute;inset:0;width:100%;height:100%;display:none;z-index:2;cursor:crosshair}

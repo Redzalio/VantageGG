@@ -2218,7 +2218,7 @@ const App = {
     const hud = $("fpHud");
     const on = this._camPreset === "fp" && this.view3d.active && this.view3d.followIdx >= 0;
     const p = on && state ? state.players[this.view3d.followIdx] : null;
-    if (!p || !p.alive) { hud.classList.remove("show"); return; }
+    if (!p || !p.alive) { hud.classList.remove("show"); this._setPovFlash(0); return; }
     hud.classList.add("show");
     hud.classList.toggle("ct", p.team === 3);
     hud.classList.toggle("t", p.team !== 3);
@@ -2233,6 +2233,20 @@ const App = {
       if (p.reload) { ammo.textContent = "RELOADING"; ammo.classList.add("reloading"); }
       else { ammo.innerHTML = `<span class="cur">${p.clip}</span> / ${cap}`; ammo.classList.remove("reloading"); }
     } else { ammo.textContent = ""; ammo.classList.remove("reloading"); }
+    // POV "blindness": a white veil scaled by how flashed the spectated player is (peaks ~40%).
+    const peak = (this.demo.flashPeakAt && this.demo.flashPeakAt(this.view3d.followIdx, this.t)) || 5;
+    this._setPovFlash(p.flash > 0 ? Math.min(1, p.flash / peak) * 0.4 : 0);
+  },
+  // White full-screen veil over the 3D view for the flash effect (lazy-created, opacity 0 = hidden).
+  _setPovFlash(op) {
+    let el = this._povFlashEl;
+    if (!el) {
+      const vp = document.querySelector(".viewport");
+      if (!vp) return;
+      el = document.createElement("div"); el.className = "pov-flash"; vp.appendChild(el);
+      this._povFlashEl = el;
+    }
+    el.style.opacity = op > 0.01 ? op.toFixed(2) : "0";
   },
 
   // --- round strip / timeline markers --------------------------------------
