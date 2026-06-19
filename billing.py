@@ -84,6 +84,9 @@ def create_checkout_session(user, period, base_url):
         "cancel_url": base + "/?checkout=cancel",
         "client_reference_id": uid,
         "allow_promotion_codes": True,
+        # collect a card only when something's actually due now -> a 100%-off comp code (FOUNDERS)
+        # checks out with NO card; paid plans still collect one normally.
+        "payment_method_collection": "if_required",
         "metadata": {"uid": uid, "period": period, "steam_id": str(user.get("steam_id_64") or "")},
         # uid on the subscription too -> subscription.* webhooks can find the user even out of order
         "subscription_data": {"metadata": {"uid": uid, "period": period}},
