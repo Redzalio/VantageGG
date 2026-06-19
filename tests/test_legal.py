@@ -1,5 +1,6 @@
 """Public policy pages (Terms/Privacy/Cookies/Refunds): served as standalone HTML, work logged-out,
-carry the standard sections + the not-legal-advice disclaimer."""
+carry the operator's content with the brand normalized to VantageGG / vantagegg.com and the
+hexlynx@gmail.com contact."""
 import os
 import sys
 
@@ -18,30 +19,40 @@ def test_legal_routes_render(tmp_path, monkeypatch):
     monkeypatch.setenv("AUTH_REQUIRED", "1")          # even on a locked site, policy pages are public
     c = app.app.test_client()
     app._rl_hits.clear()
-    expect = {
-        "terms": "Terms of Service",
-        "privacy": "Privacy Policy",
-        "cookies": "Cookie Policy",
-        "refunds": "Refund",
-    }
+    expect = {"terms": "Terms of Service", "privacy": "Privacy Policy",
+              "cookies": "Cookie Policy", "refunds": "Refund"}
     for slug, must in expect.items():
         r = c.get("/" + slug)
         assert r.status_code == 200, slug
         assert r.headers["Content-Type"].startswith("text/html")
         body = r.get_data(as_text=True)
         assert must in body
-        assert "not legal advice" in body            # disclaimer always present
         assert "Last updated" in body
-        # links to the other policies + contact are present
-        assert "/privacy" in body and "mailto:" in body
+        # brand normalized + correct contact (the source docs said VancedGG / vancedgg.com)
+        assert "VantageGG" in body and "VancedGG" not in body
+        assert "vancedgg.com" not in body
+        assert "hexlynx@gmail.com" in body
 
 
-def test_privacy_mentions_key_data_and_stripe():
-    body = legal.render("privacy")
-    for kw in ("SteamID", "Stripe", "compact stats", "delete"):
-        assert kw.lower() in body.lower(), kw
+def test_brand_and_domain_substituted():
+    for slug in legal.slugs():
+        body = legal.render(slug)
+        assert "vancedgg" not in body.lower()
+        assert "VantageGG" in body
+
+
+def test_privacy_mentions_key_data():
+    body = legal.render("privacy").lower()
+    for kw in ("steamid64", "payment processor", "compact stats", "delete", "pennsylvania"):
+        assert kw in body, kw
 
 
 def test_cookies_no_tracking_claim():
     body = legal.render("cookies").lower()
     assert "essential" in body and "tracking" in body
+
+
+def test_intros_note_not_legal_advice():
+    # the cookie/privacy/refund docs carry their own "not legal advice" caveat in the intro
+    for slug in ("cookies", "privacy", "refunds"):
+        assert "not legal advice" in legal.render(slug).lower(), slug
