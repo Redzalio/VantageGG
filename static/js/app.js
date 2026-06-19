@@ -1610,7 +1610,9 @@ const App = {
       de_nuke: "de_nuke.jpg", de_overpass: "de_overpass.webp",
     };
     const f = BG[String(map || "").toLowerCase()];
-    return f ? "static/img/mapbg/" + f : null;
+    // root-absolute: this feeds a CSS url() in a custom property, which resolves relative to the
+    // STYLESHEET (static/css/) not the document -- a leading slash avoids static/css/static/... 404s.
+    return f ? "/static/img/mapbg/" + f : null;
   },
 
   renderLibrary(demos) {
@@ -1631,9 +1633,9 @@ const App = {
         : "";
       const meta = [(d.rounds || 0) + ' rounds', when].filter(Boolean).join(' · ');
       const label = [pretty, when].filter(Boolean).join(' · ');   // for the delete confirm, not the raw filename
-      // background = a dark left->right gradient over the map's loading-screen art (text stays readable);
-      // raw filename moves to the hover tooltip (#21: cards read like match history, not a file list).
-      const style = bg ? ' style="background-image:linear-gradient(90deg,rgba(13,16,21,.93),rgba(13,16,21,.60)),url(' + bg + ')"' : '';
+      // background = the map's loading-screen art at 50% opacity (rendered in a ::before layer via
+      // this CSS var); raw filename moves to the hover tooltip (#21: cards read like match history).
+      const style = bg ? ' style="--cardbg:url(\'' + bg + '\')"' : '';
       return '<div class="lib-row' + (bg ? ' has-bg' : '') + '" data-id="' + esc(d.id) + '" data-label="' + esc(label) + '"'
         + ' title="' + esc(d.name || d.id) + '"' + style + '>'
         + '<div class="lib-mid"><div class="lib-name">' + esc(pretty) + stale + '</div>'

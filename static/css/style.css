@@ -961,9 +961,12 @@ textarea.lf-in{height:46px;resize:vertical;font-family:inherit}
 .lib-empty{color:var(--mut);font-size:13px;text-align:center;padding:26px 12px;line-height:1.5}
 .lib-empty b{color:var(--txt)}
 .lib-row{display:flex;align-items:center;gap:12px;padding:11px 13px;background:#0c1116;
-  border:1px solid var(--line);border-radius:9px;position:relative;background-size:cover;background-position:center 35%}
+  border:1px solid var(--line);border-radius:9px;position:relative;overflow:hidden}
 .lib-row.has-bg{min-height:54px}
-.lib-row:hover{border-color:#3a4757}                 /* no background reset -> the map art stays on hover */
+/* map art as a 50%-opacity layer behind the card content (url comes from the inline --cardbg var) */
+.lib-row.has-bg::before{content:"";position:absolute;inset:0;background:var(--cardbg) center 35%/cover no-repeat;opacity:.5;z-index:0;pointer-events:none}
+.lib-row.has-bg > *{position:relative;z-index:1}      /* content stays above the 50% image */
+.lib-row:hover{border-color:#3a4757}
 .lib-map{flex:0 0 92px;font-weight:700;font-size:13px;text-transform:capitalize;letter-spacing:.2px;
   color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lib-mid{flex:1;min-width:0}
