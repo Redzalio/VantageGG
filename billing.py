@@ -14,6 +14,7 @@ The user id travels in client_reference_id AND subscription metadata, so any web
 account regardless of delivery order; the Stripe customer is also linked to the user on first checkout.
 """
 import datetime
+import json
 import os
 
 try:
@@ -22,6 +23,16 @@ except ImportError:                      # lib not installed (e.g. minimal local
     stripe = None
 
 import db
+
+
+def _plain(o):
+    """Recursively convert a Stripe object into plain dicts/lists. Stripe's StripeObject is NOT a dict
+    subclass in v10+ (no .get()), so we normalize before our handler logic touches it."""
+    if isinstance(o, list):
+        return [_plain(x) for x in o]
+    if hasattr(o, "keys"):
+        return {k: _plain(o[k]) for k in o.keys()}
+    return o
 
 # period key (pricing.py) -> Stripe price lookup_key (set on the prices in tools/stripe_seed.py)
 LOOKUP = {"monthly": "pro_monthly", "q": "pro_q", "h": "pro_h", "year": "pro_year"}
@@ -117,7 +128,8 @@ def verify_event(payload_bytes, sig_header):
     secret = os.environ.get("STRIPE_WEBHOOK_SECRET") or ""
     if not s or not secret:
         raise RuntimeError("billing webhook not configured (STRIPE_WEBHOOK_SECRET unset)")
-    return s.Webhook.construct_event(payload_bytes, sig_header, secret)
+    s.Webhook.construct_event(payload_bytes, sig_header, secret)   # verify signature (raises on bad)
+    return json.loads(payload_bytes)        # process the verified raw payload as a plain dict
 
 
 def _retrieve_sub(sub_id):
@@ -127,6 +139,16 @@ def _retrieve_sub(sub_id):
     try:
         return s.Subscription.retrieve(sub_id)
     except Exception:
+        return None
+
+
+def _period_end(sub):
+    """current_period_end moved from the subscription top level to the subscription ITEM level in
+    recent Stripe API versions; read it from the first item."""
+    try:
+        items = (sub.get("items") or {}).get("data") or []
+        return items[0].get("current_period_end") if items else None
+    except (AttributeError, IndexError, TypeError):
         return None
 
 
@@ -154,7 +176,7 @@ def _grant(uid, sub):
         return False
     status = sub.get("status")
     if status in ACTIVE_STATES:
-        cpe = sub.get("current_period_end")
+        cpe = sub.get("current_period_end") or _period_end(sub)   # moved to item level in recent APIs
         pro_until = None
         if cpe:
             # naive-local ISO to match app._pro_expired's datetime.now() comparison (Docker TZ = UTC)
