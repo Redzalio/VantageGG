@@ -47,6 +47,12 @@ def test_privacy_mentions_key_data():
         assert kw in body, kw
 
 
+def test_payment_processor_named():
+    # Stripe is named in the docs that cover payments
+    for slug in ("terms", "privacy", "refunds"):
+        assert "stripe" in legal.render(slug).lower(), slug
+
+
 def test_cookies_no_tracking_claim():
     body = legal.render("cookies").lower()
     assert "essential" in body and "tracking" in body

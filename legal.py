@@ -217,8 +217,8 @@ practice goals, notes, bookmarks, reviews, playbook items, and saved utility/nad
 </ul>
 <h3>Payment and subscription information</h3>
 <ul>
-  <li>If paid features are enabled, we may receive limited payment/subscription information from a payment processor, such as subscription status, plan, billing period, and transaction identifiers.</li>
-  <li>We do not intend to store full payment card numbers directly. Payment card processing should be handled by a third-party payment processor.</li>
+  <li>If paid features are enabled, we may receive limited payment/subscription information from our payment processor, Stripe, such as subscription status, plan, billing period, and transaction identifiers.</li>
+  <li>We do not store full payment card numbers directly. Payment card processing is handled by our third-party payment processor, Stripe, under its own terms and privacy policy.</li>
 </ul>
 <h3>Support and communications</h3>
 <ul><li>Emails, support requests, feedback, reports, and any information you choose to send us.</li></ul>
@@ -275,8 +275,8 @@ or bill for the Services. These providers should only use the information to pro
 team demos, team match data, notes, goals, statistics, and related collaboration information according
 to the app's permissions.</p>
 <h3>With payment processors</h3>
-<p>If paid subscriptions are enabled, payment information may be processed by a third-party payment
-provider. We should not store full payment card numbers directly.</p>
+<p>If paid subscriptions are enabled, payment information is processed by our third-party payment
+provider, Stripe. We do not store full payment card numbers directly.</p>
 <h3>For legal, safety, and security reasons</h3>
 <p>We may disclose information if we believe it is necessary to comply with law, enforce our Terms,
 protect users, investigate abuse or security incidents, prevent fraud, or protect the rights,
@@ -434,9 +434,10 @@ non-refundable once a billing period has started.</p>
 </ul>
 <p>We may ask for additional information to verify your account and the charge.</p>
 <h2>6. Processing refunds</h2>
-<p>If a refund is approved: refunds will usually be returned to the original payment method; processing
-time may depend on the payment processor, bank, or card network; and access to paid features may be
-removed or downgraded after the refund. If a refund is denied, we will try to explain the reason.</p>
+<p>If a refund is approved: refunds will usually be returned to the original payment method via our
+payment processor, Stripe; processing time may depend on Stripe, your bank, or card network; and
+access to paid features may be removed or downgraded after the refund. If a refund is denied, we will
+try to explain the reason.</p>
 <h2>7. Free trials and promotions</h2>
 <p>If {site} offers a free trial or promotional price, the terms should be shown at signup. Trial or
 promotional terms may include trial length; price after the trial or promotion ends; whether a payment
@@ -573,7 +574,9 @@ for any illegal or unauthorized purpose; and (5) your use of the Services will n
 applicable law or regulation. If you provide any information that is untrue, inaccurate, not current, or
 incomplete, we have the right to suspend or terminate your account.</p>
 <h2>4. Purchases and payment</h2>
-<p>We accept the following forms of payment: Visa, Mastercard, American Express.</p>
+<p>We accept the following forms of payment: Visa, Mastercard, and American Express. Payments are
+processed securely through our third-party payment processor, Stripe. We do not store full payment
+card numbers ourselves.</p>
 <p>You agree to provide current, complete, and accurate purchase and account information for all
 purchases made via the Services. You further agree to promptly update account and payment information,
 including email address, payment method, and payment card expiration date, so that we can complete your
