@@ -1146,21 +1146,50 @@ def api_dashboard():
     mode, sc = _scope_or_block()
     if mode == "blocked":
         return _nostore({"error": "login required"}), 401
-    matches = db.list_matches(scope=sc)
     g_uid = current_user_id()
     g_team_ids = set(db.team_ids_for_user(g_uid)) if g_uid else set()
+    # Workspace: which dashboard context to show. 'personal' (default) or 'team:<id>'. A team is only
+    # valid if the user belongs to it -- a foreign/unknown id is a clear 403 (the frontend then falls
+    # back to Personal). In pure local mode (no auth) there's no workspace split: show everything.
+    ws_raw = (request.args.get("workspace") or "personal").strip()
+    ws_team = None
+    if ws_raw.startswith("team:"):
+        try:
+            ws_team = int(ws_raw.split(":", 1)[1])
+        except (TypeError, ValueError):
+            ws_team = None
+        if ws_team is None or ws_team not in g_team_ids:
+            return _nostore({"error": "you are not on that team", "workspace": ws_raw}), 403
+    ws_scope = sc
+    if sc is not None:                                    # scoped (auth on): restrict to the one workspace
+        ws_scope = dict(sc)
+        ws_scope["workspace"] = ("team", ws_team) if ws_team is not None else "personal"
+        ws_label = "team:%d" % ws_team if ws_team is not None else "personal"
+    else:
+        ws_label = "personal"                            # local mode -> no real split
+    matches = db.list_matches(scope=ws_scope)
     try:
-        open_goals = [g for g in db.goals_visible(g_uid, g_team_ids)
-                      if g.get("status") in ("open", "drilling")]
+        # personal workspace -> only the user's own (non-team) goals; team workspace -> that team's goals
+        cand = db.goals_visible(g_uid, g_team_ids if ws_team is not None else set())
+        if ws_team is not None:
+            cand = [g for g in cand if g.get("team_id") == ws_team]
+        else:
+            cand = [g for g in cand if not g.get("team_id")]
+        open_goals = [g for g in cand if g.get("status") in ("open", "drilling")]
     except Exception:
         open_goals = []
-    active = [jobs._public(j) for j in jobs.list_jobs(owner_user_id=g_uid, active_only=True)]  # only your own uploads
-    # the signed-in user's own form (rating/K-D/ADR/KAST + trend), if they appear in their demos
+    # active parse jobs for THIS workspace (personal: untargeted; team: targeting that team)
+    active = []
+    for j in jobs.list_jobs(owner_user_id=g_uid, active_only=True):
+        jt = j.get("team_id")
+        if (ws_team is None and not jt) or (ws_team is not None and jt == ws_team):
+            active.append(jobs._public(j))
+    # the signed-in user's own form (rating/K-D/ADR/KAST + trend) WITHIN this workspace's matches
     me = None
     u = current_user()
     if u and u.get("steam_id_64"):
         try:
-            t = db.player_trends(u["steam_id_64"], scope=sc)
+            t = db.player_trends(u["steam_id_64"], scope=ws_scope)
             if t.get("n_matches"):
                 me = t
         except Exception:
@@ -1172,6 +1201,7 @@ def api_dashboard():
         "open_goals": open_goals[:6],
         "open_goal_count": len(open_goals),
         "me": me,
+        "workspace": ws_label,
     })
 
 

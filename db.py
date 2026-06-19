@@ -893,9 +893,24 @@ def _visibility(scope, sha_col="demos.sha1", exclude_archived=False):
     user_demos subquery references the OUTER demo, not its own inner sha1. ("", []) = unrestricted.
     `exclude_archived`: also require a NON-archived membership row -- so a demo whose replay the user
     deleted (kept only as compact stats) drops out of clickable match lists, while still counting toward
-    trends/profile (those callers leave this False)."""
+    trends/profile (those callers leave this False).
+
+    `scope["workspace"]` narrows to ONE dashboard context instead of the default own+team OR:
+      "personal"      -> only the user's own copies NOT assigned to a team
+      ("team", <id>)  -> only copies shared with that team (any member's), independent of `team_ids`."""
     if scope is None:
         return "", []
+    arch = " AND ud.archived=0" if exclude_archived else ""
+    ws = scope.get("workspace")
+    if ws == "personal":
+        uid = scope.get("uid")
+        if uid is None:
+            return "1=0", []                           # personal workspace needs a signed-in user
+        return ("EXISTS (SELECT 1 FROM user_demos ud WHERE ud.sha1=%s AND ud.user_id=? "
+                "AND ud.team_id IS NULL%s)" % (sha_col, arch)), [uid]
+    if isinstance(ws, (list, tuple)) and len(ws) == 2 and ws[0] == "team":
+        return ("EXISTS (SELECT 1 FROM user_demos ud WHERE ud.sha1=%s AND ud.team_id=?%s)"
+                % (sha_col, arch)), [ws[1]]
     parts, args = [], []
     if scope.get("ownerless"):
         parts.append("NOT EXISTS (SELECT 1 FROM user_demos ud WHERE ud.sha1=%s)" % sha_col)

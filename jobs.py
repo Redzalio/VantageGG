@@ -50,7 +50,7 @@ def _public(j):
             "progress": j["progress"], "error": j["error"], "demo_id": j["demo_sha1"],
             "created_at": j["created_at"], "started_at": j["started_at"],
             "finished_at": j["finished_at"],
-            "upload_ms": j.get("upload_ms"), "bytes": j.get("bytes")}
+            "upload_ms": j.get("upload_ms"), "bytes": j.get("bytes"), "team_id": j.get("team_id")}
 
 
 def create_job(filename, upload_path, owner_user_id=None, upload_ms=None, size_bytes=None, team_id=None):

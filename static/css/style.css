@@ -385,6 +385,15 @@ body.on-dashboard #topbar .match{display:none}
 .dq-continue:hover{background:#f3854c}
 .dq-ws{margin-left:auto;color:var(--mut);font-size:12px}
 .dq-ws b{color:var(--txt)}
+/* dashboard workspace switcher (Personal / per-team) -- a chip-styled native select */
+.dq-wsel{display:inline-flex;align-items:center;gap:6px}
+.dq-wssel{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:8px;
+  padding:4px 26px 4px 9px;font-size:12px;font-weight:600;cursor:pointer;
+  appearance:none;-webkit-appearance:none;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' fill='none' stroke='%238a93a0' stroke-width='1.5'/></svg>");
+  background-repeat:no-repeat;background-position:right 9px center}
+.dq-wssel:hover{border-color:#36424f}
+.dq-wssel:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 /* high-signal dashboard action cards */
 .dash-focus{display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:12px;margin-bottom:22px}
 .df-card{text-align:left;background:linear-gradient(180deg,#151c26,#101720);border:1px solid var(--line);border-radius:12px;padding:15px 16px;color:var(--txt);font:inherit;cursor:pointer;transition:.15s;min-height:126px;display:flex;flex-direction:column;align-items:flex-start}

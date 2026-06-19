@@ -418,12 +418,53 @@ const App = {
     else this.showDashboard();
   },
 
+  // ---- dashboard workspace (Personal vs a team context) -------------------
+  // The dashboard shows ONE context at a time. Default Personal; remembered in localStorage but always
+  // re-validated against the teams the user is actually on (so a left/disbanded team falls back cleanly).
+  _validWorkspace(ws) {
+    if (ws && ws.indexOf("team:") === 0) {
+      const id = +ws.slice(5);
+      if ((this.myTeams || []).some(t => t.id === id)) return ws;
+    }
+    return "personal";
+  },
+  _currentWorkspace() {
+    if (this.dashboardWorkspace == null) {
+      let saved = "personal";
+      try { saved = localStorage.getItem("cs2dp_dashboard_workspace") || "personal"; } catch (e) { /* ignore */ }
+      this.dashboardWorkspace = saved;
+    }
+    return this._validWorkspace(this.dashboardWorkspace);
+  },
+  _workspaceName(ws) {
+    if (ws && ws.indexOf("team:") === 0) {
+      const t = (this.myTeams || []).find(x => x.id === +ws.slice(5));
+      return t ? t.name : "Team";
+    }
+    return "Personal";
+  },
+  setWorkspace(ws) {
+    this.dashboardWorkspace = this._validWorkspace(ws);
+    try { localStorage.setItem("cs2dp_dashboard_workspace", this.dashboardWorkspace); } catch (e) { /* ignore */ }
+    if (document.body.classList.contains("on-dashboard")) this.loadDashboard();
+  },
+
   async loadDashboard() {
-    let d;
-    try { d = await fetch("/api/dashboard", { cache: "no-store" }).then(r => r.json()); }
-    catch (e) { d = null; }
+    const ws = this._currentWorkspace();
+    this.dashboardWorkspace = ws;                          // persist the sanitized value
+    let d = null, status = 0;
+    try {
+      const r = await fetch("/api/dashboard?workspace=" + encodeURIComponent(ws), { cache: "no-store" });
+      status = r.status; d = await r.json();
+    } catch (e) { d = null; }
+    if (status === 403 && ws !== "personal") {             // team vanished / lost access -> fall back
+      this.dashboardWorkspace = "personal";
+      try { localStorage.setItem("cs2dp_dashboard_workspace", "personal"); } catch (e) { /* ignore */ }
+      return this.loadDashboard();
+    }
     const nm = this.me && this.me.user && this.me.user.name;   // welcome the signed-in user
     $("dashTitle").textContent = nm ? `Welcome back, ${nm}` : "CS2 Demo Review";
+    this._renderDashSub(ws);
     this._renderDashQuick(d);
     if (!d || d.error) {                                  // auth required + not signed in
       $("dashEmpty").hidden = true;
@@ -455,6 +496,14 @@ const App = {
   _lastReview() {
     try { return JSON.parse(localStorage.getItem("cs2dp_last_review") || "null"); } catch (e) { return null; }
   },
+  // subtitle reflects the active workspace (left untouched for solo/local users with no teams)
+  _renderDashSub(ws) {
+    const sub = $("dashSub");
+    if (!sub) return;
+    if (ws.indexOf("team:") === 0) sub.textContent = `Team dashboard — ${this._workspaceName(ws)}.`;
+    else if ((this.myTeams || []).length) sub.textContent = "Your personal matches and goals.";
+    else sub.textContent = "Pick a match to review, or upload a new one.";
+  },
   _renderDashQuick(d) {
     const el = $("dashQuick");
     if (!el) return;
@@ -472,9 +521,20 @@ const App = {
     if (this._canUpgrade()) parts.push(`<button class="btn primary sm" data-q="upgrade">&#10022; Go Pro</button>`);
     const q = this.me && this.me.upload_quota;            // Free demo cap (absent/unlimited -> no chip)
     if (q && !q.unlimited) parts.push(`<span class="dq-ws" title="Free plan demo limit — Pro is unlimited">Demos: <b>${q.used}/${q.limit}</b></span>`);
-    const ws = (this.myTeams && this.myTeams.length) ? this.myTeams.map(t => esc(t.name)).join(", ") : "Personal";
-    parts.push(`<span class="dq-ws" title="Demos you can see">Workspace: <b>${esc(ws)}</b></span>`);
+    // Workspace switcher: Personal + each team. A real <select> when there are teams (mobile-safe,
+    // scales to many); a static chip when the user is solo (nothing to switch).
+    const teams = this.myTeams || [], cur = this._currentWorkspace();
+    if (teams.length) {
+      const opt = (v, label) => `<option value="${esc(v)}"${v === cur ? " selected" : ""}>${esc(label)}</option>`;
+      const opts = opt("personal", "Personal") + teams.map(t => opt("team:" + t.id, t.name)).join("");
+      parts.push(`<span class="dq-ws dq-wsel" title="Switch dashboard workspace">Workspace: `
+        + `<select id="dashWsSel" class="dq-wssel" aria-label="Dashboard workspace">${opts}</select></span>`);
+    } else {
+      parts.push(`<span class="dq-ws" title="Demos you can see">Workspace: <b>Personal</b></span>`);
+    }
     el.innerHTML = parts.join("");
+    const wsel = el.querySelector("#dashWsSel");
+    if (wsel) wsel.onchange = () => this.setWorkspace(wsel.value);
     const c = el.querySelector(".dq-continue");
     if (c) c.onclick = () => this.viewLibraryDemo(c.dataset.id);
     el.querySelectorAll("[data-q]").forEach(b => b.onclick = () => {
@@ -528,10 +588,17 @@ const App = {
     });
   },
   _renderDashEmpty() {
+    const ws = this._currentWorkspace();
+    const isTeam = ws.indexOf("team:") === 0;
+    const tName = this._workspaceName(ws);
     const el = $("dashEmpty");
-    el.innerHTML = `<h2>Upload your first demo</h2>`
-      + `<p>Drop a CS2 <b>.dem</b> (or a .zip of them) and you'll get a 2D replay, scoreboard, and basic stats. `
-      + `The first parse of a full match takes ~30&ndash;60s and runs in the background &mdash; you don't have to wait on the page.</p>`
+    const head = isTeam ? `Upload or share a demo to ${esc(tName)}` : "Upload your first demo";
+    const body = isTeam
+      ? `Demos you upload from here go to <b>${esc(tName)}</b>, and any match a teammate shares with the team shows up for everyone on it. `
+        + `You can also share an existing match to ${esc(tName)} from your library.`
+      : `Drop a CS2 <b>.dem</b> (or a .zip of them) and you'll get a 2D replay, scoreboard, and basic stats. `
+        + `The first parse of a full match takes ~30&ndash;60s and runs in the background &mdash; you don't have to wait on the page.`;
+    el.innerHTML = `<h2>${head}</h2><p>${body}</p>`
       + `<div class="des-actions"><button class="btn primary" data-e="upload">Upload a .dem</button>`
       + `<button class="btn" data-e="sample">Load the sample match</button>`
       + ((this.me && this.me.authenticated) ? `<button class="btn ghost" data-e="team">Create or join a team</button>` : "")
@@ -1393,7 +1460,11 @@ const App = {
     dz.addEventListener("drop", (e) => {
       $("dropHint").classList.remove("show");
       const fs = [...e.dataTransfer.files].filter(f => /\.(dem|zip)$/i.test(f.name));
-      if (fs.length) this._chooseUploadDest((dest) => this.upload(fs, dest.team_id));   // ask Personal/Team first
+      if (fs.length) {
+        const ws = this._currentWorkspace();
+        if (ws.indexOf("team:") === 0) this.upload(fs, +ws.slice(5));                   // team dashboard default
+        else this._chooseUploadDest((dest) => this.upload(fs, dest.team_id));           // else ask Personal/Team
+      }
     });
 
     // canvas mouse
@@ -1500,7 +1571,13 @@ const App = {
   // teams), THEN open the file picker. Solo users (no teams) skip the prompt and go straight to it.
   // onPick({team_id}) is called from within the choosing click so the file-picker gesture is preserved.
   startUpload() {
-    this._chooseUploadDest((dest) => {
+    const ws = this._currentWorkspace();
+    if (ws.indexOf("team:") === 0) {                      // a team dashboard -> default straight to it
+      this._pendingUploadTeam = +ws.slice(5);
+      $("fileInput").click();
+      return;
+    }
+    this._chooseUploadDest((dest) => {                    // Personal dashboard -> chooser (Personal/team)
       this._pendingUploadTeam = dest.team_id;             // read back in fileInput.onchange
       $("fileInput").click();
     });
@@ -1683,6 +1760,9 @@ const App = {
   // Open the library modal and (re)load its list from the server.
   openLibrary() {
     this.pausePlayback();
+    // opening the library from the dashboard mirrors the active workspace (Personal -> Personal tab,
+    // a team -> that team's tab); maps directly to the library filter keys ("personal" | "team:<id>")
+    if (document.body.classList.contains("on-dashboard")) this._libFilter = this._currentWorkspace();
     $("libraryModal").classList.add("show");
     $("libFilters").innerHTML = "";
     $("libList").innerHTML = '<div class="lib-empty">Loading...</div>';
