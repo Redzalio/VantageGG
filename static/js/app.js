@@ -241,7 +241,7 @@ const App = {
         : `<button class="team-leave btn sm" data-tid="${t.id}" data-name="${esc(t.name)}">Leave team</button>`;
       return `<div class="team-row"><div class="team-name">${esc(t.name)}<span class="team-role">${esc(t.role)}</span></div>`
         + `<div class="team-meta">${t.member_count} member${t.member_count === 1 ? "" : "s"}`
-        + (t.invite_code ? ` &middot; invite code <code class="team-code">${esc(t.invite_code)}</code>` : "")
+        + (t.invite_code ? ` &middot; <button class="team-copycode" data-code="${esc(t.invite_code)}">Copy invite code</button>` : "")
         + `</div><div class="team-members">${members}</div><div class="team-actions">${action}</div></div>`;
     }).join("")
       : `<div class="lib-empty">You're not in a team yet. Create one (you'll get an invite code to share), or join with a code a teammate gave you.</div>`;
@@ -285,6 +285,10 @@ const App = {
       if (!ok) return;
       await fetch(`/api/teams/${b.dataset.tid}`, { method: "DELETE" }).catch(() => {});
       after();
+    });
+    $("teamsBody").querySelectorAll(".team-copycode").forEach(b => b.onclick = async () => {
+      try { await navigator.clipboard.writeText(b.dataset.code); this._toast && this._toast("Invite code copied"); }
+      catch (e) { this._toast && this._toast("Invite code: " + b.dataset.code); }   // clipboard blocked -> show it
     });
   },
 
@@ -1128,8 +1132,9 @@ const App = {
         case "ArrowLeft": this.t = Math.max(0, this.t - (e.shiftKey ? 1 : 5)); break;
         case "]": this.jumpRound(1); break;
         case "[": this.jumpRound(-1); break;
-        case "n": this.cycleSpectate(1); break;
-        case "p": this.cycleSpectate(-1); break;
+        case "1": case "2": case "3": case "4": case "5":
+        case "6": case "7": case "8": case "9": this.spectateSlot(+e.key); break;
+        case "0": this.spectateSlot(10); break;   // 1-5 = CT top->bottom, 6-0 = T top->bottom
         case "f": this.freeCamera(); break;
         case "c": this.cycleCamPreset(); break;
         case "v": this.togglePOV(); break;
@@ -1436,6 +1441,14 @@ const App = {
     }
     this.updateRowHighlight();
   },
+  // Spectate by scoreboard slot: 1-5 = CT (top->bottom on the left board), 6-9,0 = T (0 = slot 10).
+  // Uses the live DOM order of the scoreboard rows, so it always matches what the user sees.
+  spectateSlot(slot) {
+    if (!this.demo) return;
+    const rows = [...$(slot <= 5 ? "sbCT" : "sbT").children];
+    const row = rows[slot <= 5 ? slot - 1 : slot - 6];
+    if (row && row.dataset.idx != null) this.setSpectate(+row.dataset.idx);
+  },
   cycleSpectate(dir) {
     if (!this.demo) return;
     const st = this.curState || this.demo.stateAt(this.t);   // may be called before the first render frame
@@ -1475,7 +1488,7 @@ const App = {
     this.view3d.onGeoStatus = () => { if (this.view3d.active) this._update3dHint(); };
     this.view3d.enterAt(wx, wy, gz);
     this.view3d.follow(this.radar.followIdx);
-    document.querySelector(".viewport").classList.toggle("fp", this.view3d.camPreset === "fp");  // resume FP crosshair
+    this.setCamPreset("fp");   // land in first-person on a player; press F (or Free) for the fly-cam
     $("tr3d").classList.add("show");                 // show the minimap + kill-feed stack
     if (this.miniRadar.map) { this.miniRadar.resize(); this.miniRadar.fit(); }   // now that it has size
     $("toggle3d").classList.add("on"); $("toggle3d").textContent = "2D";
