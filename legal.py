@@ -32,8 +32,12 @@ def _shell(slug, title, body):
 <title>{title} &middot; {site}</title>
 <link rel="stylesheet" href="/static/css/style.css">
 <style>
+  /* the app stylesheet pins html/body to the viewport with overflow:hidden (it's a fixed-layout SPA);
+     these standalone doc pages must scroll normally, so override that here. */
+  html{{height:auto}}
   body.legal{{background:var(--bg,#0b0e12);color:var(--txt,#e8eef5);margin:0;
-    font:15px/1.65 Inter,system-ui,-apple-system,sans-serif}}
+    font:15px/1.65 Inter,system-ui,-apple-system,sans-serif;
+    display:block;height:auto;min-height:100vh;overflow:visible}}
   .lg-top{{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:14px 20px;
     border-bottom:1px solid var(--line,#222b36);position:sticky;top:0;background:rgba(11,14,18,.92);backdrop-filter:blur(6px)}}
   .lg-brand{{font-weight:800;font-size:18px;letter-spacing:.5px;color:var(--txt);text-decoration:none}}
