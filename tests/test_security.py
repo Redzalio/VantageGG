@@ -4,6 +4,8 @@ import io
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import db        # noqa: E402
@@ -72,3 +74,62 @@ def test_safe_video_allowlist():
     # normalize() applies it
     assert nades.normalize({"video": "javascript:alert(1)"})["video"] == ""
     assert nades.normalize({"video": "https://youtu.be/abc"})["video"] == "https://youtu.be/abc"
+
+
+def test_logout_post_only(tmp_path):
+    c = _client(tmp_path)
+    assert c.get("/logout").status_code == 405      # GET no longer mutates (logout-CSRF closed)
+    assert c.post("/logout").status_code == 200
+
+
+def test_csrf_origin_guard(tmp_path, monkeypatch):
+    """Logged-in state-changing requests need a same-origin Origin/Referer; webhook + no-session +
+    local mode are exempt."""
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://vantagegg.com")
+    db.DB_PATH = str(tmp_path / "csrf.sqlite")
+    db.migrate()
+    uid = db.upsert_user("76561190000000009", "U9")
+    c = app.app.test_client()
+    with c.session_transaction() as s:
+        s["uid"] = uid
+    good = {"Origin": "https://vantagegg.com"}
+    # matching origin -> guard passes (handler runs; not 403)
+    assert c.post("/api/account/name", json={"name": "Zed"}, headers=good).status_code != 403
+    # foreign origin -> blocked
+    assert c.post("/api/account/name", json={"name": "Zed"},
+                  headers={"Origin": "https://evil.example.com"}).status_code == 403
+    # missing origin/referer on a cookie session -> blocked
+    assert c.post("/api/account/name", json={"name": "Zed"}).status_code == 403
+    # the Stripe webhook is exempt even with a bad origin (signature is its auth) -> not 403
+    assert c.post("/api/stripe/webhook", data=b"{}",
+                  headers={"Origin": "https://evil.example.com", "Stripe-Signature": "x"}).status_code != 403
+
+
+def test_csrf_skips_anon_and_local(tmp_path, monkeypatch):
+    # no session -> no CSRF surface (handler may 401, but not a 403 from the guard)
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://vantagegg.com")
+    c = _client(tmp_path)
+    assert c.post("/api/account/name", json={"name": "X"},
+                  headers={"Origin": "https://evil.example.com"}).status_code != 403
+    # local/open mode (no PUBLIC_BASE_URL) -> never enforced
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    uid = db.upsert_user("76561190000000010", "U10")
+    c2 = app.app.test_client()
+    with c2.session_transaction() as s:
+        s["uid"] = uid
+    assert c2.post("/api/account/name", json={"name": "X"},
+                   headers={"Origin": "https://evil.example.com"}).status_code != 403
+
+
+def test_validate_prod_config(monkeypatch):
+    monkeypatch.delenv("AUTH_REQUIRED", raising=False)
+    app._validate_prod_config()                      # not production -> no-op
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://x")
+    monkeypatch.setenv("SESSION_COOKIE_SECURE", "1")
+    monkeypatch.setenv("ADMIN_STEAM_IDS", "123")
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    with pytest.raises(SystemExit):                  # production + missing SECRET_KEY -> refuse to start
+        app._validate_prod_config()
+    monkeypatch.setenv("SECRET_KEY", "abc")
+    app._validate_prod_config()                      # fully configured -> passes

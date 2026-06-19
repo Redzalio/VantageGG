@@ -20,6 +20,7 @@ import secrets
 import shutil
 import tempfile
 import traceback
+import urllib.parse
 
 from flask import Flask, Response, jsonify, redirect, request, send_from_directory, session
 
@@ -371,6 +372,28 @@ def gzip_response(resp):
     return resp
 
 
+@app.before_request
+def csrf_origin_guard():
+    """CSRF defense: a logged-in (cookie-session) state-changing request must carry an Origin/Referer
+    matching our own site. Requests with NO authenticated session, and local/open mode (PUBLIC_BASE_URL
+    unset), are unaffected. The Stripe webhook is exempt (signature-authed, server-to-server, no Origin/
+    cookie); Steam login/callback are GET so naturally exempt. Same-origin fetch() sends Origin
+    automatically, so the frontend needs no change."""
+    if request.method not in ("POST", "PUT", "DELETE", "PATCH"):
+        return None
+    if request.path == "/api/stripe/webhook":
+        return None
+    if not session.get("uid"):                 # no authenticated session -> nothing to forge against
+        return None
+    base = steamauth.public_base_url()
+    if not base:                               # local/open mode -> not enforced
+        return None
+    src = request.headers.get("Origin") or request.headers.get("Referer") or ""
+    if not src or urllib.parse.urlparse(src).netloc != urllib.parse.urlparse(base).netloc:
+        return _nostore({"error": "cross-site request blocked"}), 403
+    return None
+
+
 @app.after_request
 def security_headers(resp):
     """Baseline security headers (safe phase: no CSP yet -- strict CSP needs the inline handlers +
@@ -596,9 +619,30 @@ def _ensure_sample():
         print(f"[sample] could not restore bundled sample: {e}")
 
 
+def _validate_prod_config():
+    """Fail-closed: refuse to boot a MISCONFIGURED production deploy. Gated on auth_required() (true
+    only in production), and called from start_workers() -- NOT at import -- so pytest + local single-
+    user mode are completely unaffected. A correctly-configured prod (the current one) passes silently."""
+    if not steamauth.auth_required():
+        return
+    missing = []
+    if not os.environ.get("SECRET_KEY"):
+        missing.append("SECRET_KEY")
+    if not steamauth._truthy(os.environ.get("SESSION_COOKIE_SECURE")):
+        missing.append("SESSION_COOKIE_SECURE=1")
+    if not os.environ.get("PUBLIC_BASE_URL"):
+        missing.append("PUBLIC_BASE_URL")
+    if not os.environ.get("ADMIN_STEAM_IDS"):
+        missing.append("ADMIN_STEAM_IDS")
+    if missing:
+        raise SystemExit("FATAL: AUTH_REQUIRED is set (production) but missing/insecure config: "
+                         + ", ".join(missing) + " -- refusing to start.")
+
+
 def start_workers():
     """Start the background parse worker. Called by the server entrypoints (__main__ / wsgi.py),
     NOT at import time -- so `import app` in tests doesn't spawn the worker thread."""
+    _validate_prod_config()               # fail-closed before doing anything in production
     goals.migrate_legacy_json()           # one-time import of the old goals.json -> SQLite (server start only)
     _ensure_sample()                      # unpack the bundled sample into the cache volume if absent
     jobs.start_worker(_process_upload_job)
@@ -1547,12 +1591,12 @@ def api_demo_team(demo_id):
     return _nostore({"ok": ok}), (200 if ok else 400)
 
 
-@app.route("/logout", methods=["GET", "POST"])
+@app.route("/logout", methods=["POST"])
 def logout():
+    # POST-only: a GET /logout let a cross-site <img src="/logout"> force a logout (logout-CSRF).
+    # The frontend already calls this with fetch(POST).
     session.pop("uid", None)
-    if request.method == "POST":
-        return _nostore({"ok": True})
-    return redirect("/")
+    return _nostore({"ok": True})
 
 
 # ---- account self-service (display name / delete) ---------------------------
