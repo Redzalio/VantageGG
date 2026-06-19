@@ -10,6 +10,7 @@ app.py -- local web server for the CS2 demo player.
 
 Run:  python app.py    (or use start.bat)  ->  http://127.0.0.1:8770
 """
+import collections
 import datetime
 import gzip
 import hashlib
@@ -19,6 +20,8 @@ import re
 import secrets
 import shutil
 import tempfile
+import threading
+import time
 import traceback
 import urllib.parse
 
@@ -211,6 +214,10 @@ def entitlements(user):
 
 
 FREE_UPLOAD_LIMIT = int(os.environ.get("FREE_UPLOAD_LIMIT", "5"))
+# abuse caps: most in-flight jobs one user may queue, and the free-disk floor below which uploads are
+# refused (leave headroom for the upload + decompress temp + parsed cache).
+MAX_ACTIVE_JOBS = int(os.environ.get("MAX_ACTIVE_JOBS_PER_USER", "10") or 10)
+MIN_FREE_DISK_BYTES = int(os.environ.get("MIN_FREE_DISK_GB", "2") or 2) * (1 << 30)
 
 
 def upload_allowance(user):
@@ -370,6 +377,46 @@ def gzip_response(resp):
     except Exception:
         pass
     return resp
+
+
+# ---- lightweight per-IP rate limiting (stdlib, in-process sliding window) ----------------------
+_RATE_LIMITS = {                       # path -> (max requests, window seconds) per client IP
+    "/api/upload": (20, 60),
+    "/login/steam": (30, 60),
+    "/auth/steam/callback": (30, 60),
+    "/api/sample": (30, 60),
+}
+_rl_hits = collections.defaultdict(collections.deque)
+_rl_lock = threading.Lock()
+
+
+def _client_ip():
+    """Real client IP behind Caddy (X-Forwarded-For); falls back to the socket peer. Without this all
+    traffic buckets under the proxy's 127.0.0.1."""
+    xff = request.headers.get("X-Forwarded-For", "")
+    return xff.split(",")[0].strip() if xff else (request.remote_addr or "?")
+
+
+def _rate_ok(key, limit, window):
+    now = time.monotonic()
+    with _rl_lock:
+        dq = _rl_hits[key]
+        while dq and dq[0] <= now - window:
+            dq.popleft()
+        if len(dq) >= limit:
+            return False
+        dq.append(now)
+        return True
+
+
+@app.before_request
+def rate_limit():
+    """Throttle the abusable/expensive endpoints per client IP. In-process (per worker) -- a first
+    line, not a substitute for edge protection; thresholds are generous so a real team isn't hit."""
+    rule = _RATE_LIMITS.get(request.path)
+    if rule and not _rate_ok("%s|%s" % (request.path, _client_ip()), rule[0], rule[1]):
+        return _nostore({"error": "Too many requests -- slow down and try again shortly."}), 429
+    return None
 
 
 @app.before_request
@@ -720,6 +767,16 @@ def upload():
     if not al["unlimited"] and al["used"] >= al["limit"]:
         return _nostore({"error": "Free plan is limited to %d demos. Upgrade to Pro, or delete a demo "
                                   "to make room." % al["limit"], "upsell": True, "quota": al}), 403
+    # don't let one user flood the parse queue
+    if owner is not None and jobs.count_active(owner) >= MAX_ACTIVE_JOBS:
+        return _nostore({"error": "You have %d demos still processing -- wait for those to finish first."
+                                  % MAX_ACTIVE_JOBS}), 429
+    # never accept an upload we can't safely store (keep headroom for parse temp + cache)
+    try:
+        if shutil.disk_usage(UPLOADS).free < MIN_FREE_DISK_BYTES:
+            return _nostore({"error": "Server storage is temporarily full. Please try again later."}), 507
+    except OSError:
+        pass
 
     # --- legacy synchronous path (?sync=1) -----------------------------------
     if request.args.get("sync"):

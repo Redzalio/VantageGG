@@ -96,6 +96,21 @@ def list_jobs(owner_user_id=None, active_only=False, limit=50):
         con.close()
 
 
+def count_active(owner_user_id=None):
+    """How many jobs are in flight (queued/parsing/analyzing), optionally for one owner. Used to cap a
+    single user from flooding the queue."""
+    con = db.connect()
+    try:
+        sql = "SELECT COUNT(*) n FROM jobs WHERE status IN ('queued','parsing','analyzing')"
+        args = []
+        if owner_user_id is not None:
+            sql += " AND owner_user_id=?"
+            args.append(owner_user_id)
+        return con.execute(sql, args).fetchone()["n"]
+    finally:
+        con.close()
+
+
 def _update(job_id, **fields):
     con = db.connect()
     try:

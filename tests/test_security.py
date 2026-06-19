@@ -133,3 +133,44 @@ def test_validate_prod_config(monkeypatch):
         app._validate_prod_config()
     monkeypatch.setenv("SECRET_KEY", "abc")
     app._validate_prod_config()                      # fully configured -> passes
+
+
+def test_rate_limit_429(tmp_path):
+    c = _client(tmp_path)
+    app._rl_hits.clear()
+    xff = {"X-Forwarded-For": "203.0.113.7"}         # unique bucket; /login/steam is cheap (a redirect)
+    statuses = [c.get("/login/steam", headers=xff).status_code for _ in range(31)]
+    assert 429 not in statuses[:10]                  # first requests allowed
+    assert statuses[-1] == 429                        # 30/min window exceeded -> throttled
+
+
+def test_active_job_cap_429(tmp_path, monkeypatch):
+    import jobs as jobs_mod
+    db.DB_PATH = str(tmp_path / "cap.sqlite")
+    db.migrate()
+    uid = db.upsert_user("76561190000000011", "U11")
+    monkeypatch.setattr(jobs_mod, "count_active", lambda owner=None: app.MAX_ACTIVE_JOBS)
+    c = app.app.test_client()
+    with c.session_transaction() as s:
+        s["uid"] = uid
+    app._rl_hits.clear()
+    r = c.post("/api/upload", data={"files": (io.BytesIO(b"x"), "m.dem")},
+               content_type="multipart/form-data")
+    assert r.status_code == 429
+
+
+def test_disk_full_guard_507(tmp_path, monkeypatch):
+    import jobs as jobs_mod
+    db.DB_PATH = str(tmp_path / "disk.sqlite")
+    db.migrate()
+    uid = db.upsert_user("76561190000000012", "U12")
+    monkeypatch.setattr(jobs_mod, "count_active", lambda owner=None: 0)
+    monkeypatch.setattr(app.shutil, "disk_usage",
+                        lambda p: type("U", (), {"free": 0, "total": 1, "used": 1})())
+    c = app.app.test_client()
+    with c.session_transaction() as s:
+        s["uid"] = uid
+    app._rl_hits.clear()
+    r = c.post("/api/upload", data={"files": (io.BytesIO(b"x"), "m.dem")},
+               content_type="multipart/form-data")
+    assert r.status_code == 507
