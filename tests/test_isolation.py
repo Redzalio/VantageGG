@@ -251,7 +251,7 @@ def test_free_upload_blocked_at_cap(tmp_path, monkeypatch):
     assert me["used"] == 2 and me["limit"] == 2 and me["unlimited"] is False
     r = c.post("/api/upload", data={"file": (io.BytesIO(b"demo"), "m.dem")},
                content_type="multipart/form-data")
-    assert r.status_code == 403 and "Free plan is limited" in r.get_json()["error"]
+    assert r.status_code == 403 and "Free plan holds" in r.get_json()["error"]
 
 
 def test_index_dashboard_when_logged_in(tmp_path, monkeypatch):

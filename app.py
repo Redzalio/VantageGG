@@ -787,8 +787,9 @@ def upload():
     owner = u["id"] if u else None                        # NULL in local mode; the uploader otherwise
     al = upload_allowance(u)                              # enforce the Free demo cap (no-op when unlimited)
     if not al["unlimited"] and al["used"] >= al["limit"]:
-        return _nostore({"error": "Free plan is limited to %d demos. Upgrade to Pro, or delete a demo "
-                                  "to make room." % al["limit"], "upsell": True, "quota": al}), 403
+        return _nostore({"error": "Free plan holds %d replays. Upgrade to Pro, or archive an old demo "
+                                  "(frees space, keeps its stats) to make room." % al["limit"],
+                         "upsell": True, "quota": al}), 403
     # don't let one user flood the parse queue
     if owner is not None and jobs.count_active(owner) >= MAX_ACTIVE_JOBS:
         return _nostore({"error": "You have %d demos still processing -- wait for those to finish first."
@@ -920,7 +921,10 @@ def api_library():
     demos = library.list_demos(CACHE, SCHEMA_VERSION)
     if sc is not None:
         ok = db.visible_predicate(sc)
-        demos = [d for d in demos if ok(d.get("id"))]
+        arch = db.archived_library_rows(sc)              # #22: demos whose heavy replay was archived
+        arch_ids = {a["id"] for a in arch}
+        demos = [d for d in demos if ok(d.get("id")) and d.get("id") not in arch_ids]
+        demos += arch                                     # surface them (greyed) so stats stay discoverable
     resp = jsonify({"demos": demos})
     resp.headers["Cache-Control"] = "no-store"
     return resp
@@ -957,6 +961,28 @@ def api_demo(demo_id):
     resp = jsonify(data)
     resp.headers["Cache-Control"] = "no-store"
     return resp
+
+
+@app.route("/api/demo/<demo_id>/archive", methods=["POST"])
+def api_demo_archive(demo_id):
+    """#22: archive the caller's copy -- free the heavy replay (parsed cache + raw .dem) but KEEP the
+    compact stats (the index rows that power trends/profile). Frees a Free-plan slot. The shared cache
+    is only deleted once no member still holds it as a full replay."""
+    mode, sc = _scope_or_block()
+    if mode == "blocked":
+        return _nostore({"error": "login required"}), 401
+    uid = sc.get("uid") if isinstance(sc, dict) else None
+    if uid is None:
+        return _nostore({"error": "Archiving needs an account."}), 400
+    if not db.can_delete(demo_id, sc):
+        return _nostore({"error": "not allowed"}), 403
+    sha = db.resolve_sha(demo_id)
+    still_full = db.set_archived(uid, sha, 1)              # members who still hold a full (un-archived) copy
+    freed = 0
+    if still_full == 0:                                   # nobody can watch it anymore -> drop the heavy files
+        res = library.delete_demo(CACHE, UPLOADS, sha)    # parsed cache JSON + raw .dem (KEEPS the index rows)
+        freed = res.get("bytes", 0) if isinstance(res, dict) else 0
+    return _nostore({"ok": True, "archived": True, "freed_bytes": freed, "shared": still_full > 0})
 
 
 def _load_demo_by_sha(sid):

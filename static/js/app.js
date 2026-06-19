@@ -1631,30 +1631,57 @@ const App = {
       const stale = d.stale
         ? '<span class="lib-stale" title="Parsed with an older app version -- re-upload to refresh">outdated</span>'
         : "";
-      const meta = [(d.rounds || 0) + ' rounds', when].filter(Boolean).join(' · ');
-      const label = [pretty, when].filter(Boolean).join(' · ');   // for the delete confirm, not the raw filename
+      const archived = !!d.archived;
+      const meta = [(d.rounds || 0) + ' rounds', when].filter(Boolean).join(' · ') + (archived ? ' · replay removed' : '');
+      const label = [pretty, when].filter(Boolean).join(' · ');   // for the confirm dialogs, not the raw filename
+      const archBadge = archived
+        ? '<span class="lib-arch" title="Replay removed to save space — your stats are kept">archived</span>' : '';
       // background = the map's loading-screen art at 50% opacity (rendered in a ::before layer via
       // this CSS var); raw filename moves to the hover tooltip (#21: cards read like match history).
       const style = bg ? ' style="--cardbg:url(\'' + bg + '\')"' : '';
-      return '<div class="lib-row' + (bg ? ' has-bg' : '') + '" data-id="' + esc(d.id) + '" data-label="' + esc(label) + '"'
+      return '<div class="lib-row' + (bg ? ' has-bg' : '') + (archived ? ' archived' : '') + '" data-id="' + esc(d.id) + '" data-label="' + esc(label) + '"'
         + ' title="' + esc(d.name || d.id) + '"' + style + '>'
-        + '<div class="lib-mid"><div class="lib-name">' + esc(pretty) + stale + '</div>'
+        + '<div class="lib-mid"><div class="lib-name">' + esc(pretty) + stale + archBadge + '</div>'
         +   '<div class="lib-meta">' + esc(meta) + '</div></div>'
         + '<div class="lib-score">' + sc.ct + '<span>:</span>' + sc.t + '</div>'
-        + ((this.myTeams && this.myTeams.length)
-            ? '<button class="lib-share btn ghost sm" title="Share this match with a team">Share</button>' : '')
-        + '<button class="btn primary lib-view">View</button>'
-        + '<button class="lib-del" title="Remove this demo from your library">&#128465;</button></div>';
+        + (archived
+            ? '<button class="btn ghost sm lib-reup" title="Re-upload the .dem to watch this replay again">Re-upload</button>'
+            : (((this.myTeams && this.myTeams.length)
+                  ? '<button class="lib-share btn ghost sm" title="Share this match with a team">Share</button>' : '')
+               + '<button class="btn primary lib-view">View</button>'
+               + '<button class="lib-arch-btn" title="Free space: remove the replay, keep your stats">&#128230;</button>'))
+        + '<button class="lib-del" title="Delete everything — replay and stats">&#128465;</button></div>';
     }).join("");
     list.querySelectorAll(".lib-row").forEach(row => {
-      row.querySelector(".lib-view").onclick = () => this.viewLibraryDemo(row.dataset.id);
+      const v = row.querySelector(".lib-view");
+      if (v) v.onclick = () => this.viewLibraryDemo(row.dataset.id);
+      const reup = row.querySelector(".lib-reup");                  // archived -> open the upload picker
+      if (reup) reup.onclick = (e) => { e.stopPropagation(); const fi = $("fileInput"); if (fi) fi.click(); };
       const sh = row.querySelector(".lib-share");
       if (sh) sh.onclick = (e) => { e.stopPropagation(); this.shareDemo(row.dataset.id); };
+      const arch = row.querySelector(".lib-arch-btn");
+      if (arch) arch.onclick = (e) => { e.stopPropagation(); this.archiveLibraryDemo(row.dataset.id, row.dataset.label, row); };
       row.querySelector(".lib-del").onclick = (e) => {
         e.stopPropagation();
         this.deleteLibraryDemo(row.dataset.id, row.dataset.label || row.querySelector(".lib-name").textContent.trim(), row);
       };
     });
+  },
+
+  // #22: free space by removing the heavy replay but keeping the match's stats (trends/profile).
+  async archiveLibraryDemo(id, name, rowEl) {
+    const body = `<div class="cf-line">Archive <b>${esc(name || id)}</b>?</div>`
+      + `<div class="cf-line cf-mut">Frees space by removing the replay — you won't be able to watch it back — `
+      + `but keeps this match's stats in your trends and profile. Re-upload the demo anytime to watch it again.</div>`;
+    if (!(await this.askConfirm("Remove replay, keep stats?", body, "Archive"))) return;
+    const res = await fetch("api/demo/" + encodeURIComponent(id) + "/archive", { method: "POST" })
+      .then(r => r.json()).catch(() => null);
+    if (!res || !res.ok) { this._toast && this._toast("Could not archive that demo."); return; }
+    const mb = (res.freed_bytes || 0) / (1 << 20);
+    const freed = res.freed_bytes ? ` — freed ${mb >= 1024 ? (mb / 1024).toFixed(1) + " GB" : Math.round(mb) + " MB"}` : "";
+    this._toast && this._toast(`Replay archived${freed}. Stats kept.`);
+    fetch("api/library").then(r => r.json()).then(j => this.renderLibrary((j && j.demos) || [])).catch(() => {});
+    if (document.body.classList.contains("on-dashboard")) this.loadDashboard();
   },
 
   async deleteLibraryDemo(id, name, rowEl) {

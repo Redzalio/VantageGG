@@ -164,6 +164,7 @@ def migrate(con=None):
         c.execute("CREATE INDEX IF NOT EXISTS idx_users_stripe_cust ON users(stripe_customer_id)")
         _ensure_column(c, "jobs", "upload_ms", "INTEGER")           # 19A: server-side receive+save time per file (ms)
         _ensure_column(c, "jobs", "bytes", "INTEGER")               # 19A: uploaded file size (bytes), for the timing breakdown
+        _ensure_column(c, "user_demos", "archived", "INTEGER DEFAULT 0")  # #22: replay removed to free space, stats kept
         if not had_user_demos:
             c.execute("""INSERT OR IGNORE INTO user_demos(user_id, sha1, team_id, created_at)
                          SELECT owner_user_id, sha1, team_id, created_at
@@ -477,12 +478,60 @@ def resolve_sha(demo_id, con=None):
 
 
 def user_demo_count(user_id, con=None):
-    """How many demos are in this user's library (for the Free upload cap)."""
+    """How many FULL-REPLAY demos are in this user's library (for the Free upload cap). Archived demos
+    (#22: replay removed, stats kept) don't count -- archiving frees a slot."""
     if user_id is None:
         return 0
     c = con or connect()
     try:
-        return c.execute("SELECT COUNT(*) n FROM user_demos WHERE user_id=?", (user_id,)).fetchone()["n"]
+        return c.execute("SELECT COUNT(*) n FROM user_demos WHERE user_id=? AND archived=0",
+                         (user_id,)).fetchone()["n"]
+    finally:
+        if con is None:
+            c.close()
+
+
+def set_archived(user_id, sha1, archived=1, con=None):
+    """Mark/unmark one user's copy of a demo as archived. Returns how many members still hold it as a
+    FULL replay (archived=0) -- 0 means the shared cache/.dem can be deleted (no one can watch it)."""
+    c = con or connect()
+    try:
+        c.execute("UPDATE user_demos SET archived=? WHERE user_id=? AND sha1=?",
+                  (1 if archived else 0, user_id, sha1))
+        c.commit()
+        return c.execute("SELECT COUNT(*) n FROM user_demos WHERE sha1=? AND archived=0",
+                         (sha1,)).fetchone()["n"]
+    finally:
+        if con is None:
+            c.close()
+
+
+def archived_library_rows(scope, con=None):
+    """#22: the caller's archived demos as file-library-shaped rows (id, map, rounds, score, date,
+    archived) sourced from the index -- so the library still lists them after the heavy cache is gone."""
+    if scope is None:
+        return []
+    uid, tids = scope.get("uid"), set(scope.get("team_ids") or [])
+    c = con or connect()
+    try:
+        rows = c.execute(
+            """SELECT DISTINCT d.sha1, d.map, d.rounds, d.score, d.created_at,
+                      d.schema_version, ud.team_id
+               FROM user_demos ud JOIN demos d ON d.sha1 = ud.sha1
+               WHERE ud.archived=1 AND (ud.user_id=? OR ud.team_id IN (%s))
+               ORDER BY d.created_at DESC""" % (",".join("?" * len(tids)) or "NULL"),
+            tuple([uid] + list(tids))).fetchall()
+        out = []
+        for r in rows:
+            ct, t = 0, 0
+            if r["score"] and "-" in str(r["score"]):
+                try:
+                    ct, t = (int(x) for x in str(r["score"]).split("-", 1))
+                except ValueError:
+                    ct, t = 0, 0
+            out.append({"id": r["sha1"], "map": r["map"], "rounds": r["rounds"],
+                        "score": {"ct": ct, "t": t}, "date": r["created_at"], "archived": True})
+        return out
     finally:
         if con is None:
             c.close()
