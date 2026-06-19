@@ -219,6 +219,7 @@ const App = {
   },
 
   openTeams() {
+    this.pausePlayback();
     $("teamsTitle").textContent = "Teams & workspaces";
     $("teamsModal").classList.add("show");
     this.renderTeams();
@@ -716,6 +717,7 @@ const App = {
   // growth/activity over time -- NOT a feed of individual demos or jobs. Admins also manage users
   // (grant Pro, promote to Helper, remove); Helpers get the read view + grant Pro only.
   openAdmin() {
+    this.pausePlayback();
     const t = $("admTitle"); if (t) t.textContent = this.isAdmin ? "Admin" : "Helper";
     $("adminModal").classList.add("show");
     this.renderAdmin();
@@ -997,7 +999,7 @@ const App = {
     $("toggleAnalytics").onclick = () => {
       if (!this.demo) return;
       if ($("analyticsPanel").classList.contains("show")) closeAnalytics(this);
-      else openAnalytics(this);
+      else { this.pausePlayback(); openAnalytics(this); }   // pause the replay while the panel is open
     };
     $("closeAnalytics").onclick = () => closeAnalytics(this);
     $("settingsBtn").onclick = () => $("settingsPop").classList.toggle("show");
@@ -1302,6 +1304,7 @@ const App = {
 
   // Open the library modal and (re)load its list from the server.
   openLibrary() {
+    this.pausePlayback();
     $("libraryModal").classList.add("show");
     $("libList").innerHTML = '<div class="lib-empty">Loading...</div>';
     fetch("api/library").then(r => r.json())
@@ -1441,6 +1444,11 @@ const App = {
     if (this.t >= this.demo.duration - 0.01) this.t = 0;
     this.playing = !this.playing;
     $("playPause").textContent = this.playing ? "\u23f8" : "\u25b6";
+  },
+  // Pause the replay when the user opens a separate page/panel over it (analytics, trends, library,
+  // goals, teams, admin) so it doesn't keep advancing in the background. No-op if already paused.
+  pausePlayback() {
+    if (this.playing) this.togglePlay();
   },
   bumpSpeed(dir) {
     const opts = [0.25, 0.5, 1, 2, 4, 8];
@@ -1661,6 +1669,7 @@ const App = {
 
   // --- multi-demo trends + team config (cross-match "am I getting better?") -
   async openTrends(focusSid) {
+    this.pausePlayback();
     $("trendsModal").classList.add("show");
     const [players, matches, team] = await Promise.all([
       fetch("api/players").then(r => r.json()).catch(() => []),
@@ -1781,6 +1790,7 @@ const App = {
   // reporting current value + a verdict (fixed / improving / still happening / need more).
   async openGoals(prefill) {
     if (!this.entitled("goals")) { this._upsell("goals"); return; }   // chokepoint: all goal entry gates here
+    this.pausePlayback();
     $("goalsModal").classList.add("show");
     $("goalsList").innerHTML = `<div class="gl-empty">Loading...</div>`;
     if (!this._goalMetrics) {
@@ -3421,6 +3431,7 @@ const App = {
       el.className = "prow";
       el.dataset.idx = i;
       el.innerHTML = `
+        <span class="pslot" title="Press this number to spectate"></span>
         <span class="dot" style="background:${this.demo.colorFor(i, p.team)}"></span>
         <span class="pname">${esc(p.name)}</span>
         <span class="pmoney"></span>
@@ -3460,6 +3471,9 @@ const App = {
         row.el.querySelector(".loadout-nades").innerHTML = parts.nades;
       }
     }
+    // slot numbers down the left of each board -> match the 1-0 spectate keys (CT 1-5, T 6-9,0)
+    [...$("sbCT").children].forEach((el, i) => { const s = el.querySelector(".pslot"); if (s) s.textContent = i + 1; });
+    [...$("sbT").children].forEach((el, i) => { const s = el.querySelector(".pslot"); if (s) s.textContent = (i + 6) % 10; });
     const sc = this.demo.scoreAt(this.t);
     $("scoreCT").textContent = sc.ct; $("scoreT").textContent = sc.t;
     const r = this.demo.roundAt(this.t);
