@@ -13,6 +13,29 @@ A lineup:
 import hashlib
 import json
 import os
+import urllib.parse
+
+# Only these video sources are allowed (rendered into iframe/video in the frontend). Anything else --
+# data:/javascript:/blob:/file:/ftp:/protocol-relative/unknown hosts -- is dropped, so imported or
+# manually-entered nade data can't inject arbitrary/abusive media URLs.
+_VIDEO_HOST_ALLOW = {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"}
+
+
+def safe_video(url):
+    """Allow only: '' , a local uploaded clip path ('/nades/videos/...'), or an https YouTube URL.
+    Everything else -> '' . Authoritative server-side check (frontend mirrors it as defense-in-depth)."""
+    if not url or not isinstance(url, str):
+        return ""
+    u = url.strip()
+    if u.startswith("/nades/videos/"):
+        return u
+    try:
+        p = urllib.parse.urlparse(u)
+    except ValueError:
+        return ""
+    if p.scheme != "https":
+        return ""
+    return u if (p.hostname or "").lower() in _VIDEO_HOST_ALLOW else ""
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LIB_DIR = os.environ.get("NADES_DIR") or os.path.join(HERE, "nades")   # env-overridable for deploys
@@ -63,7 +86,7 @@ def normalize(raw):
         "movement": g("movement") or "",
         "technique": g("technique") or g("techniques") or (["jumpthrow"] if g("jumpthrow") else []),
         "aim": g("aim") or g("description") or g("desc") or "",
-        "video": g("video") or g("videoUrl") or g("youtube") or "",
+        "video": safe_video(g("video") or g("videoUrl") or g("youtube") or ""),
         "image": g("image") or g("imageUrl") or "",
         "tags": g("tags") or [],
         "strat_group": g("strat_group") or g("group") or "",

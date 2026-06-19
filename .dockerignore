@@ -23,8 +23,9 @@ reviews/
 team.json
 practice.json
 *.dem
-# Windows-only map-building tools (geometry is built offline on the dev's machine)
-tools/*.exe
+# dev-only tooling (map-building, probes, preview harnesses, one-off scripts) -- nothing under tools/
+# is imported at runtime; map geometry is built offline. Keep the whole dir out of the prod image.
+tools/
 # dev-only notes, tests, screenshots (not needed in the runtime image)
 tests/
 research/

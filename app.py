@@ -371,6 +371,17 @@ def gzip_response(resp):
     return resp
 
 
+@app.after_request
+def security_headers(resp):
+    """Baseline security headers (safe phase: no CSP yet -- strict CSP needs the inline handlers +
+    importmap migrated first). HSTS is set at Caddy where TLS terminates, not here."""
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    resp.headers.setdefault("X-Frame-Options", "DENY")        # we embed others (YouTube); nobody frames us
+    resp.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+    return resp
+
+
 @app.route("/")
 def index():
     """Serve the SPA, choosing the first-paint view server-side (no flash): a logged-out visitor on an
@@ -636,12 +647,25 @@ def _gather_files():
     return [f for f in files if f and f.filename]
 
 
+def require_auth_when_locked():
+    """In AUTH_REQUIRED mode, reject anonymous requests up front. Returns a (response, 401) tuple to
+    return immediately, or None when the request may proceed. Gates resource-creating / data endpoints
+    (upload, jobs, nade media) so anonymous traffic can't burn disk/CPU/queue or read others' data on
+    the locked-down hosted site. Local/open mode (auth not required) is unaffected."""
+    if steamauth.auth_required() and current_user() is None:
+        return _nostore({"error": "login required"}), 401
+    return None
+
+
 @app.route("/api/upload", methods=["POST"])
 def upload():
     """Accept 1+ .dem/.zip files. Default (website mode): enqueue a background parse JOB per demo
     and return {jobs:[{id,filename,status}]} immediately -- poll /api/jobs/<id>. Legacy synchronous
     behavior (parse in-request, return {demos:[...]}) is kept under ?sync=1 for tests/simple clients.
     One bad file never fails the whole batch."""
+    blocked = require_auth_when_locked()      # SECURITY: no anon uploads on a locked site (DDoS/disk abuse)
+    if blocked:
+        return blocked
     files = _gather_files()
     if not files:
         return jsonify({"error": "no files uploaded",
@@ -730,6 +754,9 @@ def upload():
 
 @app.route("/api/jobs/<job_id>")
 def api_job(job_id):
+    blocked = require_auth_when_locked()      # SECURITY: anon can't probe job ids/status on a locked site
+    if blocked:
+        return blocked
     j = jobs.get_job(job_id)
     if not j:
         return jsonify({"error": "no such job"}), 404
@@ -741,6 +768,9 @@ def api_job(job_id):
 
 @app.route("/api/jobs")
 def api_jobs():
+    blocked = require_auth_when_locked()      # SECURITY: don't list jobs to anon on a locked site
+    if blocked:
+        return blocked
     active = bool(request.args.get("active"))
     uid = current_user_id()                                # scope to the uploader (was leaking everyone's)
     return _nostore({"jobs": [jobs._public(j) for j in jobs.list_jobs(owner_user_id=uid, active_only=active)]})
@@ -1119,11 +1149,17 @@ def nades_suggest():
 
 @app.route("/nades/videos/<path:fn>")
 def nade_video(fn):
+    blocked = require_auth_when_locked()      # SECURITY: user-uploaded clips aren't public on a locked site
+    if blocked:
+        return blocked
     return send_from_directory(nades.VIDEOS_DIR, fn)
 
 
 @app.route("/api/nades/video", methods=["POST"])
 def nade_video_upload():
+    blocked = require_auth_when_locked()
+    if blocked:
+        return blocked
     f = request.files.get("video")
     if not f or not f.filename:
         return jsonify({"error": "no video uploaded (field 'video')"}), 400

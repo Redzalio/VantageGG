@@ -1,0 +1,74 @@
+"""Stage-1 security gates: anonymous requests blocked on a locked (AUTH_REQUIRED) site, baseline
+security headers, and the nade video-URL allowlist. Temp DB; no real parsing."""
+import io
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import db        # noqa: E402
+import app       # noqa: E402
+import nades     # noqa: E402
+
+
+def _client(tmp_path):
+    db.DB_PATH = str(tmp_path / "sec.sqlite")
+    db.migrate()
+    return app.app.test_client()
+
+
+def test_anon_blocked_when_auth_required(tmp_path, monkeypatch):
+    """With AUTH_REQUIRED=1 and no session, resource/data endpoints return 401 before doing work."""
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    c = _client(tmp_path)
+    up = c.post("/api/upload", data={"files": (io.BytesIO(b"x"), "m.dem")},
+                content_type="multipart/form-data")
+    assert up.status_code == 401
+    assert c.get("/api/jobs").status_code == 401
+    assert c.get("/api/jobs/whatever").status_code == 401
+    assert c.get("/nades/videos/x.mp4").status_code == 401
+    assert c.post("/api/nades/video").status_code == 401
+
+
+def test_anon_allowed_in_local_mode(tmp_path, monkeypatch):
+    """Auth not required (local/open) -> the guard never blocks; upload with no files is a 400, not 401."""
+    monkeypatch.delenv("AUTH_REQUIRED", raising=False)
+    c = _client(tmp_path)
+    r = c.post("/api/upload")
+    assert r.status_code != 401     # guard passed (400 = no files), local mode unaffected
+
+
+def test_baseline_security_headers(tmp_path):
+    c = _client(tmp_path)
+    r = c.get("/api/me")
+    assert r.headers.get("X-Content-Type-Options") == "nosniff"
+    assert r.headers.get("X-Frame-Options") == "DENY"
+    assert "Referrer-Policy" in r.headers
+    assert "Permissions-Policy" in r.headers
+
+
+def test_safe_video_allowlist():
+    keep = [
+        "https://youtu.be/abc123",
+        "https://www.youtube.com/watch?v=xyz",
+        "https://youtube.com/embed/xyz",
+        "/nades/videos/deadbeef00.mp4",
+        "",
+    ]
+    drop = [
+        "javascript:alert(1)",
+        "data:text/html,<script>evil</script>",
+        "blob:https://x/y",
+        "file:///etc/passwd",
+        "http://youtube.com/x",          # not https
+        "https://evil.example.com/x",    # not an allowed host
+        "//evil.example.com/x",          # protocol-relative
+        "ftp://youtube.com/x",
+    ]
+    for u in keep:
+        assert nades.safe_video(u) == u, u
+    for u in drop:
+        assert nades.safe_video(u) == "", u
+    # normalize() applies it
+    assert nades.normalize({"video": "javascript:alert(1)"})["video"] == ""
+    assert nades.normalize({"video": "https://youtu.be/abc"})["video"] == "https://youtu.be/abc"

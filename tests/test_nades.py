@@ -9,13 +9,16 @@ import nades   # noqa: E402
 
 def test_normalize_maps_csnades_fields():
     n = nades.normalize({"map": "de_dust2", "grenade": "Flash", "from": "T Spawn",
-                         "to": "Xbox", "jumpthrow": True, "video": "http://x", "tags": "mid,exec"})
+                         "to": "Xbox", "jumpthrow": True, "video": "https://youtu.be/abc123",
+                         "tags": "mid,exec"})
     assert n["type"] == "flash"
     assert n["throw_callout"] == "T Spawn" and n["target_callout"] == "Xbox"
     assert "jumpthrow" in n["technique"]
-    assert n["video"] == "http://x"
+    assert n["video"] == "https://youtu.be/abc123"   # allowed source kept
     assert n["tags"] == ["mid", "exec"]
     assert n["id"].startswith("n_")
+    # a non-allowlisted scheme/host is dropped (see test_security for the full allowlist)
+    assert nades.normalize({"map": "de_x", "video": "http://x"})["video"] == ""
 
 
 def test_normalize_bad_type_defaults_to_smoke():
