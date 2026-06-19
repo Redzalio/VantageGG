@@ -125,6 +125,7 @@ export class View3D {
     this.camPreset = "free";          // free | follow | overhead
     this._lineup = null;              // persistent nade-library lineup drawn in 3D
     this._bindInput();
+    this.canvas.addEventListener("contextmenu", (e) => e.preventDefault());   // no right-click menu over the 3D view
   }
 
   // ---- setup ---------------------------------------------------------------
@@ -1126,6 +1127,16 @@ export class View3D {
       });
   }
 
+  // X-ray look: when ON, players draw THROUGH walls at a soft fixed opacity (so they read as
+  // "behind cover" not solid); when OFF, they're solid and occluded by geometry normally.
+  _applyXray(mat) {
+    const x = this.xray;
+    mat.depthTest = !x;          // off => visible through walls
+    mat.depthWrite = !x;         // off when translucent so they don't self-occlude oddly
+    mat.transparent = x;
+    mat.opacity = x ? 0.35 : 1;  // ~35% behind walls
+  }
+
   render(state) {
     if (!this.active || !this.demo) return;
     this._ensurePlayerModels();
@@ -1148,10 +1159,10 @@ export class View3D {
         }
         pl.mh.visible = true; pl.body.visible = false; pl.head.visible = false;
         pl.mh.rotation.y = p.yaw * Math.PI / 180 + MODEL_YAW;   // face the player's aim
-        this._pmat[3].depthTest = dt; this._pmat[2].depthTest = dt;
+        this._applyXray(this._pmat[3]); this._applyXray(this._pmat[2]);
       } else {
         pl.body.visible = true; pl.head.visible = true;
-        pl.body.material.depthTest = dt; pl.head.material.depthTest = dt;
+        this._applyXray(pl.body.material); this._applyXray(pl.head.material);
         pl.body.material.color.copy(col);
         pl.head.material.color.copy(col);
       }

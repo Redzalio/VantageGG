@@ -1211,40 +1211,32 @@ const App = {
         (f ? `${f.filename || "file"}: ${f.error || "not accepted"}` : "no demos accepted"), true);
       return;
     }
+    // Don't block the screen during parsing: dismiss the overlay so the user can keep browsing.
+    // The dashboard's "Processing…" chip shows background progress; a toast fires when ready.
+    const n = ok.length;
+    this.hideOverlay();
+    this._toast && this._toast(`Uploaded ${n} demo${n > 1 ? "s" : ""} — parsing in the background…`
+      + (bad.length ? ` (${bad.length} rejected)` : ""));
+    if (document.body.classList.contains("on-dashboard")) this.loadDashboard();   // show the live chip
     const ids = new Set(ok.map(j => j.id));
-    const total = ids.size;
-    const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s);
     const poll = async () => {
       const all = await fetch("api/jobs").then(r => r.json()).then(j => j.jobs || []).catch(() => null);
-      if (!all) { setTimeout(poll, 2000); return; }           // transient -> keep trying
+      if (!all) { setTimeout(poll, 3000); return; }
       const mine = all.filter(j => ids.has(j.id));
-      const active = mine.filter(j => ["queued", "parsing", "analyzing"].includes(j.status));
+      if (mine.filter(j => ["queued", "parsing", "analyzing"].includes(j.status)).length) {
+        setTimeout(poll, 2500); return;                       // still working -> watch quietly
+      }
       const done = mine.filter(j => j.status === "done");
       const failed = mine.filter(j => j.status === "failed");
-      const cur = active[0];
-      const label = total === 1
-        ? (cur ? `${cap(cur.status)} ${cur.filename}...` : "Finishing...")
-        : `Parsing demos... ${done.length + failed.length}/${total}`;
-      this.setOverlay(label, Math.round((done.length + failed.length) / total * 100), true);
-      if (active.length) { setTimeout(poll, 1500); return; }   // still working
-      if (failed.length) {
-        console.warn("Parse failures:\n" +
-          failed.map(j => `  ${j.filename}: ${(j.error || "").split("\n")[0]}`).join("\n"));
-      }
-      if (done.length === 1 && !failed.length && done[0].demo_id) {
-        this.viewLibraryDemo(done[0].demo_id);                // single new demo -> open it
-      } else if (done.length) {
-        if (this.demo) this.hideOverlay(); else this.showOverlay(
-          `Saved ${done.length} demo${done.length > 1 ? "s" : ""}.`
-          + (failed.length ? ` (${failed.length} failed)` : ""), false);
-        this.openLibrary();                                   // batch -> pick from the library
-      } else {
-        const f = failed[0];
-        this.showOverlay("Parse failed -- " +
-          (f ? `${f.filename}: ${(f.error || "").split("\n")[0]}` : "unknown error"), true);
-      }
+      if (failed.length) console.warn("Parse failures:\n" +
+        failed.map(j => `  ${j.filename}: ${(j.error || "").split("\n")[0]}`).join("\n"));
+      if (done.length) this._toast && this._toast(
+        `${done.length} demo${done.length > 1 ? "s" : ""} ready${failed.length ? ` (${failed.length} failed)` : ""} — open Library to view.`);
+      else if (failed.length) { const f = failed[0];
+        this._toast && this._toast(`Parse failed — ${f.filename}: ${(f.error || "").split("\n")[0] || "error"}`); }
+      if (document.body.classList.contains("on-dashboard")) this.loadDashboard();   // surface the new match
     };
-    poll();
+    setTimeout(poll, 2500);
   },
 
   // Per-file upload results -> load a single new demo, or drop into the library

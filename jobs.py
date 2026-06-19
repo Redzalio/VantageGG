@@ -12,11 +12,16 @@ The actual parse is injected by app.py via start_worker(process_fn) to avoid imp
 process_fn(job_dict) -> demo_sha1 (or None); it may call set_progress() and raises on failure.
 """
 import datetime
+import os
 import threading
 import traceback
 import uuid
 
 import db
+
+# How many demos parse at once. The claim (UPDATE ... WHERE status='queued') is atomic, so N workers
+# never double-process a job. Each big-demo parse peaks ~1-3 GB, so size N to the box's RAM/cores.
+WORKERS = max(1, int(os.environ.get("PARSE_WORKERS", "2") or 2))
 
 _process_fn = None              # injected: process_fn(job) -> demo_sha1 ; raises on failure
 _worker_started = False
@@ -171,5 +176,6 @@ def start_worker(process_fn):
         return
     _worker_started = True
     _requeue_stale()                 # recover jobs orphaned by a previous restart
-    threading.Thread(target=_run, name="parse-worker", daemon=True).start()
+    for i in range(WORKERS):         # N parallel parsers (atomic claim prevents double-processing)
+        threading.Thread(target=_run, name=f"parse-worker-{i + 1}", daemon=True).start()
     _wake.set()                      # kick the loop so re-queued jobs start immediately
