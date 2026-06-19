@@ -148,6 +148,21 @@ def _run():
             _wake.wait(timeout=2.0)
 
 
+def _requeue_stale():
+    """On startup, any job left at 'parsing'/'analyzing' belonged to a worker that died (a restart /
+    redeploy -- the queue is in-memory). Re-queue them so they get reprocessed; their uploaded .dem is
+    still on disk. (If the file is gone, the parse just fails cleanly instead of hanging forever.)"""
+    con = db.connect()
+    try:
+        n = con.execute("UPDATE jobs SET status='queued', progress='queued', started_at=NULL "
+                        "WHERE status IN ('parsing','analyzing')").rowcount
+        con.commit()
+        if n:
+            print(f"[jobs] re-queued {n} stale in-flight job(s) after restart")
+    finally:
+        con.close()
+
+
 def start_worker(process_fn):
     """Register the parse function and start the (idempotent) daemon worker thread."""
     global _process_fn, _worker_started
@@ -155,4 +170,6 @@ def start_worker(process_fn):
     if _worker_started:
         return
     _worker_started = True
+    _requeue_stale()                 # recover jobs orphaned by a previous restart
     threading.Thread(target=_run, name="parse-worker", daemon=True).start()
+    _wake.set()                      # kick the loop so re-queued jobs start immediately

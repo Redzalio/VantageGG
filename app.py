@@ -687,13 +687,17 @@ def api_job(job_id):
     j = jobs.get_job(job_id)
     if not j:
         return jsonify({"error": "no such job"}), 404
+    uid = current_user_id()                                # only your own jobs (legacy ownerless = visible)
+    if j.get("owner_user_id") is not None and uid != j["owner_user_id"] and not is_admin(current_user()):
+        return jsonify({"error": "no such job"}), 404      # don't reveal another user's job exists
     return _nostore(jobs._public(j))
 
 
 @app.route("/api/jobs")
 def api_jobs():
     active = bool(request.args.get("active"))
-    return _nostore({"jobs": [jobs._public(j) for j in jobs.list_jobs(active_only=active)]})
+    uid = current_user_id()                                # scope to the uploader (was leaking everyone's)
+    return _nostore({"jobs": [jobs._public(j) for j in jobs.list_jobs(owner_user_id=uid, active_only=active)]})
 
 
 @app.route("/api/library")
@@ -891,7 +895,7 @@ def api_dashboard():
                       if g.get("status") in ("open", "drilling")]
     except Exception:
         open_goals = []
-    active = [jobs._public(j) for j in jobs.list_jobs(active_only=True)]
+    active = [jobs._public(j) for j in jobs.list_jobs(owner_user_id=g_uid, active_only=True)]  # only your own uploads
     # the signed-in user's own form (rating/K-D/ADR/KAST + trend), if they appear in their demos
     me = None
     u = current_user()

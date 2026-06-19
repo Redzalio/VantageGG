@@ -74,6 +74,37 @@ def test_list_jobs_active_filter(tmp_path):
     assert len(jobs.list_jobs()) == 2
 
 
+def test_requeue_stale_recovers_orphaned_jobs(tmp_path):
+    """A restart leaves in-flight jobs at parsing/analyzing; startup re-queues them (the queue is
+    in-memory). Finished/queued jobs are left alone."""
+    _tmp(tmp_path)
+    a = jobs.create_job("a.dem", "/a", owner_user_id=1)
+    b = jobs.create_job("b.dem", "/b", owner_user_id=1)
+    c = jobs.create_job("c.dem", "/c", owner_user_id=1)
+    d = jobs.create_job("d.dem", "/d", owner_user_id=1)
+    jobs._update(a, status="parsing", progress="parsing", started_at="2026-01-01T00:00:00")
+    jobs._update(b, status="analyzing", progress="saving")
+    jobs._update(d, status="done")
+    jobs._requeue_stale()
+    assert jobs.get_job(a)["status"] == "queued" and jobs.get_job(a)["started_at"] is None  # reset
+    assert jobs.get_job(b)["status"] == "queued"
+    assert jobs.get_job(c)["status"] == "queued"        # was already queued
+    assert jobs.get_job(d)["status"] == "done"          # finished -> untouched
+
+
+def test_list_jobs_scoped_to_owner(tmp_path):
+    """The owner filter isolates users (fixes one user seeing another's uploads); ownerless/legacy
+    jobs stay visible (local single-user mode)."""
+    _tmp(tmp_path)
+    mine = jobs.create_job("mine.dem", "/m", owner_user_id=1)
+    theirs = jobs.create_job("theirs.dem", "/t", owner_user_id=2)
+    legacy = jobs.create_job("legacy.dem", "/l")        # owner None
+    ids = lambda lst: {j["id"] for j in lst}
+    assert ids(jobs.list_jobs(owner_user_id=1)) == {mine, legacy}   # mine + ownerless, NOT user 2's
+    assert ids(jobs.list_jobs(owner_user_id=2)) == {theirs, legacy}
+    assert ids(jobs.list_jobs()) == {mine, theirs, legacy}          # no filter = all (admin/local)
+
+
 def test_public_hides_upload_path(tmp_path):
     _tmp(tmp_path)
     jid = jobs.create_job("m.dem", "/secret/server/path.dem")

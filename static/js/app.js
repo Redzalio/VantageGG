@@ -1155,38 +1155,49 @@ const App = {
 
   // Upload one OR many files (.dem and/or .zip). The server parses + saves each to
   // the library and returns a per-file result list {demos:[{id,name,map,score,ok}|...]}.
-  upload(files) {
+  // Each file uploads in its OWN request (sequentially), so a batch of big demos never exceeds the
+  // per-request size cap -- each just enqueues a parse job. The single parse worker drains the queue.
+  async upload(files) {
     const list = files instanceof FileList ? [...files]
       : Array.isArray(files) ? files : [files];
     if (!list.length) return;
-    const label = list.length === 1 ? list[0].name : `${list.length} files`;
-    this.showOverlay(`Uploading ${label}...`, false, 0);
-    const fd = new FormData();
-    for (const f of list) fd.append("files", f);
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "api/upload");
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) {
+    this.showOverlay(`Uploading ${list.length === 1 ? list[0].name : list.length + " files"}...`, false, 0);
+    const queued = [];
+    for (let i = 0; i < list.length; i++) {
+      const f = list[i];
+      const prefix = list.length === 1 ? "" : `(${i + 1}/${list.length}) `;
+      let res;
+      try { res = await this._uploadOne(f, prefix); }
+      catch (e) { this.showOverlay(`Upload failed -- ${f.name} (is the server running?)`, true); return; }
+      if (res.error) { this.showOverlay(res.upsell ? res.error : ("Server error: " + res.error), true); return; }
+      if (res.jobs) queued.push(...res.jobs);
+      else if (res.demos) this.onUploaded(res.demos);     // legacy ?sync response (not used by default)
+    }
+    if (queued.length) this._trackJobs(queued);           // poll all enqueued jobs together
+  },
+
+  // POST a single file to /api/upload with progress. Resolves to the JSON response
+  // ({jobs:[...]} ok, or {error,upsell} on a non-200); rejects only on a network failure.
+  _uploadOne(file, prefix) {
+    return new Promise((resolve, reject) => {
+      const fd = new FormData();
+      fd.append("files", file);
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "api/upload");
+      xhr.upload.onprogress = (e) => {
+        if (!e.lengthComputable) return;
         const pct = Math.round(e.loaded / e.total * 100);
-        this.setOverlay(`Uploading ${label}... ${pct}%`, pct);
-        if (pct >= 100) this.setOverlay("Queued for parsing...", 100, true);
-      }
-    };
-    xhr.onload = () => {
-      if (xhr.status !== 200) {
-        let msg = xhr.statusText, upsell = false;
-        try { const j = JSON.parse(xhr.responseText); msg = j.error || msg; upsell = !!j.upsell; } catch {}
-        this.showOverlay(upsell ? msg : ("Server error: " + msg), true);   // quota msg shown as-is
-        return;
-      }
-      let resp;
-      try { resp = JSON.parse(xhr.responseText); }
-      catch (err) { this.showOverlay("Parse error: " + err.message, true); return; }
-      if (resp.jobs) this._trackJobs(resp.jobs);          // async parse jobs -> poll
-      else this.onUploaded(resp.demos || []);             // legacy synchronous response
-    };
-    xhr.onerror = () => this.showOverlay("Upload failed (is the server running?)", true);
-    xhr.send(fd);
+        if (pct >= 100) this.setOverlay(`Queued ${prefix}${file.name} for parsing...`, 100, true);
+        else this.setOverlay(`Uploading ${prefix}${file.name}... ${pct}%`, pct);
+      };
+      xhr.onload = () => {
+        let j = null; try { j = JSON.parse(xhr.responseText); } catch (e) { /* non-JSON */ }
+        if (xhr.status !== 200) resolve({ error: (j && j.error) || xhr.statusText || ("HTTP " + xhr.status), upsell: !!(j && j.upsell) });
+        else resolve(j || {});
+      };
+      xhr.onerror = () => reject(new Error("network"));
+      xhr.send(fd);
+    });
   },
 
   // Poll background parse jobs from an async upload; drive the overlay; on completion open the
