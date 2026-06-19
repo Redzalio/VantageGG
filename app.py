@@ -213,7 +213,7 @@ def entitlements(user):
     return {f: unlocked for f in PRO_FEATURES}
 
 
-FREE_UPLOAD_LIMIT = int(os.environ.get("FREE_UPLOAD_LIMIT", "5"))
+FREE_UPLOAD_LIMIT = int(os.environ.get("FREE_UPLOAD_LIMIT", "10"))   # #22: Free plan stores 10 demos
 # abuse caps: most in-flight jobs one user may queue, and the free-disk floor below which uploads are
 # refused (leave headroom for the upload + decompress temp + parsed cache).
 MAX_ACTIVE_JOBS = int(os.environ.get("MAX_ACTIVE_JOBS_PER_USER", "10") or 10)
