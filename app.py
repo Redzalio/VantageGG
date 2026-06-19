@@ -534,19 +534,32 @@ def _process_upload_job(job):
     """Worker entrypoint (injected into jobs.py): parse the uploaded .dem outside the request,
     save it to the library, and return the demo's source_sha1. Raises on failure (-> job 'failed')."""
     path, name, jid = job["upload_path"], job["filename"], job["id"]
+    parse_path = path
     try:
-        data = _parse_or_load_dem(path, name,
+        if library.is_gz_name(path):
+            # client-gzipped upload: decompress to a byte-identical .dem here (in the WORKER process,
+            # not the web tier) before parsing. gzip is lossless, so the .dem's content-hash cache key
+            # is the same as a raw upload of the same demo.
+            jobs.set_progress(jid, status="parsing", progress="decompressing")
+            import gzip as _gzip
+            import shutil as _shutil
+            fd, parse_path = tempfile.mkstemp(prefix="_jobgz_", suffix=".dem", dir=UPLOADS)
+            with _gzip.open(path, "rb") as fin, os.fdopen(fd, "wb") as fout:
+                _shutil.copyfileobj(fin, fout, length=1 << 20)
+        data = _parse_or_load_dem(parse_path, name,
                                   progress=lambda stage: jobs.set_progress(jid, status=stage, progress=stage))
         jobs.set_progress(jid, status="analyzing", progress="saving to library")
         _save_to_library(name, data, owner_user_id=job.get("owner_user_id"))
         return data.get("source_sha1")
     finally:
-        # _parse_or_load_dem moves the temp to uploads/<key>.dem on success; clean any leftover
-        try:
-            if os.path.exists(path) and os.path.basename(path).startswith("_jobup_"):
-                os.remove(path)
-        except OSError:
-            pass
+        # _parse_or_load_dem moves the temp to uploads/<key>.dem on success (KEEP_DEM); clean any
+        # leftover -- both the uploaded file (.dem or .gz) and the decompressed temp.
+        for p in {path, parse_path}:
+            try:
+                if p and os.path.exists(p) and os.path.basename(p).startswith(("_jobup_", "_jobgz_")):
+                    os.remove(p)
+            except OSError:
+                pass
 
 
 def _ensure_sample():
@@ -668,12 +681,21 @@ def upload():
     created = []
     for f in files:
         name = f.filename
-        is_zip, is_dem = library.is_zip_name(name), library.is_dem_name(name)
-        if not (is_zip or is_dem):
-            created.append({"filename": name, "ok": False, "error": "expected a .dem or .zip file"})
+        is_zip, is_dem, is_gz = library.is_zip_name(name), library.is_dem_name(name), library.is_gz_name(name)
+        if not (is_zip or is_dem or is_gz):
+            created.append({"filename": name, "ok": False, "error": "expected a .dem, .dem.gz or .zip file"})
             continue
         try:
-            if is_zip:
+            if is_gz:
+                # client-gzipped demo (CompressionStream): save the .gz as-is + enqueue; the worker
+                # gunzips before parsing (keeps this web tier light -- it does no decompression/parse).
+                dispname = library.strip_gz(name)
+                fd, gtmp = tempfile.mkstemp(prefix="_jobup_", suffix=".dem.gz", dir=UPLOADS)
+                os.close(fd)
+                f.save(gtmp)
+                created.append({"id": jobs.create_job(dispname, gtmp, owner_user_id=owner),
+                                "filename": dispname, "status": "queued", "ok": True})
+            elif is_zip:
                 fd, ztmp = tempfile.mkstemp(prefix="_zip_", suffix=".zip", dir=UPLOADS)
                 os.close(fd)
                 try:

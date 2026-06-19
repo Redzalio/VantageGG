@@ -138,6 +138,17 @@ def is_dem_name(filename):
     return bool(filename) and filename.lower().endswith(".dem")
 
 
+def is_gz_name(filename):
+    """A client-gzipped demo (CompressionStream upload), e.g. 'match.dem.gz'. The worker gunzips it
+    back to byte-identical .dem before parsing, so the content-hash cache key is unchanged."""
+    return bool(filename) and filename.lower().endswith(".gz")
+
+
+def strip_gz(filename):
+    """Display/storage name for a gzipped upload: 'match.dem.gz' -> 'match.dem'."""
+    return filename[:-3] if is_gz_name(filename) else filename
+
+
 # ---- the library index ------------------------------------------------------
 def load_index(cache_dir):
     """Load library.json as a list of rows; [] if missing/corrupt."""

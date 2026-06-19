@@ -1347,7 +1347,10 @@ const App = {
       const f = list[i];
       const prefix = list.length === 1 ? "" : `(${i + 1}/${list.length}) `;
       let res;
-      try { res = await this._uploadOne(f, prefix); }
+      try {
+        const up = await this._prepUpload(f, prefix);     // gzip the .dem in-browser if we can
+        res = await this._uploadOne(up.blob, up.name, prefix);
+      }
       catch (e) { this.showOverlay(`Upload failed -- ${f.name} (is the server running?)`, true); return; }
       if (res.error) { this.showOverlay(res.upsell ? res.error : ("Server error: " + res.error), true); return; }
       if (res.jobs) queued.push(...res.jobs);
@@ -1356,19 +1359,46 @@ const App = {
     if (queued.length) this._trackJobs(queued);           // poll all enqueued jobs together
   },
 
-  // POST a single file to /api/upload with progress. Resolves to the JSON response
-  // ({jobs:[...]} ok, or {error,upsell} on a non-200); rejects only on a network failure.
-  _uploadOne(file, prefix) {
+  // Compress a .dem in the browser before upload. CS2 demos are already internally compressed so
+  // gzip only buys ~1.5x, but that's ~30% off the (bandwidth-bound) transfer for free. Uses the
+  // native CompressionStream -- no library. Falls back to the raw file if unsupported, not a .dem,
+  // too small to bother, or if compression didn't actually shrink it. Returns {blob, name}.
+  async _prepUpload(file, prefix) {
+    const isDem = /\.dem$/i.test(file.name || "");
+    if (!isDem || typeof CompressionStream === "undefined" || !file.stream || file.size < 4 * 1024 * 1024) {
+      return { blob: file, name: file.name };
+    }
+    try {
+      const total = file.size; let read = 0;
+      this.setOverlay(`Compressing ${prefix}${file.name}...`, 0);
+      const counter = new TransformStream({
+        transform: (chunk, ctrl) => {
+          read += chunk.byteLength;
+          this.setOverlay(`Compressing ${prefix}${file.name}... ${Math.round(read / total * 100)}%`,
+            Math.round(read / total * 100));
+          ctrl.enqueue(chunk);
+        },
+      });
+      const stream = file.stream().pipeThrough(counter).pipeThrough(new CompressionStream("gzip"));
+      const blob = await new Response(stream).blob();
+      if (blob.size && blob.size < file.size * 0.95) return { blob, name: file.name + ".gz" };
+    } catch (e) { /* any failure -> upload the raw file below */ }
+    return { blob: file, name: file.name };
+  },
+
+  // POST a single file (or compressed blob) to /api/upload with progress. Resolves to the JSON
+  // response ({jobs:[...]} ok, or {error,upsell} on a non-200); rejects only on a network failure.
+  _uploadOne(blob, name, prefix) {
     return new Promise((resolve, reject) => {
       const fd = new FormData();
-      fd.append("files", file);
+      fd.append("files", blob, name);
       const xhr = new XMLHttpRequest();
       xhr.open("POST", "api/upload");
       xhr.upload.onprogress = (e) => {
         if (!e.lengthComputable) return;
         const pct = Math.round(e.loaded / e.total * 100);
-        if (pct >= 100) this.setOverlay(`Queued ${prefix}${file.name} for parsing...`, 100, true);
-        else this.setOverlay(`Uploading ${prefix}${file.name}... ${pct}%`, pct);
+        if (pct >= 100) this.setOverlay(`Queued ${prefix}${name} for parsing...`, 100, true);
+        else this.setOverlay(`Uploading ${prefix}${name}... ${pct}%`, pct);
       };
       xhr.onload = () => {
         let j = null; try { j = JSON.parse(xhr.responseText); } catch (e) { /* non-JSON */ }
