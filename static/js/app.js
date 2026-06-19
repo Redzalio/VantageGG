@@ -1698,37 +1698,70 @@ const App = {
       return;
     }
     // The strip stays up through parsing (non-blocking) so the user can keep browsing the app.
+    // The parser has no sub-progress, so we show an ESTIMATED % + ETA: each job's est_total_s (from
+    // file size, server-calibrated) vs how long it's actually been parsing. A 1s ticker advances the
+    // countdown smoothly between the slower status polls.
     const n = ok.length;
     if (document.body.classList.contains("on-dashboard")) this.loadDashboard();
     const ids = new Set(ok.map(j => j.id));
-    const t0 = Date.now();
-    const el = () => { const s = Math.round((Date.now() - t0) / 1000); return s < 60 ? s + "s" : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
-    this._upStrip("parsing", { label: `Parsing ${n} demo${n > 1 ? "s" : ""}… (${el()})` });
+    const est = {};                 // jobId -> estimated total parse seconds
+    const seen = {};                // jobId -> ms when first observed working (elapsed base)
+    const doneIds = new Set();
+    let stage = "Parsing", finished = false;
+    this._jobDismissed = false;
+    const DEFAULT_EST = 40;         // sec, when the server couldn't size the file
+    const fmtEta = (s) => s >= 60 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}` : `${Math.round(s)}s`;
+    const render = () => {
+      if (this._jobDismissed) return;
+      const now = Date.now();
+      let totalEst = 0, doneEst = 0, working = 0;
+      ids.forEach(id => {
+        const e = est[id] || DEFAULT_EST;
+        totalEst += e;
+        if (doneIds.has(id)) { doneEst += e; return; }
+        working++;
+        if (seen[id]) doneEst += Math.min((now - seen[id]) / 1000, e * 0.99);   // cap < 100% until done
+      });
+      const pct = Math.min(99, Math.max(1, Math.round(doneEst / (totalEst || 1) * 100)));
+      const eta = Math.max(0, Math.round(totalEst - doneEst));
+      const tail = eta > 0 ? ` · ~${fmtEta(eta)} left` : " · finishing…";
+      this._upStrip("parsing", { pct, label: `${stage} ${working} demo${working > 1 ? "s" : ""}… ${pct}%${tail}` });
+    };
+    clearInterval(this._jobTick);
+    this._upStrip("parsing", { pct: 1, label: `Parsing ${n} demo${n > 1 ? "s" : ""}…` });
+    this._jobTick = setInterval(() => { if (!finished) render(); }, 1000);   // smooth between polls
     const poll = async () => {
       const all = await fetch("api/jobs").then(r => r.json()).then(j => j.jobs || []).catch(() => null);
       if (!all) { setTimeout(poll, 3000); return; }
       const mine = all.filter(j => ids.has(j.id));
+      const now = Date.now();
+      mine.forEach(j => {
+        if (j.est_total_s) est[j.id] = j.est_total_s;
+        if (["parsing", "analyzing"].includes(j.status) && !seen[j.id]) seen[j.id] = now;
+        if (j.status === "done") { doneIds.add(j.id); if (!seen[j.id]) seen[j.id] = now; }
+      });
       const working = mine.filter(j => ["queued", "parsing", "analyzing"].includes(j.status));
       if (working.length) {
-        const stage = working.some(j => j.status === "analyzing") ? "Finishing"
+        stage = working.some(j => j.status === "analyzing") ? "Finishing"
           : working.some(j => j.status === "parsing") ? "Parsing" : "Queued";
-        this._upStrip("parsing", { label: `${stage} ${working.length} demo${working.length > 1 ? "s" : ""}… (${el()})` });
-        setTimeout(poll, 2500); return;                       // honest stage + elapsed (parser has no sub-%)
+        render();
+        setTimeout(poll, 2000); return;
       }
+      finished = true; clearInterval(this._jobTick);
       const done = mine.filter(j => j.status === "done");
       const failed = mine.filter(j => j.status === "failed");
       if (failed.length) console.warn("Parse failures:\n" +
         failed.map(j => `  ${j.filename}: ${(j.error || "").split("\n")[0]}`).join("\n"));
-      if (done.length) {
-        this._upStrip("done", { label: `✓ ${done.length} demo${done.length > 1 ? "s" : ""} ready${failed.length ? ` (${failed.length} failed)` : ""}`, autohide: 6000 });
-        this._toast && this._toast(`${done.length} demo${done.length > 1 ? "s" : ""} ready — open Library to view.`);
-      } else if (failed.length) {
+      if (done.length && !this._jobDismissed) {
+        this._upStrip("done", { pct: 100, label: `✓ ${done.length} demo${done.length > 1 ? "s" : ""} ready${failed.length ? ` (${failed.length} failed)` : ""}`, autohide: 6000 });
+      } else if (failed.length && !this._jobDismissed) {
         const f = failed[0];
         this._upStrip("failed", { label: `✕ Parse failed — ${(f.error || "").split("\n")[0] || "error"}`.slice(0, 90), autohide: 9000 });
       }
+      if (done.length) this._toast && this._toast(`${done.length} demo${done.length > 1 ? "s" : ""} ready — open Library to view.`);
       if (document.body.classList.contains("on-dashboard")) this.loadDashboard();   // surface the new match
     };
-    setTimeout(poll, 2500);
+    setTimeout(poll, 1500);
   },
 
   // Per-file upload results -> load a single new demo, or drop into the library
@@ -4252,11 +4285,17 @@ const App = {
   _upStrip(state, opts = {}) {
     const el = $("upStrip"); if (!el) return;
     clearTimeout(this._upStripT);
-    if (state === "hide") { el.hidden = true; document.body.classList.remove("upstrip-on"); return; }
+    if (state === "hide") {
+      el.hidden = true; document.body.classList.remove("upstrip-on");
+      this._jobDismissed = true; clearInterval(this._jobTick);   // user closed it -> stop the % ticker
+      return;
+    }
     const fill = $("upStripFill"), lab = $("upStripLabel"), x = $("upStripX");
     el.hidden = false; document.body.classList.add("upstrip-on");
-    el.className = "upstrip up-" + state + (state === "parsing" ? " indet" : "");
-    if (state === "uploading" && opts.pct != null) fill.style.width = Math.max(2, Math.min(100, opts.pct)) + "%";
+    // parsing is determinate now (estimated %); only fall back to the indeterminate sweep if we have no %
+    el.className = "upstrip up-" + state + ((state === "parsing" && opts.pct == null) ? " indet" : "");
+    if ((state === "uploading" || state === "parsing" || state === "done") && opts.pct != null)
+      fill.style.width = Math.max(2, Math.min(100, opts.pct)) + "%";
     if (lab) lab.textContent = opts.label || "";
     if (x) x.onclick = () => this._upStrip("hide");
     if (opts.autohide) this._upStripT = setTimeout(() => this._upStrip("hide"), opts.autohide);

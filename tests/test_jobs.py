@@ -42,6 +42,39 @@ def test_create_and_get_queued(tmp_path):
     assert j["status"] == "queued" and j["filename"] == "m.dem" and j["created_at"]
 
 
+# ---- parse-time estimate (powers the upload strip's % + ETA) -----------------
+def test_estimate_total_seconds_scales_clamps(tmp_path):
+    _tmp(tmp_path)
+    MB = 1024 * 1024
+    assert jobs.estimate_total_seconds(100 * MB, rate=0.1) == 10        # 100MB * 0.1s = 10s
+    assert jobs.estimate_total_seconds(1 * MB, rate=0.1) == jobs.MIN_PARSE_EST_S   # tiny -> floor
+    assert jobs.estimate_total_seconds(99999 * MB, rate=10) == jobs.MAX_PARSE_EST_S  # huge -> cap
+    assert jobs.estimate_total_seconds(0) is None and jobs.estimate_total_seconds(None) is None
+
+
+def test_parse_rate_defaults_then_calibrates(tmp_path):
+    _tmp(tmp_path)
+    jobs._rate_cache["path"] = None
+    assert jobs.parse_rate_s_per_mb() == jobs.DEFAULT_PARSE_S_PER_MB    # no completed jobs yet
+    con = db.connect()                                                  # seed: 100MB each took 20s -> 0.2 s/MB
+    for i in range(3):
+        con.execute("INSERT INTO jobs(id,filename,upload_path,status,progress,created_at,started_at,"
+                    "finished_at,bytes) VALUES(?,?,?,?,?,?,?,?,?)",
+                    ("j%d" % i, "m.dem", "/x", "done", "done", "2026-06-19T00:00:00",
+                     "2026-06-19T00:00:00", "2026-06-19T00:00:20", 100 * 1024 * 1024))
+    con.commit(); con.close()
+    jobs._rate_cache["path"] = None                                    # bust the 60s cache
+    assert abs(jobs.parse_rate_s_per_mb() - 0.2) < 0.001
+
+
+def test_public_exposes_est_total_s(tmp_path):
+    _tmp(tmp_path)
+    jid = jobs.create_job("m.dem", "/up/m.dem", size_bytes=200 * 1024 * 1024)
+    pub = jobs._public(jobs.get_job(jid))
+    assert pub["est_total_s"] and pub["est_total_s"] >= jobs.MIN_PARSE_EST_S
+    assert jobs._public(jobs.get_job(jobs.create_job("n.dem", "/n")))["est_total_s"] is None  # unknown size
+
+
 def test_process_next_empty_queue(tmp_path):
     _tmp(tmp_path)
     assert jobs.process_next() is None

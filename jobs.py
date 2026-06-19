@@ -15,6 +15,7 @@ import datetime
 import multiprocessing
 import os
 import threading
+import time
 import traceback
 import uuid
 
@@ -42,6 +43,66 @@ def _now():
     return datetime.datetime.now().isoformat(timespec="seconds")
 
 
+# ---- parse-time estimate (drives the upload strip's % + ETA) -----------------
+# The parser emits no sub-progress, so we estimate total parse time from the file size, calibrated
+# from how long recent demos on THIS machine actually took (median seconds-per-MB). The client then
+# turns elapsed/estimate into a percentage + countdown. Falls back to a constant when there's no history.
+DEFAULT_PARSE_S_PER_MB = float(os.environ.get("PARSE_EST_S_PER_MB", "0.12") or 0.12)
+MIN_PARSE_EST_S = 8
+MAX_PARSE_EST_S = max(30, PARSE_TIMEOUT or 600)
+_rate_cache = {"path": None, "val": None, "at": 0.0}     # keyed on DB_PATH so tests/temp DBs recompute
+
+
+def _duration_s(started_at, finished_at):
+    try:
+        if not started_at or not finished_at:
+            return None
+        d = (datetime.datetime.fromisoformat(finished_at)
+             - datetime.datetime.fromisoformat(started_at)).total_seconds()
+        return d if d > 0 else None
+    except (ValueError, TypeError):
+        return None
+
+
+def parse_rate_s_per_mb(con=None):
+    """Median seconds-per-MB across recent completed parses; cached ~60s. Falls back to the default."""
+    now = time.time()
+    if (_rate_cache["path"] == db.DB_PATH and _rate_cache["val"] is not None
+            and now - _rate_cache["at"] < 60):
+        return _rate_cache["val"]
+    val = DEFAULT_PARSE_S_PER_MB
+    c = con or db.connect()
+    try:
+        rows = c.execute("SELECT bytes, started_at, finished_at FROM jobs WHERE status='done' "
+                         "AND bytes>0 AND started_at IS NOT NULL AND finished_at IS NOT NULL "
+                         "ORDER BY finished_at DESC LIMIT 25").fetchall()
+        rates = []
+        for r in rows:
+            d = _duration_s(r["started_at"], r["finished_at"])
+            mb = (r["bytes"] or 0) / (1024 * 1024)
+            if d and mb > 0.5:
+                rates.append(d / mb)
+        if rates:
+            rates.sort()
+            val = rates[len(rates) // 2]
+    except Exception:
+        pass
+    finally:
+        if con is None:
+            c.close()
+    _rate_cache.update(path=db.DB_PATH, val=val, at=now)
+    return val
+
+
+def estimate_total_seconds(size_bytes, rate=None):
+    """Estimated total parse seconds for a file of `size_bytes`, or None if size is unknown."""
+    if not size_bytes or size_bytes <= 0:
+        return None
+    rate = rate if rate is not None else parse_rate_s_per_mb()
+    secs = (size_bytes / (1024 * 1024)) * rate
+    return int(max(MIN_PARSE_EST_S, min(MAX_PARSE_EST_S, round(secs))))
+
+
 def _public(j):
     """Job row -> API-safe dict (hides the server upload_path; exposes demo_id for opening)."""
     if not j:
@@ -50,7 +111,8 @@ def _public(j):
             "progress": j["progress"], "error": j["error"], "demo_id": j["demo_sha1"],
             "created_at": j["created_at"], "started_at": j["started_at"],
             "finished_at": j["finished_at"],
-            "upload_ms": j.get("upload_ms"), "bytes": j.get("bytes"), "team_id": j.get("team_id")}
+            "upload_ms": j.get("upload_ms"), "bytes": j.get("bytes"), "team_id": j.get("team_id"),
+            "est_total_s": estimate_total_seconds(j.get("bytes"))}
 
 
 def create_job(filename, upload_path, owner_user_id=None, upload_ms=None, size_bytes=None, team_id=None):
