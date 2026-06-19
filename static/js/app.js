@@ -142,6 +142,56 @@ const App = {
     const wantLanding = !!(me && me.auth_enabled && !loggedIn);   // logged-out on an auth-enabled site
     if (!this.demo) { if (wantLanding) this.showLanding(); else this.showDashboard(); }
     this._renderAuthBox();
+    this._handleBillingReturn();                          // ?checkout=success/cancel, ?portal=return
+  },
+  // Re-pull /api/me and re-apply entitlements/UI (after a checkout returns and the webhook lands).
+  async _refreshMe() {
+    let me;
+    try { me = await fetch("/api/me", { cache: "no-store" }).then(r => r.json()); }
+    catch (e) { return false; }
+    this.me = me || {}; this.myTeams = (me && me.teams) || [];
+    this.ent = (me && me.entitlements) || null;
+    this.isAdmin = !!(me && me.is_admin);
+    this.isHelper = !!(me && (me.is_helper || me.is_admin));
+    this._applyGates();
+    this._renderAuthBox();
+    if (document.body.classList.contains("on-dashboard")) this.loadDashboard();
+    return !!(me && me.tier === "pro");
+  },
+  // Stripe sends the user back to /?checkout=success|cancel (or /?portal=return). Toast + refresh; the
+  // tier flips via the async webhook, so poll a few times until it lands.
+  async _handleBillingReturn() {
+    const q = new URLSearchParams(location.search);
+    const checkout = q.get("checkout"), portal = q.get("portal");
+    if (!checkout && !portal) return;
+    history.replaceState(null, "", location.pathname);     // don't re-fire on refresh
+    if (checkout === "cancel") { this._toast && this._toast("Checkout canceled — you weren't charged."); return; }
+    if (portal === "return") { this._refreshMe(); return; }
+    if (checkout === "success") {
+      this._toast && this._toast("Payment received — unlocking Pro…");
+      for (let i = 0; i < 6; i++) {                         // ~12s: wait for the webhook to grant Pro
+        if (await this._refreshMe()) { this._toast && this._toast("You're Pro. Everything's unlocked — enjoy!"); return; }
+        await new Promise(r => setTimeout(r, 2000));
+      }
+      this._toast && this._toast("Payment received. If Pro doesn't show in a minute, refresh the page.");
+    }
+  },
+  // POST to create a Checkout Session for `period` and redirect to Stripe's hosted page.
+  async _startCheckout(period) {
+    try {
+      const r = await fetch("/api/billing/checkout", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ period }) }).then(r => r.json());
+      if (r && r.url) { window.location.href = r.url; return; }
+      this._toast && this._toast((r && r.error) || "Couldn't start checkout.");
+    } catch (e) { this._toast && this._toast("Couldn't reach checkout — try again."); }
+  },
+  // POST to open the Stripe Customer Portal (manage/cancel) and redirect.
+  async _openPortal() {
+    try {
+      const r = await fetch("/api/billing/portal", { method: "POST" }).then(r => r.json());
+      if (r && r.url) { window.location.href = r.url; return; }
+      this._toast && this._toast((r && r.error) || "No subscription to manage yet.");
+    } catch (e) { this._toast && this._toast("Couldn't open the billing portal."); }
   },
   // Renders the header auth chip from current this.me/isAdmin/etc. Split out of initAuth so the
   // admin "preview as free" lens can re-render it without re-fetching /api/me (which would reset the
@@ -755,25 +805,31 @@ const App = {
       if (highlightFeature && names[highlightFeature]) { hl.hidden = false; hl.innerHTML = `Unlock <b>${names[highlightFeature]}</b> &mdash; and everything else in Pro.`; }
       else hl.hidden = true;
     }
+    const billingOn = !!me.billing_enabled;
+    const hasSub = !!(me.user && me.user.stripe_customer_id);   // a real Stripe customer -> can manage
+    const manage = isProNow && hasSub && billingOn;             // Pro via Stripe -> "Manage subscription"
     const tog = $("upToggle");
     const apply = (key) => {
       this._upPeriod = key;
       const p = this._applyPeriod(tog, $("upPrice"), $("upBill"), key);
       const cta = $("upCta");
-      if (cta) cta.textContent = isProNow ? "You already have Pro" : `Get Pro — ${p.label}`;
+      if (cta) cta.textContent = manage ? "Manage subscription"
+        : isProNow ? "You already have Pro" : `Get Pro — ${p.label}`;
     };
     tog.querySelectorAll(".lp-seg").forEach(s => s.onclick = () => apply(s.dataset.period));
     apply(this._upPeriod);
     const cta = $("upCta");
     if (cta) {
-      cta.classList.toggle("disabled", isProNow);
+      cta.classList.toggle("disabled", isProNow && !manage);   // admins/comp Pro: nothing to buy/manage
       cta.onclick = () => {
+        if (manage) { this._openPortal(); return; }
         if (isProNow) { this._toast && this._toast("You already have full Pro access."); return; }
-        // Billing isn't live yet -> be honest, don't fake a checkout. (When Stripe is wired, send the
-        // user to checkout for PRO_PLANS[this._upPeriod] here.)
+        if (billingOn) { this._startCheckout(this._upPeriod); return; }
         this._toast && this._toast("Billing isn't live yet — approved testers get Pro free during early access.");
       };
     }
+    const soon = document.querySelector("#upgradeModal .up-soon");
+    if (soon) soon.hidden = billingOn;                         // drop the "not live yet" note once billing is on
   },
 
   // ---- account settings (off the profile button) --------------------------

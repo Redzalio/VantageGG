@@ -30,6 +30,7 @@ import matchindex                                       # cross-match trends (st
 import db                                               # SQLite metadata index (stdlib only)
 import jobs                                             # background parse-job queue (stdlib only)
 import nades                                            # local nade-lineup library (stdlib only)
+import billing                                          # Stripe subscription billing (opt-in via env)
 import practiceplan                                     # practice-plan done-state (stdlib only)
 import pricing                                           # editable Pro subscription prices (stdlib only)
 import reviews                                          # review bookmarks + auto-queues (stdlib only)
@@ -1198,7 +1199,70 @@ def api_me():
                      "is_admin": is_admin(u), "is_helper": is_helper(u), "tier": tier_of(u),
                      "entitlements": entitlements(u), "tiers_enabled": TIERS_ENABLED,
                      "upload_quota": upload_allowance(u), "pricing": pricing.public_plans(),
+                     "billing_enabled": billing.enabled(),  # frontend: real Checkout vs "not live yet"
                      "support_contact": os.environ.get("SUPPORT_CONTACT", "")})
+
+
+# ---- billing (Stripe Checkout + Customer Portal + webhook) -----------------------------------
+@app.route("/api/billing/checkout", methods=["POST"])
+def api_billing_checkout():
+    """Start a Stripe Checkout (subscription) for the signed-in user on the chosen period -> {url} to
+    redirect to. 503 if billing isn't configured, 401 if not signed in."""
+    if not billing.enabled():
+        return _nostore({"error": "Billing isn't enabled yet."}), 503
+    u = current_user()
+    if not u or not u.get("id"):
+        return _nostore({"error": "Sign in to subscribe."}), 401
+    period = (request.get_json(silent=True) or {}).get("period", "monthly")
+    if period not in billing.LOOKUP:
+        return _nostore({"error": "Unknown plan."}), 400
+    try:
+        url = billing.create_checkout_session(u, period, steamauth.public_base_url(request.url_root))
+    except Exception:
+        traceback.print_exc()
+        return _nostore({"error": "Could not start checkout."}), 502
+    if not url:
+        return _nostore({"error": "That plan isn't available right now."}), 502
+    return _nostore({"url": url})
+
+
+@app.route("/api/billing/portal", methods=["POST"])
+def api_billing_portal():
+    """Open the Stripe Customer Portal (self-serve cancel/switch) for the signed-in user -> {url}.
+    400 if they have no Stripe customer yet (never subscribed)."""
+    if not billing.enabled():
+        return _nostore({"error": "Billing isn't enabled yet."}), 503
+    u = current_user()
+    if not u or not u.get("id"):
+        return _nostore({"error": "Sign in first."}), 401
+    try:
+        url = billing.create_portal_session(u, steamauth.public_base_url(request.url_root))
+    except Exception:
+        traceback.print_exc()
+        return _nostore({"error": "Could not open the billing portal."}), 502
+    if not url:
+        return _nostore({"error": "No subscription to manage yet."}), 400
+    return _nostore({"url": url})
+
+
+@app.route("/api/stripe/webhook", methods=["POST"])
+def api_stripe_webhook():
+    """Stripe -> us. Verify the signature (that IS the auth -- server-to-server, no login/scope), then
+    apply the event (grant/revoke Pro). 200 on handled/ignored so Stripe stops retrying; 400 only on a
+    bad signature; 500 lets Stripe retry a transient handler failure."""
+    payload = request.get_data()
+    sig = request.headers.get("Stripe-Signature", "")
+    try:
+        event = billing.verify_event(payload, sig)
+    except Exception as e:
+        print(f"[stripe] rejected webhook: {e}")
+        return _nostore({"error": "bad signature"}), 400
+    try:
+        billing.apply_event(event)
+    except Exception:
+        traceback.print_exc()
+        return _nostore({"error": "handler error"}), 500
+    return _nostore({"received": True})
 
 
 # ---- admin panel (gated to ADMIN_STEAM_IDS / local owner; helpers get read + grant-Pro) ------

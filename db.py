@@ -160,6 +160,8 @@ def migrate(con=None):
         _ensure_column(c, "users", "pro_until", "TEXT")             # Pro expiry (NULL = indefinite)
         _ensure_column(c, "users", "role", "TEXT DEFAULT 'user'")   # access role (user/helper)
         _ensure_column(c, "users", "name_locked", "INTEGER DEFAULT 0")  # user set a custom display name
+        _ensure_column(c, "users", "stripe_customer_id", "TEXT")    # Stripe customer (billing); NULL until first checkout
+        c.execute("CREATE INDEX IF NOT EXISTS idx_users_stripe_cust ON users(stripe_customer_id)")
         if not had_user_demos:
             c.execute("""INSERT OR IGNORE INTO user_demos(user_id, sha1, team_id, created_at)
                          SELECT owner_user_id, sha1, team_id, created_at
@@ -262,7 +264,33 @@ def _user_row(r):
     pro_until = r["pro_until"] if "pro_until" in keys else None
     return {"id": r["id"], "steam_id_64": r["steam_id_64"], "name": r["display_name"],
             "avatar": r["avatar_url"], "tier": tier, "pro_until": pro_until, "role": role,
+            "stripe_customer_id": (r["stripe_customer_id"] if "stripe_customer_id" in keys else None),
             "created_at": r["created_at"], "last_login_at": r["last_login_at"]}
+
+
+def set_stripe_customer(user_id, customer_id, con=None):
+    """Link a Stripe customer to a user (set once at first checkout). Returns True if updated."""
+    c = con or connect()
+    try:
+        n = c.execute("UPDATE users SET stripe_customer_id=? WHERE id=?", (customer_id, user_id)).rowcount
+        c.commit()
+        return bool(n)
+    finally:
+        if con is None:
+            c.close()
+
+
+def user_by_stripe_customer(customer_id, con=None):
+    """The user linked to a Stripe customer id, or None. Used by subscription.* webhooks (which carry
+    only the customer, not our user id)."""
+    if not customer_id:
+        return None
+    c = con or connect()
+    try:
+        return _user_row(c.execute("SELECT * FROM users WHERE stripe_customer_id=?", (str(customer_id),)).fetchone())
+    finally:
+        if con is None:
+            c.close()
 
 
 def set_user_tier(user_id, tier, pro_until=None, con=None):

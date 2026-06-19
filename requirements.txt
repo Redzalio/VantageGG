@@ -1,2 +1,3 @@
 demoparser2>=0.41
 flask>=3.0
+stripe>=10.0          # Pro subscription billing (Checkout + Customer Portal + webhook verification)
