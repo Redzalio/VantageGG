@@ -549,10 +549,33 @@ def _process_upload_job(job):
             pass
 
 
+def _ensure_sample():
+    """Restore the bundled sample demo into the cache if it's missing. The cache dir is a fresh
+    mounted volume on a server (and cache/ is git/docker-ignored), so the sample -- shipped gzipped
+    in sample/ -- has to be unpacked into CACHE on first boot or /api/sample 404s ('sample not found')."""
+    target = os.path.join(CACHE, "sample.json")
+    src = os.path.join(HERE, "sample", "sample.json.gz")
+    if os.path.exists(target) or not os.path.exists(src):
+        return
+    try:
+        import gzip
+        import shutil
+        os.makedirs(CACHE, exist_ok=True)
+        with gzip.open(src, "rb") as f_in, open(target, "wb") as f_out:
+            shutil.copyfileobj(f_in, f_out)
+        meta = os.path.join(HERE, "sample", "sample.meta.json")
+        if os.path.exists(meta):
+            shutil.copyfile(meta, os.path.join(CACHE, "sample.meta.json"))
+        print("[sample] restored bundled sample into cache")
+    except Exception as e:
+        print(f"[sample] could not restore bundled sample: {e}")
+
+
 def start_workers():
     """Start the background parse worker. Called by the server entrypoints (__main__ / wsgi.py),
     NOT at import time -- so `import app` in tests doesn't spawn the worker thread."""
     goals.migrate_legacy_json()           # one-time import of the old goals.json -> SQLite (server start only)
+    _ensure_sample()                      # unpack the bundled sample into the cache volume if absent
     jobs.start_worker(_process_upload_job)
 
 
