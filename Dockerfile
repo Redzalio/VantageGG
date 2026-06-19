@@ -43,6 +43,8 @@ EXPOSE 8770
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8770/api/me',timeout=4).status==200 else 1)" || exit 1
 
-# ONE process, several threads. Parsing is CPU-heavy + in-process -> scale with replicas
-# behind a reverse proxy, not with more workers. --threads serves concurrent reads while one parses.
-CMD ["waitress-serve", "--host=0.0.0.0", "--port=8770", "--threads=8", "--channel-timeout=300", "wsgi:app"]
+# Web server only -- parsing runs in the separate `worker` compose service, so this process does
+# fast I/O (serve + receive uploads + enqueue). --threads=16 for concurrent uploads/reads;
+# --channel-timeout=1800 so a 400-500MB demo uploaded over a slow home link (8-10 min) is never cut
+# mid-transfer (the old 300s cut concurrent uploads while a parse held the GIL -> EOF -> HTTP 502).
+CMD ["waitress-serve", "--host=0.0.0.0", "--port=8770", "--threads=16", "--channel-timeout=1800", "wsgi:app"]

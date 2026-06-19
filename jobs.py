@@ -21,7 +21,9 @@ import db
 
 # How many demos parse at once. The claim (UPDATE ... WHERE status='queued') is atomic, so N workers
 # never double-process a job. Each big-demo parse peaks ~1-3 GB, so size N to the box's RAM/cores.
-WORKERS = max(1, int(os.environ.get("PARSE_WORKERS", "2") or 2))
+# PARSE_WORKERS=0 => this process never parses (enqueue-only web tier; a separate `worker` process
+# does the parsing). clamp at 0, not 1, so the web tier can truly opt out.
+WORKERS = max(0, int(os.environ.get("PARSE_WORKERS", "2") or 2))
 
 _process_fn = None              # injected: process_fn(job) -> demo_sha1 ; raises on failure
 _worker_started = False
@@ -169,9 +171,16 @@ def _requeue_stale():
 
 
 def start_worker(process_fn):
-    """Register the parse function and start the (idempotent) daemon worker thread."""
+    """Register the parse function and start the (idempotent) daemon worker thread(s).
+
+    PARSE_WORKERS=0 => enqueue-only mode: the web process spawns no parse threads and does NOT
+    requeue (requeuing would steal the dedicated worker process's in-flight job). Parsing then
+    runs in a separate `worker` container -- CPU-bound parsing in its own process can't starve
+    waitress's I/O loop, which was stalling concurrent uploads until channel-timeout 502'd them."""
     global _process_fn, _worker_started
     _process_fn = process_fn
+    if WORKERS <= 0:                  # web/enqueue-only process: never parse or requeue here
+        return
     if _worker_started:
         return
     _worker_started = True

@@ -105,6 +105,19 @@ def test_list_jobs_scoped_to_owner(tmp_path):
     assert ids(jobs.list_jobs()) == {mine, theirs, legacy}          # no filter = all (admin/local)
 
 
+def test_enqueue_only_mode_skips_requeue_and_workers(tmp_path, monkeypatch):
+    """PARSE_WORKERS=0 (web tier in the split deploy): start_worker must NOT requeue (that would
+    steal the dedicated worker process's in-flight job) and must spawn no parse threads."""
+    _tmp(tmp_path)
+    monkeypatch.setattr(jobs, "WORKERS", 0)
+    monkeypatch.setattr(jobs, "_worker_started", False)
+    called = {"requeue": False}
+    monkeypatch.setattr(jobs, "_requeue_stale", lambda: called.update(requeue=True))
+    jobs.start_worker(lambda job: "s")
+    assert called["requeue"] is False           # web tier never requeues
+    assert jobs._worker_started is False         # never marks started -> no parse threads spawned
+
+
 def test_public_hides_upload_path(tmp_path):
     _tmp(tmp_path)
     jid = jobs.create_job("m.dem", "/secret/server/path.dem")

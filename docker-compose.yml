@@ -22,4 +22,24 @@ services:
       - SESSION_COOKIE_SECURE=${SESSION_COOKIE_SECURE:-0}
       - MAX_UPLOAD_MB=${MAX_UPLOAD_MB:-2048}
       - MAX_VIDEO_UPLOAD_MB=${MAX_VIDEO_UPLOAD_MB:-100}
+      - PARSE_WORKERS=0          # web is ENQUEUE-ONLY; the `worker` service does CPU-bound parsing
     restart: unless-stopped
+
+  # Dedicated parse worker: runs the SAME image but only the parse-job loop, in its OWN process.
+  # CS2 demo parsing is CPU/GIL-heavy; running it inside the web process starved waitress's I/O loop
+  # and 502'd concurrent uploads at channel-timeout. A separate process keeps uploads snappy while
+  # demos parse. Shares the ./data volume + SQLite jobs table (atomic claim coordinates the two).
+  worker:
+    image: cs2demo
+    command: ["python", "worker.py"]
+    depends_on:
+      - cs2demo
+    volumes:
+      - ./data:/data
+    env_file:
+      - .env
+    environment:
+      - PARSE_WORKERS=${PARSE_WORKERS:-2}
+    restart: unless-stopped
+    healthcheck:
+      disable: true              # background process: liveness = container running (restart covers crashes)
