@@ -8,14 +8,23 @@ vantagegg.com {
     request_body {
         max_size 2200MB        # > MAX_UPLOAD_MB so 300-500 MB demos pass through to the app
     }
-    # Long-cache the big, stable map assets (3D geometry ~20MB each + radar PNGs) so repeat visits
-    # don't re-download them every time. The app serves these with no-cache by default (right for
-    # app.js/index.html, wrong for immutable geometry). 30 days, still revalidates after.
-    @mapassets path /static/maps3d/* /static/maps/*
-    header @mapassets Cache-Control "public, max-age=2592000"
     # Security header that belongs at the TLS edge (the app sets the rest).
     header Strict-Transport-Security "max-age=31536000; includeSubDomains"
-    reverse_proxy 127.0.0.1:8770
+
+    # Long-cache the big, stable map assets (3D geometry ~20MB each + radar PNGs) so repeat visits
+    # don't re-download them. The app serves these no-cache by default (right for app.js, wasteful for
+    # immutable geometry) -- so we DELETE the upstream Cache-Control and set our own (header_down
+    # replaces; otherwise the app's no-cache also rides along and wins). 30 days, revalidates after.
+    @mapassets path /static/maps3d/* /static/maps/*
+    handle @mapassets {
+        reverse_proxy 127.0.0.1:8770 {
+            header_down -Cache-Control
+            header_down Cache-Control "public, max-age=2592000"
+        }
+    }
+    handle {
+        reverse_proxy 127.0.0.1:8770
+    }
 }
 
 # Optional www -> apex redirect. Uncomment AND add a `www` A record in Cloudflare first
