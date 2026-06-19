@@ -748,6 +748,19 @@ def require_auth_when_locked():
     return None
 
 
+def _timed_save(f, path):
+    """Save an uploaded file, returning (elapsed_ms, size_bytes) for the admin timing breakdown (19A).
+    Pure network-receive happens in waitress/Caddy before this handler runs, so this is the server-side
+    receive+save cost -- still enough to tell a slow-upload case apart from a slow-parse case."""
+    t0 = time.time()
+    f.save(path)
+    ms = int((time.time() - t0) * 1000)
+    try:
+        return ms, os.path.getsize(path)
+    except OSError:
+        return ms, None
+
+
 @app.route("/api/upload", methods=["POST"])
 def upload():
     """Accept 1+ .dem/.zip files. Default (website mode): enqueue a background parse JOB per demo
@@ -818,22 +831,23 @@ def upload():
                 dispname = library.strip_gz(name)
                 fd, gtmp = tempfile.mkstemp(prefix="_jobup_", suffix=".dem.gz", dir=UPLOADS)
                 os.close(fd)
-                f.save(gtmp)
-                created.append({"id": jobs.create_job(dispname, gtmp, owner_user_id=owner),
+                ums, bts = _timed_save(f, gtmp)
+                created.append({"id": jobs.create_job(dispname, gtmp, owner_user_id=owner, upload_ms=ums, size_bytes=bts),
                                 "filename": dispname, "status": "queued", "ok": True})
             elif is_zip:
                 fd, ztmp = tempfile.mkstemp(prefix="_zip_", suffix=".zip", dir=UPLOADS)
                 os.close(fd)
                 try:
-                    f.save(ztmp)
+                    zms, _zb = _timed_save(f, ztmp)
                     members = list(library.iter_zip_dems(ztmp))
                     if not members:
                         created.append({"filename": name, "ok": False, "error": "no .dem entries in zip"})
+                    per_ms = int(zms / len(members)) if members else zms   # split the archive receive time across its demos
                     for mname, payload in members:
                         fd, dtmp = tempfile.mkstemp(prefix="_jobup_", suffix=".dem", dir=UPLOADS)
                         with os.fdopen(fd, "wb") as out:
                             out.write(payload)
-                        created.append({"id": jobs.create_job(mname, dtmp, owner_user_id=owner),
+                        created.append({"id": jobs.create_job(mname, dtmp, owner_user_id=owner, upload_ms=per_ms, size_bytes=len(payload)),
                                         "filename": mname, "status": "queued", "ok": True})
                 finally:
                     if os.path.exists(ztmp):
@@ -844,8 +858,8 @@ def upload():
             else:
                 fd, dtmp = tempfile.mkstemp(prefix="_jobup_", suffix=".dem", dir=UPLOADS)
                 os.close(fd)
-                f.save(dtmp)
-                created.append({"id": jobs.create_job(name, dtmp, owner_user_id=owner),
+                ums, bts = _timed_save(f, dtmp)
+                created.append({"id": jobs.create_job(name, dtmp, owner_user_id=owner, upload_ms=ums, size_bytes=bts),
                                 "filename": name, "status": "queued", "ok": True})
         except Exception as e:
             traceback.print_exc()
@@ -1471,26 +1485,60 @@ def api_admin_ops():
 
     alljobs = jobs.list_jobs(limit=500)
 
-    def _dur(j):
+    def _span(j, a, b):
         try:
-            a = _dt.datetime.fromisoformat(j["started_at"])
-            b = _dt.datetime.fromisoformat(j["finished_at"])
-            return (b - a).total_seconds()
+            return round((_dt.datetime.fromisoformat(j[b]) - _dt.datetime.fromisoformat(j[a])).total_seconds(), 1)
         except Exception:
             return None
-    durs = sorted(d for j in alljobs if j.get("status") == "done"
-                  for d in (_dur(j),) if d is not None and d >= 0)
+    _parse_s = lambda j: _span(j, "started_at", "finished_at")     # noqa: E731  (parse: claim -> done/fail)
+    _queue_s = lambda j: _span(j, "created_at", "started_at")      # noqa: E731  (wait: enqueue -> claim)
+    _upload_s = lambda j: round(j["upload_ms"] / 1000.0, 1) if j.get("upload_ms") is not None else None
+
+    # owner display names for the "by whom" column on the failed-job drilldown (19B)
+    owner_ids = {j["owner_user_id"] for j in alljobs if j.get("owner_user_id")}
+    who = {}
+    if owner_ids:
+        con = db.connect()
+        try:
+            qs = ",".join("?" * len(owner_ids))
+            for r in con.execute("SELECT id, display_name FROM users WHERE id IN (%s)" % qs, tuple(owner_ids)):
+                who[r["id"]] = r["display_name"]
+        finally:
+            con.close()
+
+    def _who(j):
+        oid = j.get("owner_user_id")
+        return (who.get(oid) or ("user #%s" % oid)) if oid else "local/legacy"
+
+    def _agg(xs):
+        xs = sorted(x for x in xs if x is not None and x >= 0)
+        if not xs:
+            return {"avg": None, "median": None, "min": None, "max": None, "n": 0}
+        return {"avg": round(sum(xs) / len(xs), 1), "median": xs[len(xs) // 2],
+                "min": xs[0], "max": xs[-1], "n": len(xs)}
+
+    def _row(j):
+        return {"id": j.get("id"), "filename": j.get("filename"), "status": j.get("status"),
+                "who": _who(j), "created_at": j.get("created_at"), "bytes": j.get("bytes"),
+                "upload_s": _upload_s(j), "queue_s": _queue_s(j), "parse_s": _parse_s(j)}
+    done = [j for j in alljobs if j.get("status") == "done"]
+    parse_agg = _agg([_parse_s(j) for j in done])
+    failures = [{**_row(j), "finished_at": j.get("finished_at"),
+                 "error": (j.get("error") or "").strip()[:2000]}
+                for j in alljobs if j.get("status") == "failed"][:30]
     timing = {
-        "parsed": len(durs),
-        "failed": sum(1 for j in alljobs if j.get("status") == "failed"),
+        "parsed": parse_agg["n"],
+        "failed": len(failures),
         "active": sum(1 for j in alljobs if j.get("status") in ("queued", "parsing", "analyzing")),
         "workers": jobs.WORKERS,
-        "avg_s": round(sum(durs) / len(durs), 1) if durs else None,
-        "median_s": round(durs[len(durs) // 2], 1) if durs else None,
-        "min_s": round(durs[0], 1) if durs else None,
-        "max_s": round(durs[-1], 1) if durs else None,
-        "recent": [{"filename": j.get("filename"), "status": j.get("status"), "dur_s": _dur(j)}
-                   for j in alljobs[:12]],
+        "parse": parse_agg,
+        "queue": _agg([_queue_s(j) for j in alljobs]),
+        "upload": _agg([_upload_s(j) for j in alljobs]),
+        # flat back-compat keys (parse duration) still read by the summary tiles
+        "avg_s": parse_agg["avg"], "median_s": parse_agg["median"],
+        "min_s": parse_agg["min"], "max_s": parse_agg["max"],
+        "recent": [_row(j) for j in alljobs[:15]],
+        "failures": failures,
     }
     return _nostore({"storage": storage, "storage_total": sum(s["bytes"] for s in storage),
                      "disk": disk, "timing": timing})

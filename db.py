@@ -162,6 +162,8 @@ def migrate(con=None):
         _ensure_column(c, "users", "name_locked", "INTEGER DEFAULT 0")  # user set a custom display name
         _ensure_column(c, "users", "stripe_customer_id", "TEXT")    # Stripe customer (billing); NULL until first checkout
         c.execute("CREATE INDEX IF NOT EXISTS idx_users_stripe_cust ON users(stripe_customer_id)")
+        _ensure_column(c, "jobs", "upload_ms", "INTEGER")           # 19A: server-side receive+save time per file (ms)
+        _ensure_column(c, "jobs", "bytes", "INTEGER")               # 19A: uploaded file size (bytes), for the timing breakdown
         if not had_user_demos:
             c.execute("""INSERT OR IGNORE INTO user_demos(user_id, sha1, team_id, created_at)
                          SELECT owner_user_id, sha1, team_id, created_at

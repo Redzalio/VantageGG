@@ -999,6 +999,7 @@ const App = {
       + (this.isAdmin ? `<div class="dash-sec-head adm-uhead"><h2>Pricing</h2></div><div id="admPricing" class="adm-pricing"></div>` : "")
       + `<div class="dash-sec-head adm-uhead"><h2>Deployment</h2></div><div class="adm-cfg">${cfgHtml}</div>`;
     $("admPreviewFree").onclick = () => this.togglePreviewFree(true);
+    this._bindOps();                       // wire the failed-job drilldown (19B)
     const search = $("admUserSearch");
     search.value = this._admFilter || "";
     search.oninput = () => { this._admFilter = search.value; this._renderAdmUserList(); };
@@ -1019,19 +1020,50 @@ const App = {
         + `<span class="ops-bar wide"><i style="width:${Math.round(disk.used / disk.total * 100)}%"></i></span></div>`
       : "";
     const t = ops.timing || {};
-    const s = v => v == null ? "—" : v + "s";
-    const tiles = [["Parsed", t.parsed], ["Failed", t.failed], ["Workers", t.workers],
-                   ["Avg", s(t.avg_s)], ["Median", s(t.median_s)], ["Slowest", s(t.max_s)]];
+    const secs = v => v == null ? "—" : (v >= 60 ? (v / 60).toFixed(1) + "m" : v + "s");
+    const failN = t.failed || 0, failClick = failN > 0;
+    const tiles = [["Parsed", t.parsed != null ? t.parsed : 0],
+      ["Failed", `<span id="opsFailToggle" class="${failClick ? "ops-failclick" : ""}">${failN}${failClick ? " &#9656;" : ""}</span>`],
+      ["Active", t.active != null ? t.active : 0], ["Workers", t.workers]];
+    // upload (server receive+save) vs queue wait vs parse -- so a slow case is attributable (19A)
+    const phase = (label, a) => {
+      a = a || {};
+      return `<div class="ops-phase"><div class="ops-phase-h">${label} <i class="round">n=${a.n || 0}</i></div>`
+        + `<div class="ops-phase-v"><span>avg <b>${secs(a.avg)}</b></span><span>med ${secs(a.median)}</span><span>max ${secs(a.max)}</span></div></div>`;
+    };
+    const phases = `<div class="ops-phases">${phase("Upload (server)", t.upload)}${phase("Queue wait", t.queue)}${phase("Parse", t.parse)}</div>`;
     const recent = (t.recent || []).map(r =>
-      `<div class="ops-jrow"><span class="ops-jf">${esc(r.filename || "?")}</span>`
-      + `<span class="ops-js st-${r.status}">${esc(r.status)}</span>`
-      + `<span class="ops-jd">${r.dur_s != null ? Math.round(r.dur_s) + "s" : ""}</span></div>`).join("");
+      `<div class="ops-jrow"><span class="ops-jf" title="${esc(r.filename || "?")}">${esc(r.filename || "?")}</span>`
+      + `<span class="ops-js st-${esc(r.status || "")}">${esc(r.status || "")}</span>`
+      + `<span class="ops-jsz">${mb(r.bytes)}</span>`
+      + `<span class="ops-jd" title="upload / queue / parse">${secs(r.upload_s)} / ${secs(r.queue_s)} / ${secs(r.parse_s)}</span></div>`).join("");
+    // 19B: failed-job drilldown -- hidden until the Failed tile is clicked; each row expands its error
+    const fails = (t.failures || []).map(f =>
+      `<div class="ops-fail"><div class="ops-fail-head"><span class="ops-jf">${esc(f.filename || "?")}</span>`
+      + `<span class="ops-fail-who">${esc(f.who || "")}</span>`
+      + `<span class="ops-fail-when">${esc(String(f.finished_at || f.created_at || "").replace("T", " "))}</span></div>`
+      + `<div class="ops-fail-err">${esc(f.error || "(no error message recorded)")}</div></div>`).join("");
+    const failPanel = `<div id="opsFails" class="ops-fails" hidden>${fails || `<div class="round">No failed jobs.</div>`}</div>`;
     return `<div class="ops-wrap">`
       + `<div class="ops-head">App data total: <b>${mb(total)}</b></div>${bars}${diskLine}`
       + `<div class="ops-head ops-head2">Upload &amp; parse timing</div>`
       + `<div class="adm-stats ops-stats">${tiles.map(([k, v]) => `<div class="dstat"><div class="dstat-v">${v}</div><div class="dstat-k">${k}</div></div>`).join("")}</div>`
-      + (recent ? `<div class="ops-recent">${recent}</div>` : "")
+      + phases + failPanel
+      + (recent ? `<div class="ops-head ops-head2">Recent jobs <i class="round">file &middot; status &middot; size &middot; upload/queue/parse</i></div><div class="ops-recent">${recent}</div>` : "")
       + `</div>`;
+  },
+  // Wire the admin ops section: clicking "Failed N" toggles the failure list; clicking a failure
+  // expands its full error/stack (19B). Called by renderAdmin after the panel HTML is inserted.
+  _bindOps() {
+    const tog = $("opsFailToggle");
+    if (tog && tog.classList.contains("ops-failclick")) {
+      tog.style.cursor = "pointer";
+      tog.onclick = () => { const p = $("opsFails"); if (p) p.hidden = !p.hidden; };
+    }
+    document.querySelectorAll("#opsFails .ops-fail").forEach(el => {
+      const err = el.querySelector(".ops-fail-err");
+      if (err) el.onclick = () => err.classList.toggle("full");
+    });
   },
   _money(cur, n) {                                       // mirror pricing.py _fmt_money
     return Math.abs(n - Math.round(n)) < 0.005 ? `${cur}${Math.round(n)}` : `${cur}${n.toFixed(2)}`;

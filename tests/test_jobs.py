@@ -144,3 +144,16 @@ def test_public_hides_upload_path(tmp_path):
     pub = jobs._public(jobs.get_job(jid))
     assert "upload_path" not in pub and "owner_user_id" not in pub
     assert pub["id"] == jid and pub["demo_id"] is None and pub["status"] == "queued"
+
+
+def test_create_job_records_upload_timing(tmp_path):
+    """19A: create_job stores upload_ms + size, and _public surfaces them (admin timing breakdown)."""
+    _tmp(tmp_path)
+    jid = jobs.create_job("m.dem", "/up/m.dem", upload_ms=1234, size_bytes=5_000_000)
+    j = jobs.get_job(jid)
+    assert j["upload_ms"] == 1234 and j["bytes"] == 5_000_000
+    pub = jobs._public(j)
+    assert pub["upload_ms"] == 1234 and pub["bytes"] == 5_000_000
+    # omitted (older callers) -> NULL, never an error
+    j2 = jobs.get_job(jobs.create_job("n.dem", "/up/n.dem"))
+    assert j2["upload_ms"] is None and j2["bytes"] is None

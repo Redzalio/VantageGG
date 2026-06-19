@@ -49,18 +49,20 @@ def _public(j):
     return {"id": j["id"], "filename": j["filename"], "status": j["status"],
             "progress": j["progress"], "error": j["error"], "demo_id": j["demo_sha1"],
             "created_at": j["created_at"], "started_at": j["started_at"],
-            "finished_at": j["finished_at"]}
+            "finished_at": j["finished_at"],
+            "upload_ms": j.get("upload_ms"), "bytes": j.get("bytes")}
 
 
-def create_job(filename, upload_path, owner_user_id=None):
-    """Enqueue a parse job; returns its id."""
+def create_job(filename, upload_path, owner_user_id=None, upload_ms=None, size_bytes=None):
+    """Enqueue a parse job; returns its id. upload_ms/size_bytes (19A) record how long the server
+    spent receiving+saving the file and how big it was, so the admin can split upload vs parse time."""
     jid = uuid.uuid4().hex
     con = db.connect()
     try:
         con.execute(
-            "INSERT INTO jobs(id,owner_user_id,filename,upload_path,status,progress,created_at) "
-            "VALUES(?,?,?,?, 'queued', 'queued', ?)",
-            (jid, owner_user_id, filename, upload_path, _now()))
+            "INSERT INTO jobs(id,owner_user_id,filename,upload_path,status,progress,created_at,upload_ms,bytes) "
+            "VALUES(?,?,?,?, 'queued', 'queued', ?,?,?)",
+            (jid, owner_user_id, filename, upload_path, _now(), upload_ms, size_bytes))
         con.commit()
     finally:
         con.close()
