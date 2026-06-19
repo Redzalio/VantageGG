@@ -1241,7 +1241,7 @@ def api_admin_ops():
     storage.sort(key=lambda s: -s["bytes"])
     disk = {}
     try:
-        du = shutil.disk_usage(DATA_DIR)
+        du = shutil.disk_usage(os.path.dirname(db.DB_PATH) or HERE)   # the data-volume filesystem
         disk = {"total": du.total, "used": du.used, "free": du.free}
     except Exception:
         pass
