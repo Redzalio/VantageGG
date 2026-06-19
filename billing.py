@@ -90,8 +90,8 @@ def create_checkout_session(user, period, base_url):
     }
     if user.get("stripe_customer_id"):
         params["customer"] = user["stripe_customer_id"]      # reuse the existing customer
-    else:
-        params["customer_creation"] = "always"               # make a customer so the Portal works later
+    # else: in subscription mode Stripe ALWAYS creates a Customer automatically (passing
+    # customer_creation is an error here); the checkout.session.completed webhook links it to the user.
     sess = s.checkout.Session.create(**params)
     return sess.url
 

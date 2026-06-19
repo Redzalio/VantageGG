@@ -86,6 +86,35 @@ def test_inactive_status_is_free(tmp_path):
     assert db.get_user(uid)["tier"] == "free"
 
 
+def test_checkout_session_params(monkeypatch):
+    """The Checkout params must be valid for SUBSCRIPTION mode: no customer_creation (Stripe rejects
+    it there -- the bug that broke the first live test), correct line item + uid wiring."""
+    captured = {}
+
+    class _Sess:
+        @staticmethod
+        def create(**kw):
+            captured.update(kw)
+            return type("S", (), {"url": "https://checkout.stripe.com/x"})()
+
+    class _Checkout:
+        Session = _Sess
+
+    class _FakeStripe:
+        checkout = _Checkout
+
+    monkeypatch.setattr(billing, "_client", lambda: _FakeStripe)
+    monkeypatch.setattr(billing, "price_id", lambda period: "price_test_123")
+    url = billing.create_checkout_session({"id": 7, "steam_id_64": "765"}, "monthly", "https://vantagegg.com/")
+    assert url == "https://checkout.stripe.com/x"
+    assert captured["mode"] == "subscription"
+    assert "customer_creation" not in captured                      # the live-checkout bug we fixed
+    assert captured["line_items"] == [{"price": "price_test_123", "quantity": 1}]
+    assert captured["client_reference_id"] == "7"
+    assert captured["subscription_data"]["metadata"]["uid"] == "7"
+    assert captured["success_url"].endswith("/?checkout=success")
+
+
 def test_checkout_endpoint_503_when_billing_off(tmp_path, monkeypatch):
     _tmp(tmp_path)
     monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
