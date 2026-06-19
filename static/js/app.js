@@ -1334,6 +1334,23 @@ const App = {
     $("searchBtn").onclick = () => this.openSearch();
     $("searchClose").onclick = () => $("searchModal").classList.remove("show");
     $("searchModal").addEventListener("click", (e) => { if (e.target.id === "searchModal") $("searchModal").classList.remove("show"); });
+    $("overlayClose").onclick = () => this.closeOverlay();
+    // Universal "exit": Esc closes the topmost open modal / video / analytics / overlay, so no UI --
+    // especially an error state -- can trap the user. Replay hotkeys ignore Escape, so this is safe.
+    window.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      if ($("confirmModal") && $("confirmModal").classList.contains("show")) return;   // has its own Esc
+      const open = [...document.querySelectorAll(".nv-modal.show")];
+      if (open.length) {
+        open.sort((a, b) => (parseInt(getComputedStyle(b).zIndex) || 0) - (parseInt(getComputedStyle(a).zIndex) || 0));
+        if (open[0].id === "nadeVideo") this.hideVideo(); else open[0].classList.remove("show");
+        e.stopPropagation(); return;
+      }
+      if ($("analyticsPanel") && $("analyticsPanel").classList.contains("show")) {
+        closeAnalytics(this); e.stopPropagation(); return;
+      }
+      if ($("overlay").classList.contains("show")) { this.closeOverlay(); e.stopPropagation(); }
+    });
     $("srRun").onclick = () => this.runSearch();
     $("srSaveRoutine").onclick = () => this.saveRoutine();
     ["srWinner", "srBuyCt", "srBuyT"].forEach(id => $(id).onchange = () => this.runSearch());
@@ -4101,6 +4118,12 @@ const App = {
     if (pct != null) $("overlayBar").style.width = pct + "%";
   },
   hideOverlay() { $("overlay").classList.remove("show"); },
+  // explicit exit from the overlay (X button / Esc): hide it and, if no replay is loaded behind it,
+  // fall back to the dashboard so the user is never stranded on an error with no way out.
+  closeOverlay() {
+    this.hideOverlay();
+    if (!this.demo) this.showDashboard();
+  },
   // #19 site-wide, non-blocking upload/parse progress strip. state: uploading | parsing | done | failed | hide.
   // 'uploading' is determinate (opts.pct); 'parsing' is an honest indeterminate stage bar (the parser
   // emits no sub-percent, so we show stage + elapsed, not a fake countdown). done/failed auto-hide.

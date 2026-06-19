@@ -881,10 +881,13 @@ def set_demo_team(demo_id, team_id, requester_uid, con=None):
 # Membership model: a demo is visible if it's in the user's library (user_demos), OR another member
 # shared their copy to one of the user's teams, OR it has NO members at all ("ownerless": legacy/local
 # uploads, included only when scope['ownerless'] is set so unclaimed demos never leak on a locked site).
-def _visibility(scope, sha_col="demos.sha1"):
+def _visibility(scope, sha_col="demos.sha1", exclude_archived=False):
     """Return (sql_clause, args) restricting the demos table (or a join where `sha_col` names the demos
     sha1 column, e.g. 'd.sha1'). MUST be a qualified column (demos.sha1 / d.sha1) so the correlated
-    user_demos subquery references the OUTER demo, not its own inner sha1. ("", []) = unrestricted."""
+    user_demos subquery references the OUTER demo, not its own inner sha1. ("", []) = unrestricted.
+    `exclude_archived`: also require a NON-archived membership row -- so a demo whose replay the user
+    deleted (kept only as compact stats) drops out of clickable match lists, while still counting toward
+    trends/profile (those callers leave this False)."""
     if scope is None:
         return "", []
     parts, args = [], []
@@ -899,8 +902,9 @@ def _visibility(scope, sha_col="demos.sha1"):
         mem.append("ud.team_id IN (%s)" % ",".join("?" * len(tids)))
         margs.extend(tids)
     if mem:
-        parts.append("EXISTS (SELECT 1 FROM user_demos ud WHERE ud.sha1=%s AND (%s))"
-                     % (sha_col, " OR ".join(mem)))
+        arch = " AND ud.archived=0" if exclude_archived else ""
+        parts.append("EXISTS (SELECT 1 FROM user_demos ud WHERE ud.sha1=%s%s AND (%s))"
+                     % (sha_col, arch, " OR ".join(mem)))
         args.extend(margs)
     if not parts:
         return "1=0", []                               # scoped to nothing -> show nothing (never all)
@@ -1031,7 +1035,9 @@ def list_matches(cache_dir=None, scope=None, con=None):
     visibility to the user's own + team-shared + ownerless demos."""
     c = con or connect()
     try:
-        clause, args = _visibility(scope)
+        # exclude_archived: a match the user deleted the replay of (stats-only) must not appear in the
+        # clickable recent/all-matches lists -- clicking it would 404. Trends/profile still count it.
+        clause, args = _visibility(scope, exclude_archived=True)
         sql = "SELECT * FROM demos" + (" WHERE " + clause if clause else "") + " ORDER BY created_at DESC"
         demos = c.execute(sql, args).fetchall()
         return [_match_row(c, d) for d in demos]

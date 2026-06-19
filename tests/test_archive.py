@@ -77,6 +77,21 @@ def test_delete_removes_replay_keeps_stats(tmp_path, monkeypatch):
     assert db.user_demo_count(uid) == 0                              # slot freed (flagged stats-only)
 
 
+def test_deleted_demo_drops_from_match_lists_but_stays_in_trends(tmp_path):
+    """After delete (stats-only), the match must vanish from the clickable recent/all-matches lists
+    (clicking would 404) -- but still count toward the player's trend."""
+    db.DB_PATH = str(tmp_path / "ml.sqlite")
+    db.migrate()
+    uid = db.upsert_user("76561190000000600", "Zed")
+    sha = "abcdabcdabcdabcdabcdabcdabcdabcdabcdabcd"
+    _seed_demo(sha, uid, "76561190000000600")
+    scope = {"uid": uid, "team_ids": [], "ownerless": False}
+    assert any(m["id"] == sha for m in db.list_matches(scope=scope))        # visible before delete
+    db.set_archived(uid, sha, 1)                                            # delete the replay
+    assert not any(m["id"] == sha for m in db.list_matches(scope=scope))    # gone from clickable lists
+    assert db.player_trends("76561190000000600", scope=scope)["n_matches"] == 1   # trends still count it
+
+
 def test_delete_keeps_shared_replay_until_last_member(tmp_path):
     db.DB_PATH = str(tmp_path / "shared.sqlite")
     db.migrate()
