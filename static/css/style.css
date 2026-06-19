@@ -893,6 +893,7 @@ textarea.lf-in{height:46px;resize:vertical;font-family:inherit}
 .nv-meta{color:var(--mut);font-size:12px;margin-top:8px}
 /* in-app confirm modal (used by Utility demo-throw jump) */
 #confirmModal{z-index:70}          /* above the library modal (60) + util panel */
+#teamsModal{z-index:65}            /* the Share dialog opens FROM the library (60), so it must sit above it */
 .cf-box{width:min(380px,92vw)}
 .cf-body{margin:2px 2px 14px;font-size:13px;line-height:1.55}
 .cf-line{color:var(--txt)}
