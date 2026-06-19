@@ -600,13 +600,14 @@ def _parse_or_load_dem(tmp, original_filename, progress=None):
     return data
 
 
-def _save_to_library(name, data, owner_user_id=None):
+def _save_to_library(name, data, owner_user_id=None, team_id=None):
     """Save a parsed demo to the library; return its frontend result row.
-    `owner_user_id` stamps the uploader in the index (NULL in local mode)."""
+    `owner_user_id` stamps the uploader in the index (NULL in local mode); `team_id` is the chosen
+    upload destination for that uploader's library copy (NULL = personal)."""
     demo_id = library.demo_id_for(data)
     library.upsert(CACHE, demo_id, name, data, atomic_write_json)
     try:
-        db.index_demo(data, str(demo_id)[:16], owner_user_id=owner_user_id)   # keep the fast index current
+        db.index_demo(data, str(demo_id)[:16], owner_user_id=owner_user_id, team_id=team_id)   # keep the fast index current
     except Exception as e:
         print(f"[index] index_demo failed for {demo_id}: {e}")
     return {"id": demo_id, "name": name, "map": data.get("map"),
@@ -657,7 +658,7 @@ def _process_upload_job(job):
         data = _parse_or_load_dem(parse_path, name,
                                   progress=lambda stage: jobs.set_progress(jid, status=stage, progress=stage))
         jobs.set_progress(jid, status="analyzing", progress="saving to library")
-        _save_to_library(name, data, owner_user_id=job.get("owner_user_id"))
+        _save_to_library(name, data, owner_user_id=job.get("owner_user_id"), team_id=job.get("team_id"))
         return data.get("source_sha1")
     finally:
         # _parse_or_load_dem moves the temp to uploads/<key>.dem on success (KEEP_DEM); clean any
@@ -721,17 +722,17 @@ def start_workers():
     jobs.start_worker(_process_upload_job)
 
 
-def _process_one_dem(tmp, name, results, owner_user_id=None):
+def _process_one_dem(tmp, name, results, owner_user_id=None, team_id=None):
     """Parse a single .dem temp file and append its result (ok or error)."""
     try:
         data = _parse_or_load_dem(tmp, name)
-        results.append(_save_to_library(name, data, owner_user_id=owner_user_id))
+        results.append(_save_to_library(name, data, owner_user_id=owner_user_id, team_id=team_id))
     except Exception as e:
         traceback.print_exc()
         results.append({"name": name, "ok": False, "error": f"parse failed: {e}"})
 
 
-def _process_zip(tmp, name, results, owner_user_id=None):
+def _process_zip(tmp, name, results, owner_user_id=None, team_id=None):
     """Extract every .dem from a .zip and process each; per-file errors collected."""
     try:
         members = list(library.iter_zip_dems(tmp))
@@ -748,7 +749,7 @@ def _process_zip(tmp, name, results, owner_user_id=None):
         try:
             with os.fdopen(fd, "wb") as out:
                 out.write(payload)
-            _process_one_dem(dem_tmp, member_name, results, owner_user_id=owner_user_id)
+            _process_one_dem(dem_tmp, member_name, results, owner_user_id=owner_user_id, team_id=team_id)
         finally:
             if os.path.exists(dem_tmp):
                 try:
@@ -802,6 +803,14 @@ def upload():
                         "hint": "send a multipart form with one or more .dem or .zip files"}), 400
     u = current_user()
     owner = u["id"] if u else None                        # NULL in local mode; the uploader otherwise
+    # upload destination (Personal vs a team the user is on); ignore a team they're not a member of
+    try:
+        _raw_tid = request.form.get("team_id")
+        dest_team = int(_raw_tid) if _raw_tid not in (None, "", "null") else None
+    except (TypeError, ValueError):
+        dest_team = None
+    if dest_team is not None and (owner is None or dest_team not in db.team_ids_for_user(owner)):
+        dest_team = None
     al = upload_allowance(u)                              # enforce the Free demo cap (no-op when unlimited)
     if not al["unlimited"] and al["used"] >= al["limit"]:
         return _nostore({"error": "Free plan holds %d replays. Upgrade to Pro, or archive an old demo "
@@ -831,7 +840,7 @@ def upload():
             os.close(fd)
             try:
                 f.save(tmp)
-                (_process_zip if is_zip else _process_one_dem)(tmp, name, results, owner)
+                (_process_zip if is_zip else _process_one_dem)(tmp, name, results, owner, dest_team)
             except Exception as e:
                 traceback.print_exc()
                 results.append({"name": name, "ok": False, "error": f"upload failed: {e}"})
@@ -860,7 +869,7 @@ def upload():
                 fd, btmp = tempfile.mkstemp(prefix="_jobup_", suffix=".dem.bz2", dir=UPLOADS)
                 os.close(fd)
                 ums, bts = _timed_save(f, btmp)
-                created.append({"id": jobs.create_job(dispname, btmp, owner_user_id=owner, upload_ms=ums, size_bytes=bts),
+                created.append({"id": jobs.create_job(dispname, btmp, owner_user_id=owner, upload_ms=ums, size_bytes=bts, team_id=dest_team),
                                 "filename": dispname, "status": "queued", "ok": True})
             elif is_gz:
                 # client-gzipped demo (CompressionStream): save the .gz as-is + enqueue; the worker
@@ -869,7 +878,7 @@ def upload():
                 fd, gtmp = tempfile.mkstemp(prefix="_jobup_", suffix=".dem.gz", dir=UPLOADS)
                 os.close(fd)
                 ums, bts = _timed_save(f, gtmp)
-                created.append({"id": jobs.create_job(dispname, gtmp, owner_user_id=owner, upload_ms=ums, size_bytes=bts),
+                created.append({"id": jobs.create_job(dispname, gtmp, owner_user_id=owner, upload_ms=ums, size_bytes=bts, team_id=dest_team),
                                 "filename": dispname, "status": "queued", "ok": True})
             elif is_zip:
                 fd, ztmp = tempfile.mkstemp(prefix="_zip_", suffix=".zip", dir=UPLOADS)
@@ -884,7 +893,7 @@ def upload():
                         fd, dtmp = tempfile.mkstemp(prefix="_jobup_", suffix=".dem", dir=UPLOADS)
                         with os.fdopen(fd, "wb") as out:
                             out.write(payload)
-                        created.append({"id": jobs.create_job(mname, dtmp, owner_user_id=owner, upload_ms=per_ms, size_bytes=len(payload)),
+                        created.append({"id": jobs.create_job(mname, dtmp, owner_user_id=owner, upload_ms=per_ms, size_bytes=len(payload), team_id=dest_team),
                                         "filename": mname, "status": "queued", "ok": True})
                 finally:
                     if os.path.exists(ztmp):
@@ -896,7 +905,7 @@ def upload():
                 fd, dtmp = tempfile.mkstemp(prefix="_jobup_", suffix=".dem", dir=UPLOADS)
                 os.close(fd)
                 ums, bts = _timed_save(f, dtmp)
-                created.append({"id": jobs.create_job(name, dtmp, owner_user_id=owner, upload_ms=ums, size_bytes=bts),
+                created.append({"id": jobs.create_job(name, dtmp, owner_user_id=owner, upload_ms=ums, size_bytes=bts, team_id=dest_team),
                                 "filename": name, "status": "queued", "ok": True})
         except Exception as e:
             traceback.print_exc()

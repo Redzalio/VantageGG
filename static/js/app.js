@@ -1368,9 +1368,10 @@ const App = {
       this.saveSettings();
     };
     $("sampleBtn").onclick = () => this.loadSample();
-    $("uploadBtn").onclick = () => $("fileInput").click();
+    $("uploadBtn").onclick = () => this.startUpload();
     $("fileInput").onchange = (e) => {
-      if (e.target.files.length) this.upload(e.target.files);
+      if (e.target.files.length) this.upload(e.target.files, this._pendingUploadTeam);
+      this._pendingUploadTeam = null;                   // consume the chosen destination
       e.target.value = "";                              // allow re-picking the same file(s)
     };
     $("libraryBtn").onclick = () => this.openLibrary();
@@ -1378,7 +1379,7 @@ const App = {
     $("sideCollapse").onclick = () => this.setRightPanel(false);
     $("sideRestore").onclick = () => this.setRightPanel(true);
     if (localStorage.getItem("cs2dp_rpanel") === "0") this.setRightPanel(false);   // restore saved state
-    $("libUpload").onclick = () => $("fileInput").click();
+    $("libUpload").onclick = () => this.startUpload();
     $("libClose").onclick = () => $("libraryModal").classList.remove("show");
     $("libraryModal").addEventListener("click", (e) => {
       if (e.target.id === "libraryModal") $("libraryModal").classList.remove("show");
@@ -1392,7 +1393,7 @@ const App = {
     dz.addEventListener("drop", (e) => {
       $("dropHint").classList.remove("show");
       const fs = [...e.dataTransfer.files].filter(f => /\.(dem|zip)$/i.test(f.name));
-      if (fs.length) this.upload(fs);
+      if (fs.length) this._chooseUploadDest((dest) => this.upload(fs, dest.team_id));   // ask Personal/Team first
     });
 
     // canvas mouse
@@ -1495,7 +1496,47 @@ const App = {
   // the library and returns a per-file result list {demos:[{id,name,map,score,ok}|...]}.
   // Each file uploads in its OWN request (sequentially), so a batch of big demos never exceeds the
   // per-request size cap -- each just enqueues a parse job. The single parse worker drains the queue.
-  async upload(files) {
+  // Click any "Upload" entry point -> ask where the demos should go (Personal or one of the user's
+  // teams), THEN open the file picker. Solo users (no teams) skip the prompt and go straight to it.
+  // onPick({team_id}) is called from within the choosing click so the file-picker gesture is preserved.
+  startUpload() {
+    this._chooseUploadDest((dest) => {
+      this._pendingUploadTeam = dest.team_id;             // read back in fileInput.onchange
+      $("fileInput").click();
+    });
+  },
+  // Destination chooser (reuses the confirm modal). Calls onPick({team_id:number|null}) on a choice;
+  // does nothing if cancelled (X / backdrop / Esc) so the upload is simply abandoned.
+  _chooseUploadDest(onPick) {
+    const teams = this.myTeams || [];
+    if (!teams.length) { onPick({ team_id: null }); return; }   // no teams -> personal, no prompt
+    const modal = $("confirmModal");
+    $("cfTitle").textContent = "Upload to…";
+    const btns = '<button class="btn primary cf-dest" data-tid="">Personal library</button>'
+      + teams.map(t => `<button class="btn cf-dest" data-tid="${t.id}">${esc(t.name)}</button>`).join("");
+    $("cfBody").innerHTML = '<div class="cf-line cf-mut">Choose where these demos go. A team upload is '
+      + 'visible to everyone on that team; you can still move it later from the library.</div>'
+      + `<div class="cf-dests">${btns}</div>`;
+    $("cfYes").style.display = "none";                    // the destination buttons replace Yes
+    $("cfNo").textContent = "Cancel";
+    modal.classList.add("show");
+    const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); done(null); } };
+    const done = (picked) => {
+      modal.classList.remove("show");
+      $("cfYes").style.display = "";                      // restore for the normal Yes/No confirm
+      $("cfNo").textContent = "No";
+      $("cfNo").onclick = modal.onclick = null;
+      window.removeEventListener("keydown", onKey, true);
+      if (picked) onPick(picked);
+    };
+    $("cfBody").querySelectorAll(".cf-dest").forEach(b => b.onclick = () =>
+      done({ team_id: b.dataset.tid ? parseInt(b.dataset.tid, 10) : null }));
+    $("cfNo").onclick = () => done(null);
+    modal.onclick = (e) => { if (e.target.id === "confirmModal") done(null); };
+    window.addEventListener("keydown", onKey, true);
+  },
+
+  async upload(files, teamId = null) {
     const list = files instanceof FileList ? [...files]
       : Array.isArray(files) ? files : [files];
     if (!list.length) return;
@@ -1507,7 +1548,7 @@ const App = {
       let res;
       try {
         const up = await this._prepUpload(f, prefix);     // gzip the .dem in-browser if we can
-        res = await this._uploadOne(up.blob, up.name, prefix);
+        res = await this._uploadOne(up.blob, up.name, prefix, teamId);
       }
       catch (e) { this._upStrip("hide"); this.showOverlay(`Upload failed -- ${f.name} (is the server running?)`, true); return; }
       if (res.error) { this._upStrip("hide"); this.showOverlay(res.upsell ? res.error : ("Server error: " + res.error), true); return; }
@@ -1546,10 +1587,11 @@ const App = {
 
   // POST a single file (or compressed blob) to /api/upload with progress. Resolves to the JSON
   // response ({jobs:[...]} ok, or {error,upsell} on a non-200); rejects only on a network failure.
-  _uploadOne(blob, name, prefix) {
+  _uploadOne(blob, name, prefix, teamId = null) {
     return new Promise((resolve, reject) => {
       const fd = new FormData();
       fd.append("files", blob, name);
+      if (teamId != null) fd.append("team_id", teamId);   // upload destination: a team (else personal)
       const xhr = new XMLHttpRequest();
       xhr.open("POST", "api/upload");
       xhr.upload.onprogress = (e) => {

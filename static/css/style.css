@@ -899,6 +899,9 @@ textarea.lf-in{height:46px;resize:vertical;font-family:inherit}
 .cf-line{color:var(--txt)}
 .cf-line.cf-mut{color:var(--mut);font-size:12px;margin-top:3px}
 .cf-actions{display:flex;justify-content:flex-end;gap:8px}
+/* upload-destination chooser: Personal / per-team buttons stacked full-width */
+.cf-dests{display:flex;flex-direction:column;gap:8px;margin:14px 0 4px}
+.cf-dests .cf-dest{width:100%;justify-content:center}
 .cf-actions .btn{padding:6px 16px}
 /* Practice goals modal */
 #goalsModal{z-index:60}                 /* above the start overlay (z 50) */

@@ -164,6 +164,7 @@ def migrate(con=None):
         c.execute("CREATE INDEX IF NOT EXISTS idx_users_stripe_cust ON users(stripe_customer_id)")
         _ensure_column(c, "jobs", "upload_ms", "INTEGER")           # 19A: server-side receive+save time per file (ms)
         _ensure_column(c, "jobs", "bytes", "INTEGER")               # 19A: uploaded file size (bytes), for the timing breakdown
+        _ensure_column(c, "jobs", "team_id", "INTEGER")             # upload destination: target team (NULL = personal)
         _ensure_column(c, "user_demos", "archived", "INTEGER DEFAULT 0")  # #22: replay removed to free space, stats kept
         if not had_user_demos:
             c.execute("""INSERT OR IGNORE INTO user_demos(user_id, sha1, team_id, created_at)
@@ -176,9 +177,10 @@ def migrate(con=None):
 
 
 # ---- write path -------------------------------------------------------------
-def index_demo(data, key, created_at=None, owner_user_id=None, con=None):
+def index_demo(data, key, created_at=None, owner_user_id=None, con=None, team_id=None):
     """Upsert one parsed demo's summary + player rows. `data` = parsed cache dict (with analytics),
     `key` = its cache filename stem. `owner_user_id` stamps the uploader (NULL in local mode).
+    `team_id` is the upload destination for the uploader's library copy (NULL = personal).
     No-op for non-match data (no analytics.players). Returns sha1 or None."""
     if not isinstance(data, dict):
         return None
@@ -231,9 +233,13 @@ def index_demo(data, key, created_at=None, owner_user_id=None, con=None):
         if owner_user_id is not None:
             # archived=0: a fresh upload IS a full replay. ON CONFLICT also resets archived to 0 so
             # RE-uploading a previously-deleted (stats-only) match restores it as a watchable replay.
-            c.execute("INSERT INTO user_demos(user_id, sha1, created_at, archived) VALUES(?,?,?,0) "
-                      "ON CONFLICT(user_id, sha1) DO UPDATE SET archived=0",
-                      (owner_user_id, sha, datetime.datetime.now().isoformat(timespec="seconds")))
+            # team_id = the chosen upload destination; COALESCE on conflict so a value-less re-index
+            # (e.g. a future reparse) never wipes an existing Personal/Team assignment -- only an
+            # explicit team_id moves it (and Share -> "Make private" still sets it back to personal).
+            c.execute("INSERT INTO user_demos(user_id, sha1, team_id, created_at, archived) VALUES(?,?,?,?,0) "
+                      "ON CONFLICT(user_id, sha1) DO UPDATE SET archived=0, "
+                      "team_id=COALESCE(excluded.team_id, team_id)",
+                      (owner_user_id, sha, team_id, datetime.datetime.now().isoformat(timespec="seconds")))
         c.commit()
         return sha
     finally:
