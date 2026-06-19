@@ -936,10 +936,21 @@ def api_library():
     if mode == "blocked":
         return _nostore({"error": "login required"}), 401
     demos = library.list_demos(CACHE, SCHEMA_VERSION)    # cache-backed -> only watchable replays appear
+    teams = []
     if sc is not None:
         ok = db.visible_predicate(sc)
         demos = [d for d in demos if ok(d.get("id"))]    # deleted (stats-only) demos have no cache -> excluded
-    resp = jsonify({"demos": demos})
+        # #23: tag each row personal vs team-shared so the library can split into Personal / per-team tabs.
+        mem = db.library_membership(sc)
+        for d in demos:
+            m = mem.get(d.get("id"))
+            d["team_ids"] = m["team_ids"] if m else []
+            d["personal"] = (m["personal"] or not m["team_ids"]) if m else True   # no team -> personal
+        teams = [{"id": t["id"], "name": t["name"]} for t in db.teams_for_user(sc.get("uid"))]
+    else:
+        for d in demos:                                  # open/local mode: everything is personal
+            d["team_ids"], d["personal"] = [], True
+    resp = jsonify({"demos": demos, "teams": teams})
     resp.headers["Cache-Control"] = "no-store"
     return resp
 

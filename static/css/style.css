@@ -982,6 +982,18 @@ textarea.lf-in{height:46px;resize:vertical;font-family:inherit}
 .lib-box{width:min(640px,94vw)}
 .lib-actions{display:flex;align-items:center;gap:12px;margin:0 0 12px 2px;flex-wrap:wrap}
 .lib-hint{color:var(--mut);font-size:12px}
+/* #23 Personal/Team library split: filter chips (shown only when the user is in a team) */
+.lib-filters{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px 2px}
+.lib-chip{display:inline-flex;align-items:center;gap:6px;background:var(--panel2);color:var(--mut);
+  border:1px solid var(--line);border-radius:999px;padding:4px 11px;font-size:12px;font-weight:600;cursor:pointer}
+.lib-chip:hover{color:var(--txt);border-color:#36424f}
+.lib-chip.on{background:var(--accent);border-color:var(--accent);color:#1a0e07}
+.lib-chip-n{font-size:10px;font-weight:700;opacity:.7;font-variant-numeric:tabular-nums}
+.lib-chip.on .lib-chip-n{opacity:.85}
+.lib-team{display:inline-block;margin-left:8px;font-size:9px;font-weight:700;text-transform:uppercase;
+  letter-spacing:.4px;color:var(--accent);background:rgba(232,116,59,.13);border:1px solid rgba(232,116,59,.4);
+  border-radius:6px;padding:1px 5px;vertical-align:1px}
+.lib-row.has-bg .lib-team{color:#ffcaa8;background:rgba(0,0,0,.4);border-color:rgba(255,255,255,.28)}
 .lib-list{max-height:64vh;overflow:auto;display:flex;flex-direction:column;gap:6px}
 .lib-empty{color:var(--mut);font-size:13px;text-align:center;padding:26px 12px;line-height:1.5}
 .lib-empty b{color:var(--txt)}

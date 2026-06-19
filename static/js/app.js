@@ -356,6 +356,7 @@ const App = {
       const r = await fetch("/api/demo/" + encodeURIComponent(id) + "/team", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ team_id: tid }) }).then(r => r.json()).catch(() => null);
       this._toast && this._toast(r && r.ok ? (tid ? "Shared with team" : "Made private") : "Could not change sharing");
       $("teamsModal").classList.remove("show");
+      if (r && r.ok && $("libraryModal").classList.contains("show")) this.openLibrary();   // refresh badges/chips (#23)
     });
     $("teamsModal").classList.add("show");
   },
@@ -1624,9 +1625,15 @@ const App = {
   openLibrary() {
     this.pausePlayback();
     $("libraryModal").classList.add("show");
+    $("libFilters").innerHTML = "";
     $("libList").innerHTML = '<div class="lib-empty">Loading...</div>';
     fetch("api/library").then(r => r.json())
-      .then(j => this.renderLibrary((j && j.demos) || []))
+      .then(j => {
+        this._libAll = (j && j.demos) || [];
+        this._libTeams = (j && j.teams) || [];           // [{id,name}] for the Personal/Team split (#23)
+        if (!this._libFilter) this._libFilter = "all";
+        this.renderLibrary();
+      })
       .catch(() => { $("libList").innerHTML =
         '<div class="lib-empty">Could not load the library (is the server running?)</div>'; });
   },
@@ -1650,12 +1657,42 @@ const App = {
     return f ? "/static/img/mapbg/" + f : null;
   },
 
-  renderLibrary(demos) {
-    $("demoLibCount").textContent = demos.length ? `(${demos.length})` : "";
+  // #23: Personal vs Team library split. Filter chips appear only when the user is in a team
+  // (solo players keep the flat list). Each card gets a team badge when it's shared with a team.
+  renderLibrary() {
+    const all = this._libAll || [];
+    const teams = this._libTeams || [];
+    const teamName = (id) => { const t = teams.find(x => x.id === id); return t ? t.name : "Team"; };
+    const fb = $("libFilters");
+    if (teams.length) {
+      const f = this._libFilter || "all";
+      const n = (pred) => all.filter(pred).length;
+      const chips = [{ key: "all", label: "All", n: all.length },
+                     { key: "personal", label: "Personal", n: n(d => d.personal) }]
+        .concat(teams.map(t => ({ key: "team:" + t.id, label: t.name, n: n(d => (d.team_ids || []).includes(t.id)) })));
+      fb.innerHTML = chips.map(c => '<button class="lib-chip' + (c.key === f ? ' on' : '')
+        + '" data-f="' + esc(c.key) + '">' + esc(c.label)
+        + '<span class="lib-chip-n">' + c.n + '</span></button>').join("");
+      fb.querySelectorAll(".lib-chip").forEach(b =>
+        b.onclick = () => { this._libFilter = b.dataset.f; this.renderLibrary(); });
+      fb.style.display = "";
+    } else {
+      fb.innerHTML = ""; fb.style.display = "none";
+    }
+    const f = teams.length ? (this._libFilter || "all") : "all";
+    let demos = all;
+    if (f === "personal") demos = all.filter(d => d.personal);
+    else if (f.indexOf("team:") === 0) { const id = +f.slice(5); demos = all.filter(d => (d.team_ids || []).includes(id)); }
+
+    $("demoLibCount").textContent = all.length ? `(${all.length})` : "";
     const list = $("libList");
-    if (!demos.length) {
+    if (!all.length) {
       list.innerHTML = '<div class="lib-empty">No saved demos yet. Upload one or more '
         + '<b>.dem</b> files (or a <b>.zip</b>) and they\'ll appear here.</div>';
+      return;
+    }
+    if (!demos.length) {
+      list.innerHTML = '<div class="lib-empty">No demos in this view.</div>';
       return;
     }
     list.innerHTML = demos.map(d => {
@@ -1666,6 +1703,10 @@ const App = {
       const stale = d.stale
         ? '<span class="lib-stale" title="Parsed with an older app version -- re-upload to refresh">outdated</span>'
         : "";
+      const tnames = (d.team_ids || []).map(teamName);
+      const teamBadge = tnames.length
+        ? '<span class="lib-team" title="Shared with ' + esc(tnames.join(", ")) + '">' + esc(tnames.join(" · ")) + '</span>'
+        : "";
       const meta = [(d.rounds || 0) + ' rounds', when].filter(Boolean).join(' · ');
       const label = [pretty, when].filter(Boolean).join(' · ');   // for the confirm dialog, not the raw filename
       // background = the map's loading-screen art at 30% opacity (rendered in a ::before layer via
@@ -1673,7 +1714,7 @@ const App = {
       const style = bg ? ' style="--cardbg:url(\'' + bg + '\')"' : '';
       return '<div class="lib-row' + (bg ? ' has-bg' : '') + '" data-id="' + esc(d.id) + '" data-label="' + esc(label) + '"'
         + ' title="' + esc(d.name || d.id) + '"' + style + '>'
-        + '<div class="lib-mid"><div class="lib-name">' + esc(pretty) + stale + '</div>'
+        + '<div class="lib-mid"><div class="lib-name">' + esc(pretty) + stale + teamBadge + '</div>'
         +   '<div class="lib-meta">' + esc(meta) + '</div></div>'
         + '<div class="lib-score">' + sc.ct + '<span>:</span>' + sc.t + '</div>'
         + ((this.myTeams && this.myTeams.length)
@@ -1704,11 +1745,9 @@ const App = {
     if (!res || !res.ok) { this._toast && this._toast("Could not delete that demo."); return; }
     const mb = (res.freed_bytes || 0) / (1 << 20);
     const freed = res.freed_bytes ? ` — freed ${mb >= 1024 ? (mb / 1024).toFixed(1) + " GB" : Math.round(mb) + " MB"}` : "";
-    if (rowEl) rowEl.remove();
-    const n = $("libList").querySelectorAll(".lib-row").length;
-    $("demoLibCount").textContent = n ? `(${n})` : "";
-    if (!n) $("libList").innerHTML = '<div class="lib-empty">No saved demos yet. Upload one or more '
-      + '<b>.dem</b> files (or a <b>.zip</b>) and they\'ll appear here.</div>';
+    // drop it from the cached list and re-render so the filter chips' counts stay accurate (#23)
+    this._libAll = (this._libAll || []).filter(d => d.id !== id);
+    this.renderLibrary();
     this._toast && this._toast(`Replay removed${freed}. Stats kept.`);
     if (document.body.classList.contains("on-dashboard")) this.loadDashboard();
   },

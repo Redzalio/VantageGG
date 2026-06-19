@@ -986,6 +986,36 @@ def visible_predicate(scope, con=None):
     return ok
 
 
+def library_membership(scope, con=None):
+    """Classify each demo by sha1 from `scope`'s point of view, for the Personal/Team library split:
+    `{sha1: {"personal": bool, "team_ids": [int,...]}}`. `personal` = the user holds a non-team copy
+    (their own upload, not assigned to a team). `team_ids` = teams the user belongs to that the demo
+    is shared with (their own share or a teammate's). Open/local mode (scope None) -> empty map;
+    callers treat a missing entry as personal. One query; pairs with visible_predicate."""
+    if scope is None:
+        return {}
+    uid = scope.get("uid")
+    my_teams = set(scope.get("team_ids") or [])
+    c = con or connect()
+    try:
+        out = {}
+        for r in c.execute("SELECT sha1, user_id, team_id, archived FROM user_demos"):
+            if r["archived"]:
+                continue                               # deleted their replay -> not in their library
+            ent = out.get(r["sha1"])
+            if ent is None:
+                ent = out[r["sha1"]] = {"personal": False, "team_ids": []}
+            tid = r["team_id"]
+            if tid is not None and tid in my_teams and tid not in ent["team_ids"]:
+                ent["team_ids"].append(tid)
+            if uid is not None and r["user_id"] == uid and tid is None:
+                ent["personal"] = True                 # my own copy, not assigned to a team
+        return out
+    finally:
+        if con is None:
+            c.close()
+
+
 # ---- read path (mirrors matchindex output shapes) ---------------------------
 def _match_row(con, d):
     players = [{"steamid": r["steamid"], "name": r["name"],
