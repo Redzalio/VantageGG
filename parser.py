@@ -218,7 +218,7 @@ def parse_demo(src, sample_rate=SAMPLE_RATE):
                     if last_inv.get(idx) != key:
                         last_inv[idx] = key
                         loadouts.setdefault(idx, []).append([round(int(tick) / tickrate, 2), inv])
-            team = int(d.get("team_num") or 0)
+            team = int(_f(d.get("team_num")))      # _f is NaN-safe (`NaN or 0` -> NaN -> int() crashed)
             if team in (2, 3):
                 players[idx]["team"] = team if players[idx].get("_teamset") else team
                 players[idx]["_teamset"] = True
