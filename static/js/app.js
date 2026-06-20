@@ -3389,6 +3389,10 @@ const App = {
   makeGoalFromInsight(prefill) {
     prefill = prefill || {};
     if (!prefill.metric) prefill.metric = this._guessMetric(`${prefill.area || ""} ${prefill.title || ""}`);
+    // scope the goal to the match you're reviewing: default the map + remember the source match so
+    // progress is measured from here forward (submitGoal also stamps source_match_key).
+    if (!prefill.map && this.demo && this.demo.map) prefill.map = this.demo.map;
+    if (!prefill.source_match_key && this.demo && this.demo.raw) prefill.source_match_key = this.demo.raw.source_sha1;
     $("analyticsPanel").classList.remove("show");
     $("toggleAnalytics").classList.remove("on");
     this.openGoals(prefill);
@@ -4604,7 +4608,20 @@ const App = {
       return `<div class="lib-target ${target === open ? "open" : ""}">
         <div class="lib-th" data-tg="${esc(target)}">${dot}<span class="lib-tn">${esc(target)}</span><span class="lib-tc">${lines.length}</span></div>
         <div class="lib-spots">${spots}</div></div>`;
-    }).join("") || `<div class="up-empty">No lineups for this map yet. Add one, pull from this demo, or import.</div>`;
+    }).join("") || (() => {
+      // context-aware empty state: if a callout is in scope, offer to add a lineup FOR it (prefilled)
+      const lbl = (this._libCallout && this._libCallout.name) || (this.libCalloutSearch || "").trim();
+      return `<div class="up-empty">${lbl ? `No lineups for <b>${esc(lbl)}</b> yet.` : "No lineups for this map yet."}
+        <button class="up-btn lib-add-cta">+ Add a lineup${lbl ? " for " + esc(lbl) : ""}</button>
+        <span class="novid">or pull from this demo / import</span></div>`;
+    })();
+    { const cta = $("libBrowse").querySelector(".lib-add-cta");
+      if (cta) cta.onclick = () => {
+        const pre = (this._libCallout && this._libCallout.name) || (this.libCalloutSearch || "").trim();
+        this.buildAddForm(pre ? { target_callout: pre } : null);   // prefill "Lands at" with the searched callout
+        $("libAddForm").style.display = "block";
+        $("libAddForm").scrollIntoView({ block: "nearest" });
+      }; }
     $("libBrowse").querySelectorAll(".lib-th").forEach(el => el.onclick = () => {
       this._libOpenTarget = this._libOpenTarget === el.dataset.tg ? null : el.dataset.tg;
       this.applyLibrary();

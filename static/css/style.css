@@ -1638,6 +1638,16 @@ table.sb tr.sel{background:rgba(232,116,59,.12)} table.sb .sep td{height:8px;bor
 .rp-table th{text-align:left;color:var(--mut);font-weight:600;padding:4px 6px;border-bottom:1px solid var(--line)}
 .rp-table td{padding:5px 6px;border-bottom:1px solid #161c25;font-variant-numeric:tabular-nums}
 .rp-table .rp-pn{font-weight:600} .rp-fixcell{color:var(--mut)} .rp-util{font-size:13px}
+/* P3 coaching summary card */
+.rp-summary-card{background:linear-gradient(180deg,rgba(232,116,59,.06),transparent)}
+.rp-summary{font-size:13px;line-height:1.5}
+.rp-sum-load{color:var(--mut);font-style:italic}
+.rp-sum-text{margin:0 0 6px}
+.rp-sum-ai{font-size:9px;font-weight:800;letter-spacing:.4px;color:var(--accent);border:1px solid var(--accent);border-radius:5px;padding:0 4px;vertical-align:middle}
+.rp-sum-bul{margin:6px 0;padding-left:18px} .rp-sum-bul li{margin:2px 0}
+.rp-sum-rounds,.rp-sum-util{margin-top:6px;font-size:12px}
+.rp-sum-r{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:5px;padding:1px 7px;margin:0 2px;cursor:pointer;font-size:11px;font-variant-numeric:tabular-nums}
+.rp-sum-r:hover{border-color:var(--accent);color:var(--accent)}
 /* #48 watch-deaths button (death review) */
 .rp-watchd{background:var(--panel2);border:1px solid var(--line);color:var(--mut);border-radius:6px;
   padding:2px 8px;font-size:10.5px;cursor:pointer;white-space:nowrap}

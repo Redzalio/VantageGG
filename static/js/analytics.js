@@ -163,6 +163,7 @@ function render() {
     ${proAnalyticsTeaser()}`;
   $("analyticsBody").innerHTML = head + (VIEW === "report" ? reportView(A)
     : VIEW === "team" ? teamView(A, sel) : VIEW === "data" ? dataHealthView(A) : playerBody);
+  if (VIEW === "report") fillCoachingSummary(A);   // async: fills the summary card after render
 
   // view tabs: free can open Report + Player; Team/Data gate to Pro (upsell, stay put)
   $("analyticsBody").querySelectorAll("[data-view]").forEach(el =>
@@ -454,6 +455,36 @@ function shareCoaching(A) {
   return text;
 }
 
+// P3: fetch + render the natural-language coaching summary into the report's #rpSummary card.
+// Server-side (heuristic by default, optionally AI). Failure is silent -> a quiet fallback line.
+function fillCoachingSummary(A) {
+  const host = document.getElementById("rpSummary");
+  if (!host) return;
+  const id = (typeof APP !== "undefined" && APP._reviewDemoId && APP._reviewDemoId());
+  if (!id) { host.innerHTML = `<span class="rp-sum-load">Summary needs a saved match.</span>`; return; }
+  const stid = (window.App && App.me && App.me.user && App.me.user.steam_id_64) || "";
+  const q = stid ? ("?player=" + encodeURIComponent(stid)) : "";
+  fetch("api/reviews/" + encodeURIComponent(id) + "/summary" + q)
+    .then(r => r.ok ? r.json() : null)
+    .then(s => {
+      if (!host.isConnected) return;                       // panel re-rendered/closed meanwhile
+      if (!s || !s.text) { host.innerHTML = `<span class="rp-sum-load">No summary available.</span>`; return; }
+      const bullets = (s.bullets || []).map(b => `<li>${esc(b)}</li>`).join("");
+      const rounds = (s.review_rounds || []).map(n => `<button class="rp-sum-r" data-jumpr="${n}">R${n}</button>`).join(" ");
+      const util = (s.utility_focus || []).map(esc).join(", ");
+      host.innerHTML =
+        `<p class="rp-sum-text">${esc(s.text)}${s.ai ? ` <span class="rp-sum-ai" title="AI-assisted summary">AI</span>` : ""}</p>`
+        + (bullets ? `<ul class="rp-sum-bul">${bullets}</ul>` : "")
+        + (rounds ? `<div class="rp-sum-rounds"><span class="round">Review first:</span> ${rounds}</div>` : "")
+        + (util ? `<div class="rp-sum-util"><span class="round">Utility to learn:</span> ${esc(util)}</div>` : "");
+      host.querySelectorAll("[data-jumpr]").forEach(el => el.onclick = () => {  // reuse round-jump
+        const r = A.rounds.find(x => x.num === +el.dataset.jumpr);
+        if (r) { APP.t = r.start_t; APP.playing = true; closeAnalytics(APP); }
+      });
+    })
+    .catch(() => { if (host.isConnected) host.innerHTML = `<span class="rp-sum-load">Summary unavailable.</span>`; });
+}
+
 function reportView(A) {
   const tc = (A.team_coaching && A.team_coaching.teams) || [];
   if (!tc.length) return `<div class="empty">No team data for this demo — use the Player tab for individual coaching.</div>`;
@@ -525,6 +556,8 @@ function reportView(A) {
   return pick
     + `<div class="rp-score"><b>${esc(me.name)}</b> <span class="big ${me.won >= me.lost ? "good" : "bad"}">${me.won}-${me.lost}</span>
         <span class="round">vs ${esc(opp ? opp.name : "?")} &middot; ${esc(APP.demo.map)} &middot; ${A.n_rounds} rounds &middot; started ${esc(me.start_side)}</span></div>
+      <div class="rp-card rp-summary-card"><div class="rp-h">Coaching summary <em>the gist &mdash; what to do next</em></div>
+        <div id="rpSummary" class="rp-summary"><span class="rp-sum-load">Generating summary…</span></div></div>
       <div class="rp-cols">
         <div class="rp-card"><div class="rp-h">Top 3 things to fix <em>practice these</em></div>${fixes}</div>
         <div class="rp-card"><div class="rp-h">What went well <em>keep doing it</em></div>${posHtml}</div>

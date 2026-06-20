@@ -1,0 +1,68 @@
+"""Server-side Pro-tier enforcement (defense in depth). The frontend already hides Pro tools, but a
+free account hitting a Pro endpoint directly must be refused server-side. Verified here because the
+dev preview runs in open mode (tiers off) and can't exercise gating. Temp DB, no parsing."""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import db   # noqa: E402
+
+
+def _p(sid, name):
+    return {"steamid": sid, "name": name, "kills": 10, "deaths": 10, "kd": 1.0,
+            "adr": 75, "kast": 70, "hltv": 1.0, "open_wr": 50, "traded_pct": 20, "udr": 20}
+
+
+def _match(sha, mp, players):
+    return {"source_sha1": sha, "map": mp, "version": 14, "duration": 1800.0,
+            "rounds": [{"score_ct": 13, "score_t": 7}],
+            "analytics": {"version": 9, "n_rounds": 20, "players": players}}
+
+
+def _seed(tmp_path):
+    db.DB_PATH = str(tmp_path / "tier.sqlite")
+    db.migrate()
+    u1 = db.upsert_user("76561190000000001", "U1")          # free by default
+    db.index_demo(_match("a" * 40, "de_a", [_p("1", "A"), _p("2", "B")]), "a" * 16, owner_user_id=u1)
+    return u1
+
+
+def _client(app, tmp_path, monkeypatch, tiers=True):
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    monkeypatch.setattr(app, "TIERS_ENABLED", tiers)
+    u1 = _seed(tmp_path)
+    c = app.app.test_client()
+    with c.session_transaction() as s:
+        s["uid"] = u1
+    return c, u1
+
+
+def test_compare_blocks_free_user(tmp_path, monkeypatch):
+    import app
+    c, _ = _client(app, tmp_path, monkeypatch, tiers=True)
+    r = c.get("/api/compare?a=1&b=2")
+    assert r.status_code == 402
+    assert r.get_json().get("feature") == "advancedAnalytics"
+
+
+def test_tendencies_blocks_free_user(tmp_path, monkeypatch):
+    import app
+    c, _ = _client(app, tmp_path, monkeypatch, tiers=True)
+    assert c.get("/api/tendencies/1").status_code == 402
+
+
+def test_pro_user_allowed(tmp_path, monkeypatch):
+    import app
+    c, u1 = _client(app, tmp_path, monkeypatch, tiers=True)
+    db.set_user_tier(u1, "pro")                              # upgrade -> gate opens
+    assert c.get("/api/compare?a=1&b=2").status_code == 200
+    assert c.get("/api/tendencies/1").status_code == 200
+
+
+def test_tiers_disabled_allows_everyone(tmp_path, monkeypatch):
+    import app
+    c, _ = _client(app, tmp_path, monkeypatch, tiers=False)  # tiers off -> no gating
+    assert c.get("/api/compare?a=1&b=2").status_code == 200
+    assert c.get("/api/tendencies/1").status_code == 200

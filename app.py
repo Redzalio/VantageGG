@@ -48,6 +48,8 @@ import teams                                            # local team config (std
 import tendencies                                       # cross-match tendency detection (stdlib only)
 import playbook                                         # team playbook + adherence (stdlib only)
 import nadeclusters                                     # auto-detect consistent utility (stdlib only)
+import coaching_summary                                 # heuristic NL coaching summary (+ optional env-gated AI)
+import compare                                          # player-vs-player comparison (presentation over trends)
 from schema import ANALYTICS_VERSION, SCHEMA_VERSION   # dep-free; safe at import time
 
 
@@ -233,6 +235,17 @@ def entitlements(user):
     """Which Pro features this user may use. Tiers OFF -> everyone gets everything (no gating yet)."""
     unlocked = (not TIERS_ENABLED) or (tier_of(user) == "pro")
     return {f: unlocked for f in PRO_FEATURES}
+
+
+def require_feature(feat):
+    """Server-side Pro gate (defense in depth: the frontend already hides Pro tools, this stops a
+    direct API call from a free account). Returns None when allowed (tiers off / local / admin / Pro),
+    else a (402 JSON, status) tuple to return. Login is gated separately by _scope_or_block."""
+    if not TIERS_ENABLED:
+        return None
+    if entitlements(current_user()).get(feat):
+        return None
+    return _nostore({"error": "Pro feature", "feature": feat, "upgrade": True}), 402
 
 
 FREE_UPLOAD_LIMIT = int(os.environ.get("FREE_UPLOAD_LIMIT", "10"))   # #22: Free plan stores 10 demos
@@ -1049,7 +1062,13 @@ def _load_demo_by_sha(sid):
 
 @app.route("/api/reviews/<demo_id>/bookmarks", methods=["GET", "POST"])
 def api_bookmarks(demo_id):
-    """List (GET) or add/replace (POST) review bookmarks for a demo (keyed by source_sha1)."""
+    """List (GET) or add/replace (POST) review bookmarks for a demo (keyed by source_sha1).
+    SECURITY: scoped -- you can only read/write bookmarks for a demo you can access."""
+    mode, sc = _scope_or_block()
+    if mode == "blocked":
+        return _nostore({"error": "login required"}), 401
+    if mode == "scoped" and not db.accessible(demo_id, sc):
+        return _nostore({"error": "not found"}), 404
     if request.method == "POST":
         body = request.get_json(silent=True) or {}
         try:
@@ -1062,17 +1081,54 @@ def api_bookmarks(demo_id):
 
 @app.route("/api/reviews/<demo_id>/bookmarks/<bm_id>", methods=["DELETE"])
 def api_bookmark_delete(demo_id, bm_id):
+    mode, sc = _scope_or_block()
+    if mode == "blocked":
+        return _nostore({"error": "login required"}), 401
+    if mode == "scoped" and not db.accessible(demo_id, sc):
+        return _nostore({"error": "not found"}), 404
     return jsonify({"deleted": reviews.delete_bookmark(demo_id, bm_id)})
 
 
 @app.route("/api/reviews/<demo_id>/queues")
 def api_review_queues(demo_id):
     """Auto-seeded review queues (untraded deaths, dry opens, good rounds, team losses,
-    round-by-round, ...) computed from the demo's analytics. Empty list if not found."""
+    round-by-round, ...) computed from the demo's analytics. Empty list if not found.
+    SECURITY: scoped to demos the caller can access."""
+    mode, sc = _scope_or_block()
+    if mode == "blocked":
+        return _nostore({"error": "login required"}), 401
+    if mode == "scoped" and not db.accessible(demo_id, sc):
+        return jsonify({"queues": []})
     data = _load_demo_by_sha(demo_id)
     if data is None:
         return jsonify({"queues": []})
     return jsonify({"queues": reviews.auto_queues(data)})
+
+
+@app.route("/api/reviews/<demo_id>/summary")
+def api_coaching_summary(demo_id):
+    """P3: a short natural-language 'Coaching summary' for a match -- what happened, why rounds were
+    lost, what to review first, what util to learn. Deterministic heuristic by default; optionally
+    AI-rewritten when ANTHROPIC_API_KEY + AI_SUMMARY_ENABLED are set (server-side only). Scoped."""
+    mode, sc = _scope_or_block()
+    if mode == "blocked":
+        return _nostore({"error": "login required"}), 401
+    if mode == "scoped" and not db.accessible(demo_id, sc):
+        return _nostore({"error": "not found"}), 404
+    data = _load_demo_by_sha(demo_id)
+    if data is None or not isinstance(data.get("analytics"), dict):
+        return _nostore({"error": "no analytics for this demo"}), 404
+    side = request.args.get("side") or None
+    stid = request.args.get("player") or None
+    recurring = None
+    if stid:                                            # cross-match "what keeps happening" for this player
+        try:
+            recurring = goals.recurring_mistakes(CACHE, stid, min_matches=2)
+        except Exception:
+            recurring = None
+    out = coaching_summary.coaching_summary(data["analytics"], my_side=side,
+                                            player_steamid=stid, recurring=recurring)
+    return _nostore(out)
 
 
 @app.route("/api/goals/metrics")
@@ -1491,12 +1547,36 @@ def api_trends(steamid):
     return _nostore(db.player_trends(steamid, scope=sc))
 
 
+@app.route("/api/compare")
+def api_compare():
+    """Player-vs-player comparison over their cross-match trend averages (scoped). Pass ?a=<steamid>
+    &b=<steamid>."""
+    mode, sc = _scope_or_block()
+    if mode == "blocked":
+        return _nostore({"error": "login required"}), 401
+    gate = require_feature("advancedAnalytics")             # comparison is a Pro analytics tool
+    if gate:
+        return gate
+    sid_a = request.args.get("a") or None
+    sid_b = request.args.get("b") or None
+    if not sid_a or not sid_b:
+        return _nostore({"error": "need a and b steamids"}), 400
+    con = db.connect()
+    try:
+        return _nostore(compare.compare_from_trends(con, sid_a, sid_b, scope=sc))
+    finally:
+        con.close()
+
+
 @app.route("/api/tendencies/<steamid>")
 def api_tendencies(steamid):
     """Cross-match tendencies / repeated patterns for one player (anti-strat scouting)."""
     mode, sc = _scope_or_block()
     if mode == "blocked":
         return _nostore({"error": "login required"}), 401
+    gate = require_feature("advancedAnalytics")             # anti-strat scouting is a Pro tool
+    if gate:
+        return gate
     matches = goals._matches(CACHE)
     if sc is not None:                                  # only count matches this user may see
         ok = db.visible_predicate(sc)
