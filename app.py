@@ -50,6 +50,7 @@ import playbook                                         # team playbook + adhere
 import nadeclusters                                     # auto-detect consistent utility (stdlib only)
 import coaching_summary                                 # heuristic NL coaching summary (+ optional env-gated AI)
 import compare                                          # player-vs-player comparison (presentation over trends)
+import export_report                                    # rich match-report export: text / JSON / printable HTML
 from schema import ANALYTICS_VERSION, SCHEMA_VERSION   # dep-free; safe at import time
 
 
@@ -474,6 +475,24 @@ def csrf_origin_guard():
     src = request.headers.get("Origin") or request.headers.get("Referer") or ""
     if not src or urllib.parse.urlparse(src).netloc != urllib.parse.urlparse(base).netloc:
         return _nostore({"error": "cross-site request blocked"}), 403
+    return None
+
+
+@app.before_request
+def feature_and_store_gates():
+    """Defense-in-depth for things the frontend already gates (a direct API/asset call must not bypass):
+      - 3D map geometry (/static/maps3d/*.glb) is a Pro (threeD) asset -> 402 for free/anon when tiers
+        are on (2D replay + the sample don't need it).
+      - the shared nade/playbook/team/practice JSON stores are writable only by a logged-in user on a
+        locked site, so an anonymous request can't clobber them.
+    All no-ops in local/open mode (tiers off, not auth-locked), so dev/preview behavior is unchanged."""
+    p = request.path
+    if p.startswith("/static/maps3d/") and p.endswith(".glb"):
+        return require_feature("threeD")
+    if request.method in ("POST", "PUT", "DELETE", "PATCH") and (
+            p.startswith("/api/nades") or p == "/api/playbook" or p.startswith("/api/playbook/")
+            or p == "/api/team" or p == "/api/practice"):
+        return require_auth_when_locked()
     return None
 
 
@@ -989,10 +1008,11 @@ def api_library():
             m = mem.get(d.get("id"))
             d["team_ids"] = m["team_ids"] if m else []
             d["personal"] = (m["personal"] or not m["team_ids"]) if m else True   # no team -> personal
+            d["tag"] = (m.get("tag") if m else None) or ""                        # viewer's own demo tag
         teams = [{"id": t["id"], "name": t["name"]} for t in db.teams_for_user(sc.get("uid"))]
     else:
         for d in demos:                                  # open/local mode: everything is personal
-            d["team_ids"], d["personal"] = [], True
+            d["team_ids"], d["personal"], d["tag"] = [], True, ""
     resp = jsonify({"demos": demos, "teams": teams})
     resp.headers["Cache-Control"] = "no-store"
     return resp
@@ -1131,6 +1151,43 @@ def api_coaching_summary(demo_id):
     return _nostore(out)
 
 
+@app.route("/api/reviews/<demo_id>/export")
+def api_export_report(demo_id):
+    """Rich match-report export: ?fmt=text|json|html (html = open + Print-to-PDF). Scoped. Much fuller
+    than the Discord text share -- full scoreboard, key rounds, economy, utility, coaching prose."""
+    mode, sc = _scope_or_block()
+    if mode == "blocked":
+        return _nostore({"error": "login required"}), 401
+    if mode == "scoped" and not db.accessible(demo_id, sc):
+        return _nostore({"error": "not found"}), 404
+    data = _load_demo_by_sha(demo_id)
+    if data is None or not isinstance(data.get("analytics"), dict):
+        return _nostore({"error": "no analytics for this demo"}), 404
+    fmt = (request.args.get("fmt") or "text").lower()
+    side = request.args.get("side") or None
+    stid = request.args.get("player") or None
+    recurring = None
+    if stid:
+        try:
+            recurring = goals.recurring_mistakes(CACHE, stid, min_matches=2)
+        except Exception:
+            recurring = None
+    body = export_report.render(data["analytics"], fmt=fmt, my_side=side, recurring=recurring,
+                                map_name=data.get("map"), score=data.get("score"),
+                                date=data.get("parsed_at"),
+                                title=f"{data.get('map', 'CS2')} match report")
+    ctype = {"json": "application/json; charset=utf-8",
+             "html": "text/html; charset=utf-8"}.get(fmt, "text/plain; charset=utf-8")
+    resp = Response(body, mimetype=ctype.split(";")[0])
+    resp.headers["Content-Type"] = ctype
+    resp.headers["Cache-Control"] = "no-store"
+    if fmt in ("text", "txt", "json"):                  # html opens in a tab to print; these download
+        ext = "json" if fmt == "json" else "txt"
+        mapn = (data.get("map") or "match").replace("/", "_")
+        resp.headers["Content-Disposition"] = f'attachment; filename="{mapn}_report.{ext}"'
+    return resp
+
+
 @app.route("/api/goals/metrics")
 def api_goal_metrics():
     """The trackable metrics for the goal-create UI (key/label/kind/better/unit/scopes) +
@@ -1145,6 +1202,9 @@ def api_goals():
     GET also returns the distinct maps across cached matches (for the scope dropdown),
     derived from goals._matches -- which is sidecar-cached, so this stays cheap (no full
     demo reload, unlike /api/matches)."""
+    gate = require_feature("goals")                       # Practice Goals is a Pro feature
+    if gate:
+        return gate
     uid = current_user_id()
     team_ids = set(db.team_ids_for_user(uid)) if uid else set()
     if request.method == "POST":
@@ -1173,6 +1233,9 @@ def api_goal(goal_id):
     """Update a goal's status/notes/etc. (PUT) or delete it (DELETE). A shared goal can be edited by
     any member of its team and deleted by its creator or the team's owner; a personal goal only by its
     owner. (Legacy/local ownerless goals stay editable/deletable by anyone -- preserves single-user.)"""
+    gate = require_feature("goals")
+    if gate:
+        return gate
     uid = current_user_id()
     g = goals.get_goal(goal_id)
     if g is None:
@@ -2355,6 +2418,19 @@ def api_demo_team(demo_id):
     team_id = (request.get_json(silent=True) or {}).get("team_id")
     ok = db.set_demo_team(demo_id, team_id, uid)
     return _nostore({"ok": ok}), (200 if ok else 400)
+
+
+@app.route("/api/demo/<demo_id>/tag", methods=["POST"])
+def api_demo_tag(demo_id):
+    """Set/clear the current user's per-demo tag (scrim/matchmaking/faceit/...) for filtering.
+    Per-user: only affects the caller's own library copy."""
+    uid = current_user_id()
+    if uid is None:
+        return _nostore({"error": "login required"}), 401
+    sha = db.resolve_sha(demo_id) or demo_id
+    tag = (request.get_json(silent=True) or {}).get("tag", "")
+    ok = db.set_demo_tag(uid, sha, tag)
+    return _nostore({"ok": ok, "tag": (tag or "").strip()[:32]}), (200 if ok else 400)
 
 
 @app.route("/logout", methods=["POST"])

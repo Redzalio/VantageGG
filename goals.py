@@ -298,6 +298,125 @@ def metric_value(metric, analytics, scope):
     return None
 
 
+# ---- per-callout (location) grading -----------------------------------------
+# A goal can be scoped to a single callout (scope.callout = the raw last_place_name, e.g.
+# "BombsiteB" -- the same value the Positions table + createGoalForCallout() use). Today the only
+# per-callout, per-match data is players[].position_stats (#62): a per-player list of rows
+#   {zone, k, d, kd, ct_k, ct_d, t_k, t_d, open_k, open_d}
+# baked from the demo's death records. That carries kills/deaths/opening-duel splits AT a zone, but
+# NOT round-rate stats (ADR/KAST/KPR/UDR have no per-callout numerator). So only the metrics whose
+# value is derivable from k/d/open at a location can be graded by callout; everything else falls
+# back to map-wide grading and SAYS so in the verdict payload (callout_status="fallback").
+#
+# CALLOUT_METRICS maps a goal metric -> how to read it from a position_stats row:
+#   "deaths"   -> total deaths at the callout (location-danger proxy for mid-round/positioning issues)
+#   "open_d"   -> opening deaths at the callout
+#   "open_wr"  -> opening-duel win % at the callout = open_k / (open_k + open_d) * 100
+#   "kd"       -> K/D at the callout (uses the row's own kd, or recomputed under a side filter)
+# Insight-type death metrics map to a death count; open_wr maps to the opening win%; everything
+# else (adr/kast/kpr/win_pct/hltv/traded_pct/udr + all team metrics) is intentionally absent here.
+CALLOUT_METRICS = {
+    "pos": "deaths",                       # positioning / mid-round deaths -> deaths at the spot
+    "clumping": "deaths",                  # bad-spacing deaths -> deaths at the spot
+    "predictable": "deaths",               # predictable deaths -> deaths at the spot
+    "untraded_opening_death": "open_d",    # untraded *opening* death -> opening deaths at the spot
+    "dry_opening": "open_d",               # dry opening peek -> opening deaths at the spot
+    "open_wr": "open_wr",                  # opening-duel win % at the spot
+    "kd": "kd",                            # K/D at the spot (if a kd goal is ever created)
+}
+
+
+def _row_kd(row, side):
+    """K/D for a position_stats row, honoring a side filter (uses ct_*/t_* when side is set)."""
+    if side in ("ct", "t"):
+        k = row.get(side + "_k") or 0
+        d = row.get(side + "_d") or 0
+    else:
+        k = row.get("k") or 0
+        d = row.get("d") or 0
+    if not d:
+        return float(k)            # undefeated at this spot -> kills as the ratio (matches positions.py)
+    return round(k / d, 2)
+
+
+def _row_stat(row, how, side):
+    """One position_stats row -> the value for `how`, honoring a side filter where it applies.
+    Deaths/opening-deaths read the side-specific column when side is set; kd recomputes per side;
+    open_wr has no per-side split in the row so it ignores side (whole-callout opening win%)."""
+    if how == "deaths":
+        col = (side + "_d") if side in ("ct", "t") else "d"
+        return float(row.get(col) or 0)
+    if how == "open_d":
+        return float(row.get("open_d") or 0)   # opening duels aren't side-split in the row
+    if how == "open_wr":
+        ok, od = row.get("open_k") or 0, row.get("open_d") or 0
+        tot = ok + od
+        return round(ok / tot * 100.0, 1) if tot else None
+    if how == "kd":
+        return _row_kd(row, side)
+    return None
+
+
+def _player_rows(analytics, sid):
+    for p in (analytics.get("players") or []):
+        if str(p.get("steamid")) == str(sid):
+            return p.get("position_stats") or []
+    return None
+
+
+def callout_value(metric, analytics, scope):
+    """The metric's value AT scope.callout for one match, or None if unavailable for this match.
+
+    Reads players[].position_stats. For a single player -> that player's row for the callout. For a
+    squad/team group -> aggregate your members who played (sum for count metrics, average for ratio
+    metrics). Returns None when the metric can't be graded per-callout (caller falls back map-wide),
+    when nobody to read from, or when the callout simply didn't appear for that player this match
+    (count metrics treat a present player with no row at the callout as 0 -- not dying there is real
+    progress; ratio metrics need an actual row, so they skip the match)."""
+    if not metric or not isinstance(analytics, dict):
+        return None
+    how = CALLOUT_METRICS.get(metric["key"])
+    if how is None:
+        return None                          # metric has no per-callout form -> signal fallback
+    scope = scope or {}
+    callout = scope.get("callout")
+    if not callout:
+        return None
+    side = scope.get("side") if scope.get("side") in ("ct", "t") else None
+    is_count = how in ("deaths", "open_d")
+    members = [str(s) for s in (scope.get("members") or [])] if scope.get("group") in ("squad", "team") else None
+    player = scope.get("player")
+
+    def _one(sid):
+        rows = _player_rows(analytics, sid)
+        if rows is None:
+            return None                      # this player didn't play -> no contribution
+        row = next((r for r in rows if r.get("zone") == callout), None)
+        if row is None:
+            return 0.0 if is_count else None  # played but never at this callout: count=0, ratio=skip
+        return _row_stat(row, how, side)
+
+    if members:
+        vals = [v for sid in members for v in (_one(sid),) if v is not None]
+        if not vals:
+            return None
+        return float(sum(vals)) if is_count else round(sum(vals) / len(vals), 2)
+    if player:
+        return _one(player)
+    # No player/group on a callout goal: aggregate over everyone with position_stats (team-wide at
+    # the spot). Count metrics sum; ratio metrics average across players who have a row there.
+    sids = [str(p.get("steamid")) for p in (analytics.get("players") or []) if p.get("position_stats")]
+    vals = [v for sid in sids for v in (_one(sid),) if v is not None]
+    if not vals:
+        return None
+    return float(sum(vals)) if is_count else round(sum(vals) / len(vals), 2)
+
+
+def callout_supported(metric_key):
+    """True if `metric_key` can be graded at a callout (else a callout goal grades map-wide)."""
+    return metric_key in CALLOUT_METRICS
+
+
 _ANA_SUBDIR = "_ana"             # analytics-only sidecars live in cache/_ana/
 _matches_memo = {"sig": None, "recs": None}
 
@@ -363,10 +482,16 @@ def _baseline_from_source(goal, cache_dir):
     m = metric_by_key(goal["metric"])
     if not m:
         return None
+    scope = goal.get("scope") or {}
+    # A callout goal's baseline must be measured AT the callout too (else the series is per-callout
+    # but the baseline is map-wide -> a bogus improving/still_happening call). Fall back to the
+    # map-wide value when this metric has no per-callout form (same as grade()).
+    use_callout = bool(scope.get("callout")) and callout_supported(m["key"])
     src = goal.get("source_match_key")
     for rec in _matches(cache_dir):
         if rec["sha"] == src or rec["key"] == src or rec["sha"].startswith(str(src)):
-            v = metric_value(m, rec["analytics"], goal.get("scope"))
+            v = callout_value(m, rec["analytics"], scope) if use_callout \
+                else metric_value(m, rec["analytics"], scope)
             return round(v, 2) if v is not None else None
     return None
 
@@ -382,13 +507,19 @@ def grade(goal, matches):
         return {"verdict": "unknown_metric", "samples": 0, "series": []}
     scope = goal.get("scope") or {}
     role, player = scope.get("role"), scope.get("player")
+    # Location goals: when scope.callout is set, grade by the value AT that callout per match
+    # (players[].position_stats). Only metrics in CALLOUT_METRICS have a per-callout form; for the
+    # rest we keep grading map-wide and flag callout_status="fallback" so the UI can say so.
+    callout = scope.get("callout")
+    use_callout = bool(callout) and callout_supported(m["key"])
     series = []
     for rec in matches:                      # newest-first
         if scope.get("map") and rec["map"] != scope["map"]:
             continue
         if role and player and not _played_role(rec["analytics"], player, role):
             continue                          # only matches where the player held this role
-        v = metric_value(m, rec["analytics"], scope)
+        v = callout_value(m, rec["analytics"], scope) if use_callout \
+            else metric_value(m, rec["analytics"], scope)
         if v is None:
             continue
         series.append({"key": rec["key"][:12], "map": rec["map"],
@@ -399,6 +530,24 @@ def grade(goal, matches):
     res = {"metric_label": m["label"], "unit": m["unit"], "better": better,
            "target": target, "samples": n, "series": series[:10],
            "current": series[0]["value"] if n else None}
+    if callout:
+        # Tell the caller whether the callout filter was actually applied. When applied, the series
+        # value is "<metric> at <callout>" (deaths/opening-deaths/opening-win%/kd from position_stats);
+        # when this metric has no per-callout form the series is the normal map-wide value.
+        res["callout"] = callout
+        if use_callout:
+            how = CALLOUT_METRICS[m["key"]]
+            label = {"deaths": "deaths", "open_d": "opening deaths",
+                     "open_wr": "opening-duel win %", "kd": "K/D"}.get(how, m["label"])
+            res["callout_status"] = "graded"
+            res["callout_label"] = "%s at %s" % (label, callout)
+            # the value no longer represents the metric's registry label; reflect what it is now
+            res["metric_label"] = "%s @ %s" % (label, callout)
+            res["unit"] = "%" if how == "open_wr" else ""
+        else:
+            res["callout_status"] = "fallback"
+            res["callout_label"] = ("graded map-wide; per-callout data isn't available for %s"
+                                    % m["label"])
     if n == 0:
         res["verdict"] = "no_data"
         return res
@@ -433,7 +582,7 @@ def grade(goal, matches):
         names = _name_map(matches)
         breakdown = []
         for sid in members:
-            sub_scope = {k: scope[k] for k in ("map", "side", "buy") if scope.get(k)}
+            sub_scope = {k: scope[k] for k in ("map", "side", "buy", "callout") if scope.get(k)}
             sub_scope["player"] = str(sid)
             sg = grade({"metric": goal.get("metric"), "target": target, "scope": sub_scope}, matches)
             if not sg.get("samples"):

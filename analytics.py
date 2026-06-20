@@ -518,6 +518,40 @@ def build_focus(out_players, insights_by_sid, bench):
         p["focus"] = uniq[:5]
 
 
+# Buy-strength tiers for the economy verdict (low number = poorer buy). "light" sits between a
+# true eco and a force; "force"/"full" are the real-investment tiers. Unknown/pistol carry no story.
+_BUY_RANK = {"eco": 0, "light": 1, "force": 2, "full": 3}
+
+
+def _econ_verdict(buy_lose, buy_win, pistol):
+    """Why the LOSING side's economy did (or didn't) explain the loss, given both sides' buy labels.
+
+    Returns (verdict_key, note_str) where note_str is a short human line, or (None, None) when
+    there's no economy story to tell (missing/unknown data, pistols, or an even matchup). Verdicts:
+      eco_loss        -- loser ecoed into the winner's real buy (expected; not a mistake)
+      anti_force_loss -- loser half/force-bought into the winner's full (over-committed an eco)
+      lost_full_v_eco -- loser full-bought and STILL lost to an eco/lighter buy (notable; flag it)
+      even            -- comparable buys, no economy excuse either way
+    """
+    # No story without econ on both sides, and pistols are a fair reset (no buy advantage).
+    if pistol or buy_lose in (None, "unknown") or buy_win in (None, "unknown"):
+        return None, None
+    rl, rw = _BUY_RANK.get(buy_lose), _BUY_RANK.get(buy_win)
+    if rl is None or rw is None:
+        return None, None
+    # Loser invested at least as much as the winner.
+    if rl >= rw:
+        if buy_lose == "full" and rw <= _BUY_RANK["light"]:
+            # full-buy beaten by an eco/light buy -> the opposite of an economy excuse.
+            return "lost_full_v_eco", "Lost a full-buy to an eco"
+        return "even", None
+    # Loser was out-bought. How badly under-invested were they?
+    if buy_lose == "eco":
+        return "eco_loss", "Lost an eco"
+    # loser bought light/force into a richer buy (typically a full) -> an anti-force that didn't pay.
+    return "anti_force_loss", "Anti-forced (half-buy vs full)"
+
+
 def build_round_cards(rounds, round_story, deaths_by_round, team_by_round, plant_by_round,
                       round_buy, defuse_rounds, names, tickrate):
     """Per-round 'why won/lost' narrative with a watch-in-replay timestamp."""
@@ -545,10 +579,28 @@ def build_round_cards(rounds, round_story, deaths_by_round, team_by_round, plant
         if story and story[0]["type"] == "kill":
             m = story[0]
             bits.append(f"{names.get(m['atk'], '?')} swung it +{m['swing']}%")
+        # Economy verdict for the LOSING side: was this round lost before it started (eco /
+        # anti-force) or is it a notable loss (full-buy beaten by an eco)? Guarded against
+        # missing econ -- buy_ct/buy_t are "unknown"/None when have_econ was False.
+        win = winner_str(rd.get("winner"))
+        if win == "CT":
+            buy_lose, buy_win = rb.get("t"), rb.get("ct")
+        elif win == "T":
+            buy_lose, buy_win = rb.get("ct"), rb.get("t")
+        else:
+            buy_lose = buy_win = None
+        econ_verdict, econ_note = _econ_verdict(buy_lose, buy_win, rb.get("pistol", False))
+        summary = "; ".join(bits) + "." if bits else "(no recorded duels)"
+        # Fold the note into summary only when it adds something the bits don't already say
+        # (the "anti-eco" bit already covers an anti-force/eco loss in human terms).
+        if econ_note and "anti-eco" not in summary:
+            summary = summary[:-1] + " — " + econ_note + "." if summary.endswith(".") \
+                else summary + " — " + econ_note + "."
         cards.append({
             "round": rnum, "winner": rd["winner"], "reason": rd["reason"],
             "buy_ct": rb.get("ct"), "buy_t": rb.get("t"),
-            "summary": "; ".join(bits) + "." if bits else "(no recorded duels)",
+            "summary": summary,
+            "econ_note": econ_note, "econ_verdict": econ_verdict,
             "watch_t": round(rd.get("freeze_end", rd["start"]) / tickrate, 2),
             "moments": story,
         })

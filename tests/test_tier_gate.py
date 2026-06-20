@@ -66,3 +66,34 @@ def test_tiers_disabled_allows_everyone(tmp_path, monkeypatch):
     c, _ = _client(app, tmp_path, monkeypatch, tiers=False)  # tiers off -> no gating
     assert c.get("/api/compare?a=1&b=2").status_code == 200
     assert c.get("/api/tendencies/1").status_code == 200
+
+
+def test_goals_blocked_free_user(tmp_path, monkeypatch):
+    import app
+    c, _ = _client(app, tmp_path, monkeypatch, tiers=True)
+    assert c.get("/api/goals").status_code == 402            # Practice Goals is Pro
+
+
+def test_glb_blocked_free_user(tmp_path, monkeypatch):
+    import app
+    c, _ = _client(app, tmp_path, monkeypatch, tiers=True)
+    r = c.get("/static/maps3d/de_dust2.glb")                 # 3D geometry is Pro (gated before serving)
+    assert r.status_code == 402
+
+
+def test_glb_allowed_when_tiers_off(tmp_path, monkeypatch):
+    import app
+    c, _ = _client(app, tmp_path, monkeypatch, tiers=False)
+    # tiers off -> gate is a no-op; file may not exist (404) but must NOT be 402
+    assert c.get("/static/maps3d/de_dust2.glb").status_code != 402
+
+
+def test_shared_store_write_blocked_anon_when_locked(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    import app
+    monkeypatch.setattr(app, "TIERS_ENABLED", True)
+    _seed(tmp_path)
+    c = app.app.test_client()                                # no session = anon
+    assert c.post("/api/nades", json={"map": "de_dust2", "type": "smoke"}).status_code == 401
+    assert c.post("/api/team", json={}).status_code == 401

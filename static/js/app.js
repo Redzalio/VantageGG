@@ -4527,6 +4527,52 @@ const App = {
     }
     this.startSession(items, (who ? `${who} — ` : "") + `deaths at ${name} (${items.length})`);
   },
+  // Watch a player's KILLS at a callout. Kills are credited at the VICTIM's location (matching the
+  // Positions table), so we filter by attacker == player and the victim's place/coords == the callout,
+  // then spectate the attacker through each kill.
+  reviewKillsAtCallout(zone, opts) {
+    opts = opts || {};
+    if (!this.demo) { this._toast && this._toast("Open a match first"); return; }
+    const c = this._resolveCallout(zone);
+    const name = this.calloutName(zone);
+    let onlyIdx = null, who = "";
+    if (opts.steamid != null && opts.steamid !== "") {
+      onlyIdx = this.demo.players.findIndex(p => String(p.steamid) === String(opts.steamid));
+      who = (onlyIdx >= 0 && this.demo.players[onlyIdx]) ? this.demo.players[onlyIdx].name : "";
+    } else if (!opts.fromAnalytics && this.radar.followIdx >= 0) {
+      onlyIdx = this.radar.followIdx;
+      who = this.demo.players[onlyIdx] ? this.demo.players[onlyIdx].name : "";
+    }
+    const items = [];
+    for (const k of (this.demo.kills || [])) {
+      if (k.attacker == null || k.attacker < 0) continue;          // ignore world/suicide kills
+      if (onlyIdx != null && onlyIdx >= 0 && k.attacker !== onlyIdx) continue;
+      let match;
+      if (k.vplace != null && k.vplace !== "") {                   // victim's zone == the callout
+        match = this._sameZone(k.vplace, zone);
+      } else if (k.vx != null) {
+        const cc = this._calloutAt(k.vx, k.vy, 450);
+        match = c ? (cc && cc.id === c.id) : (cc && this.calloutName(cc.id) === name);
+      } else { match = false; }
+      if (!match) continue;
+      const r = this.demo.roundAt ? this.demo.roundAt(k.t) : null;
+      const atk = this.demo.players[k.attacker] ? this.demo.players[k.attacker].name : "player";
+      const vic = this.demo.players[k.victim] ? this.demo.players[k.victim].name : "enemy";
+      items.push({ t: Math.max(0, k.t - 2.0), eventT: k.t, player: k.attacker,
+                   round: r ? r.number : null, text: `${atk} killed ${vic} at ${name}` });
+    }
+    items.sort((a, b) => a.t - b.t);
+    if (this.radar.focusCallout) this.radar.focusCallout(zone);
+    if (!items.length) {
+      this._toast && this._toast(`No located kills for ${who || "anyone"} at ${name} in this cached demo.`);
+      return;
+    }
+    if (opts.fromAnalytics) {
+      $("analyticsPanel").classList.remove("show");
+      $("toggleAnalytics").classList.remove("on");
+    }
+    this.startSession(items, (who ? `${who} — ` : "") + `kills at ${name} (${items.length})`);
+  },
   // normalize two zone/callout strings for equality (last_place_name vs a callout name/alias/id)
   _sameZone(a, b) {
     const norm = s => String(s == null ? "" : s).toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -4536,6 +4582,33 @@ const App = {
     // also treat them as equal if they resolve to the same effective callout
     const ca = this._resolveCallout(a), cb = this._resolveCallout(b);
     return !!(ca && cb && ca.id === cb.id);
+  },
+  // Full match-report export (much richer than the Discord text share). fmt: "html" (open + Print-to-PDF),
+  // "text" (copy to clipboard), "json" (download). Scoped to the selected report team's side.
+  exportReport(fmt) {
+    const id = this._reviewDemoId && this._reviewDemoId();
+    if (!id) { this._toast && this._toast("Open a saved match first"); return; }
+    let side = "";
+    try {
+      const tc = (this.demo.analytics.team_coaching.teams) || [];
+      const tm = tc.find(t => t.id === this.myTeamId) || tc[0];
+      if (tm && /^(ct|t)$/i.test(tm.start_side || "")) side = tm.start_side;
+    } catch (e) { /* no team data -> server auto-picks */ }
+    const url = "api/reviews/" + encodeURIComponent(id) + "/export?fmt=" + encodeURIComponent(fmt)
+      + (side ? "&side=" + encodeURIComponent(side) : "");
+    if (fmt === "html") { window.open(url, "_blank", "noopener"); return; }   // printable -> new tab -> Ctrl+P
+    if (fmt === "json") {                                                     // let the browser download it
+      const a = document.createElement("a"); a.href = url; a.download = "";
+      document.body.appendChild(a); a.click(); a.remove(); return;
+    }
+    // text -> fetch + copy to clipboard (fall back to opening it if clipboard is unavailable)
+    fetch(url).then(r => r.ok ? r.text() : Promise.reject()).then(txt => {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(txt).then(
+          () => this._toast && this._toast("Full report copied to clipboard"),
+          () => window.open(url, "_blank", "noopener"));
+      } else { window.open(url, "_blank", "noopener"); }
+    }).catch(() => this._toast && this._toast("Export failed"));
   },
   createGoalForCallout(zone) {
     const name = this.calloutName(zone);

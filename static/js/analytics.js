@@ -134,6 +134,12 @@ function render() {
       </div>
       <select id="anPlayerSel" class="an-sel" ${VIEW === "player" ? "" : 'style="display:none"'}></select>
       <button id="anShare" class="an-share" title="Copy a Discord-friendly summary (and download a .txt)">&#8682; Share</button>
+      <div class="an-export-wrap"><button id="anExport" class="an-share" title="Export a full match report">&#8615; Export &#9662;</button>
+        <div id="anExportMenu" class="an-export-menu" hidden>
+          <button data-xfmt="html">&#128424; Printable report (PDF)</button>
+          <button data-xfmt="text">&#128203; Copy full report (text)</button>
+          <button data-xfmt="json">&#11015; Download JSON</button>
+        </div></div>
     </div>`;
   const playerBody = proAA ? `
     ${focusCard(sel, null, canGoal)}
@@ -175,6 +181,13 @@ function render() {
   const ptc = $("analyticsBody").querySelector(".pt-cta");   // "See Pro" on the free teaser
   if (ptc) ptc.onclick = () => window.App && App._upsell && App._upsell("advancedAnalytics");
   if ($("anShare")) $("anShare").onclick = () => shareCoaching(A);   // #52 Discord-friendly export
+  { const xb = $("anExport"), xm = $("anExportMenu");                // full match-report export menu
+    if (xb && xm) {
+      xb.onclick = (e) => { e.stopPropagation(); xm.hidden = !xm.hidden; };
+      xm.querySelectorAll("[data-xfmt]").forEach(b => b.onclick = () => {
+        xm.hidden = true; if (typeof APP !== "undefined" && APP.exportReport) APP.exportReport(b.dataset.xfmt);
+      });
+    } }
   $("analyticsBody").querySelectorAll("[data-myteam]").forEach(el =>
     el.onclick = () => setMyTeam(el.dataset.myteam));
 
@@ -269,6 +282,10 @@ function render() {
     if (typeof APP === "undefined") return;
     if (act === "deaths") {   // analytics-origin: review THIS player's deaths here (not whoever is spectated)
       APP.reviewDeathsAtCallout(zone, { steamid: b.dataset.pksid || null, fromAnalytics: true });
+      return;
+    }
+    if (act === "kills") {    // this player's KILLS at the callout (credited at the victim's location)
+      APP.reviewKillsAtCallout(zone, { steamid: b.dataset.pksid || null, fromAnalytics: true });
       return;
     }
     const map = { utility: "showUtilityToCallout", throws: "findThrowsAtCallout",
@@ -1115,7 +1132,7 @@ function positionsCard(p) {
       <td class="pz-kd ${cls}">${r.k}-${r.d}</td>
       <td class="pz-side">${side.join(" ")}</td>
       <td class="pz-open-c">${open}</td>
-      <td class="pz-acts"><button class="pz-act" data-callout-act="deaths" data-zone="${esc(r.zone)}" data-pksid="${esc(String(p.steamid))}" title="Review ${esc(p.name)}'s deaths at ${esc(r.zone)}">Deaths</button><button class="pz-act" data-callout-act="utility" data-zone="${esc(r.zone)}" title="Show saved utility to ${esc(r.zone)}">Utility</button><button class="pz-act" data-callout-act="throws" data-zone="${esc(r.zone)}" title="Find team throws landing at ${esc(r.zone)}">Throws</button><button class="pz-act" data-callout-act="goal" data-zone="${esc(r.zone)}" title="Create a practice goal for ${esc(r.zone)}">Goal</button><button class="pz-act" data-callout-act="note" data-zone="${esc(r.zone)}" title="Add a review note at ${esc(r.zone)}">Note</button></td></tr>`;
+      <td class="pz-acts"><button class="pz-act" data-callout-act="deaths" data-zone="${esc(r.zone)}" data-pksid="${esc(String(p.steamid))}" title="Review ${esc(p.name)}'s deaths at ${esc(r.zone)}">Deaths</button>${r.k ? `<button class="pz-act" data-callout-act="kills" data-zone="${esc(r.zone)}" data-pksid="${esc(String(p.steamid))}" title="Review ${esc(p.name)}'s kills at ${esc(r.zone)}">Kills</button>` : ""}<button class="pz-act" data-callout-act="utility" data-zone="${esc(r.zone)}" title="Show saved utility to ${esc(r.zone)}">Utility</button><button class="pz-act" data-callout-act="throws" data-zone="${esc(r.zone)}" title="Find team throws landing at ${esc(r.zone)}">Throws</button><button class="pz-act" data-callout-act="goal" data-zone="${esc(r.zone)}" title="Create a practice goal for ${esc(r.zone)}">Goal</button><button class="pz-act" data-callout-act="note" data-zone="${esc(r.zone)}" title="Add a review note at ${esc(r.zone)}">Note</button></td></tr>`;
   }).join("");
   if (!rows) return `<div class="card"><div class="card-h">Positions</div><div class="empty">Not enough data.</div></div>`;
   return `<div class="card"><div class="card-h">Positions <em>K-D by callout &middot; side &middot; opening</em></div>

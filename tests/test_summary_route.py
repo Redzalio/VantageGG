@@ -59,3 +59,18 @@ def test_summary_differs_by_side(tmp_path, monkeypatch):
     assert ct_text != t_text                                 # the picker actually changes the summary
     # each summary should describe its own team's record (11-13 for CT-start, 13-11 for T-start)
     assert "11-13" in ct_text and "13-11" in t_text
+
+
+def test_export_text_and_json_and_html(tmp_path, monkeypatch):
+    c = _client(tmp_path, monkeypatch)
+    txt = c.get("/api/reviews/" + SHA + "/export?fmt=text")
+    assert txt.status_code == 200 and "text/plain" in txt.headers["Content-Type"]
+    assert b"de_dust2" in txt.data or b"DUST2" in txt.data.upper()
+    assert "attachment" in txt.headers.get("Content-Disposition", "")
+    js = c.get("/api/reviews/" + SHA + "/export?fmt=json")
+    assert js.status_code == 200 and "application/json" in js.headers["Content-Type"]
+    assert js.get_json() is not None                        # valid JSON body
+    html = c.get("/api/reviews/" + SHA + "/export?fmt=html")
+    assert html.status_code == 200 and "text/html" in html.headers["Content-Type"]
+    body = html.data.decode("utf-8")
+    assert "<html" in body.lower() and "<script" not in body.lower()   # printable, no scripts

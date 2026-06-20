@@ -206,6 +206,7 @@ def migrate(con=None):
         _ensure_column(c, "jobs", "bytes", "INTEGER")               # 19A: uploaded file size (bytes), for the timing breakdown
         _ensure_column(c, "jobs", "team_id", "INTEGER")             # upload destination: target team (NULL = personal)
         _ensure_column(c, "user_demos", "archived", "INTEGER DEFAULT 0")  # #22: replay removed to free space, stats kept
+        _ensure_column(c, "user_demos", "tag", "TEXT")             # per-user label (scrim/mm/faceit/... or free-form); NULL = untagged
         if not had_user_demos:
             c.execute("""INSERT OR IGNORE INTO user_demos(user_id, sha1, team_id, created_at)
                          SELECT owner_user_id, sha1, team_id, created_at
@@ -1031,6 +1032,44 @@ def set_demo_team(demo_id, team_id, requester_uid, con=None):
             c.close()
 
 
+TAG_MAXLEN = 32   # per-user demo tag is clamped/trimmed to this many chars
+
+
+def set_demo_tag(user_id, sha1, tag, con=None):
+    """Set (or clear) the per-USER tag on the caller's OWN copy of a demo. Each member tags their own
+    membership row independently, so this only ever touches `user_id`'s row. The tag is trimmed and
+    clamped to TAG_MAXLEN chars; an empty/whitespace-only tag (or None) clears it back to NULL.
+    Returns True if a membership row was updated (the user holds the demo), else False."""
+    if user_id is None:
+        return False
+    c = con or connect()
+    try:
+        d = c.execute("SELECT sha1 FROM demos WHERE sha1=? OR key=?", (sha1, sha1)).fetchone()
+        sha = d["sha1"] if d else sha1
+        clean = (tag or "").strip()[:TAG_MAXLEN].strip() or None
+        cur = c.execute("UPDATE user_demos SET tag=? WHERE user_id=? AND sha1=?", (clean, user_id, sha))
+        c.commit()
+        return cur.rowcount > 0
+    finally:
+        if con is None:
+            c.close()
+
+
+def tags_for_user(user_id, con=None):
+    """Distinct non-null tags this user has applied to their demos, alphabetical (case-insensitive) --
+    for building the library/dashboard/trends filter chips."""
+    if user_id is None:
+        return []
+    c = con or connect()
+    try:
+        rows = c.execute("SELECT DISTINCT tag FROM user_demos WHERE user_id=? AND tag IS NOT NULL",
+                         (user_id,))
+        return sorted((r["tag"] for r in rows), key=lambda t: t.lower())
+    finally:
+        if con is None:
+            c.close()
+
+
 # ---- visibility (Stage 5): what a logged-in user may see --------------------
 # `scope` is None (open/local mode -> no restriction) or {"uid": int|None, "team_ids": [int,...]}.
 # Membership model: a demo is visible if it's in the user's library (user_demos), OR another member
@@ -1162,10 +1201,12 @@ def visible_predicate(scope, con=None):
 
 def library_membership(scope, con=None):
     """Classify each demo by sha1 from `scope`'s point of view, for the Personal/Team library split:
-    `{sha1: {"personal": bool, "team_ids": [int,...]}}`. `personal` = the user holds a non-team copy
-    (their own upload, not assigned to a team). `team_ids` = teams the user belongs to that the demo
-    is shared with (their own share or a teammate's). Open/local mode (scope None) -> empty map;
-    callers treat a missing entry as personal. One query; pairs with visible_predicate."""
+    `{sha1: {"personal": bool, "team_ids": [int,...]}}`, plus a `"tag": str` entry on demos the VIEWER
+    has tagged. `personal` = the user holds a non-team copy (their own upload, not assigned to a team).
+    `team_ids` = teams the user belongs to that the demo is shared with (their own share or a teammate's).
+    `tag` = the VIEWER's own per-user tag (only present when set; teammates' copies keep their own tags --
+    the dashboard only cares about the viewer's). Open/local mode (scope None) -> empty map; callers treat
+    a missing entry as personal. One query."""
     if scope is None:
         return {}
     uid = scope.get("uid")
@@ -1173,7 +1214,7 @@ def library_membership(scope, con=None):
     c = con or connect()
     try:
         out = {}
-        for r in c.execute("SELECT sha1, user_id, team_id, archived FROM user_demos"):
+        for r in c.execute("SELECT sha1, user_id, team_id, archived, tag FROM user_demos"):
             if r["archived"]:
                 continue                               # deleted their replay -> not in their library
             ent = out.get(r["sha1"])
@@ -1182,8 +1223,11 @@ def library_membership(scope, con=None):
             tid = r["team_id"]
             if tid is not None and tid in my_teams and tid not in ent["team_ids"]:
                 ent["team_ids"].append(tid)
-            if uid is not None and r["user_id"] == uid and tid is None:
-                ent["personal"] = True                 # my own copy, not assigned to a team
+            if uid is not None and r["user_id"] == uid:
+                if r["tag"]:
+                    ent["tag"] = r["tag"]              # the viewer's own tag (absent if untagged)
+                if tid is None:
+                    ent["personal"] = True            # my own copy, not assigned to a team
         return out
     finally:
         if con is None:
