@@ -267,8 +267,12 @@ function render() {
     const zone = b.dataset.zone;
     const act = b.dataset.calloutAct;
     if (typeof APP === "undefined") return;
-    const map = { deaths: "reviewDeathsAtCallout", utility: "showUtilityToCallout",
-      throws: "findThrowsAtCallout", goal: "createGoalForCallout", note: "addNoteAtCallout" };
+    if (act === "deaths") {   // analytics-origin: review THIS player's deaths here (not whoever is spectated)
+      APP.reviewDeathsAtCallout(zone, { steamid: b.dataset.pksid || null, fromAnalytics: true });
+      return;
+    }
+    const map = { utility: "showUtilityToCallout", throws: "findThrowsAtCallout",
+      goal: "createGoalForCallout", note: "addNoteAtCallout" };
     const fn = map[act];
     if (fn && typeof APP[fn] === "function") APP[fn](zone);
     else if (act === "utility" && APP.openLibraryAtCallout) APP.openLibraryAtCallout(zone); // fallback
@@ -457,17 +461,24 @@ function shareCoaching(A) {
 
 // P3: fetch + render the natural-language coaching summary into the report's #rpSummary card.
 // Server-side (heuristic by default, optionally AI). Failure is silent -> a quiet fallback line.
+let _sumSeq = 0;   // guards against a stale summary fetch overwriting a newer team selection
 function fillCoachingSummary(A) {
   const host = document.getElementById("rpSummary");
   if (!host) return;
   const id = (typeof APP !== "undefined" && APP._reviewDemoId && APP._reviewDemoId());
   if (!id) { host.innerHTML = `<span class="rp-sum-load">Summary needs a saved match.</span>`; return; }
-  const stid = (window.App && App.me && App.me.user && App.me.user.steam_id_64) || "";
-  const q = stid ? ("?player=" + encodeURIComponent(stid)) : "";
+  // Follow the SELECTED report team: pass its starting side so the summary describes that team.
+  // (Don't key off the logged-in user's steamid -- that ignored the team picker.)
+  const tc = (A.team_coaching && A.team_coaching.teams) || [];
+  const team = tc.find(t => t.id === APP.myTeamId) || tc[0] || null;
+  const side = team && /^(ct|t)$/i.test(team.start_side || "") ? team.start_side : "";
+  const q = side ? ("?side=" + encodeURIComponent(side)) : "";
+  const seq = ++_sumSeq;
+  host.innerHTML = `<span class="rp-sum-load">Generating summary…</span>`;
   fetch("api/reviews/" + encodeURIComponent(id) + "/summary" + q)
     .then(r => r.ok ? r.json() : null)
     .then(s => {
-      if (!host.isConnected) return;                       // panel re-rendered/closed meanwhile
+      if (seq !== _sumSeq || !host.isConnected) return;    // superseded by a newer pick / re-render
       if (!s || !s.text) { host.innerHTML = `<span class="rp-sum-load">No summary available.</span>`; return; }
       const bullets = (s.bullets || []).map(b => `<li>${esc(b)}</li>`).join("");
       const rounds = (s.review_rounds || []).map(n => `<button class="rp-sum-r" data-jumpr="${n}">R${n}</button>`).join(" ");
@@ -1104,7 +1115,7 @@ function positionsCard(p) {
       <td class="pz-kd ${cls}">${r.k}-${r.d}</td>
       <td class="pz-side">${side.join(" ")}</td>
       <td class="pz-open-c">${open}</td>
-      <td class="pz-acts"><button class="pz-act" data-callout-act="deaths" data-zone="${esc(r.zone)}" title="Review deaths at ${esc(r.zone)}">Deaths</button><button class="pz-act" data-callout-act="utility" data-zone="${esc(r.zone)}" title="Show saved utility to ${esc(r.zone)}">Utility</button><button class="pz-act" data-callout-act="throws" data-zone="${esc(r.zone)}" title="Find team throws landing at ${esc(r.zone)}">Throws</button><button class="pz-act" data-callout-act="goal" data-zone="${esc(r.zone)}" title="Create a practice goal for ${esc(r.zone)}">Goal</button><button class="pz-act" data-callout-act="note" data-zone="${esc(r.zone)}" title="Add a review note at ${esc(r.zone)}">Note</button></td></tr>`;
+      <td class="pz-acts"><button class="pz-act" data-callout-act="deaths" data-zone="${esc(r.zone)}" data-pksid="${esc(String(p.steamid))}" title="Review ${esc(p.name)}'s deaths at ${esc(r.zone)}">Deaths</button><button class="pz-act" data-callout-act="utility" data-zone="${esc(r.zone)}" title="Show saved utility to ${esc(r.zone)}">Utility</button><button class="pz-act" data-callout-act="throws" data-zone="${esc(r.zone)}" title="Find team throws landing at ${esc(r.zone)}">Throws</button><button class="pz-act" data-callout-act="goal" data-zone="${esc(r.zone)}" title="Create a practice goal for ${esc(r.zone)}">Goal</button><button class="pz-act" data-callout-act="note" data-zone="${esc(r.zone)}" title="Add a review note at ${esc(r.zone)}">Note</button></td></tr>`;
   }).join("");
   if (!rows) return `<div class="card"><div class="card-h">Positions</div><div class="empty">Not enough data.</div></div>`;
   return `<div class="card"><div class="card-h">Positions <em>K-D by callout &middot; side &middot; opening</em></div>

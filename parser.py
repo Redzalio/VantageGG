@@ -295,7 +295,7 @@ def parse_demo(src, sample_rate=SAMPLE_RATE):
 
     # ---- events ---------------------------------------------------------------
     events = []
-    deaths = _event(parser, "player_death", available, player=["X", "Y"])
+    deaths = _event(parser, "player_death", available, player=["X", "Y", "last_place_name"])
     if len(deaths):
         atk_sid = _col(deaths, "attacker_steamid")
         usr_sid = _col(deaths, "user_steamid")
@@ -318,6 +318,9 @@ def parse_demo(src, sample_rate=SAMPLE_RATE):
                 "ay": _num(_col(deaths, "attacker_Y").iloc[i]),
                 "vx": _num(_col(deaths, "user_X").iloc[i]),
                 "vy": _num(_col(deaths, "user_Y").iloc[i]),
+                # victim's callout zone (last_place_name) -> lets the Positions K-D "Deaths" review match
+                # exactly by place (falls back to nearest-callout for caches parsed before this field).
+                "vplace": str(_col(deaths, "user_last_place_name", default="").iloc[i] or ""),
             })
 
     # begin* events let the UI show plant/defuse progress from when it ACTUALLY starts

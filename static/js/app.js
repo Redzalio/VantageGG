@@ -4477,19 +4477,38 @@ const App = {
     this.radar.searchOverlay = hits.map(g => ({ type: g.type, pts: g.pts }));
     this._toast && this._toast(`${hits.length} throw${hits.length === 1 ? "" : "s"} landed at ${c.name}`);
   },
-  // Watch the deaths that happened at this callout (review session + 2D focus). If a player is
-  // spectated, limit to their deaths; otherwise everyone's deaths at the location.
-  reviewDeathsAtCallout(zone) {
+  // Watch the deaths that happened at this callout (review session + 2D focus).
+  // opts.steamid -> review only THAT player's deaths (analytics-origin: the selected Positions player).
+  // opts.fromAnalytics -> close the Analytics panel so the review session is immediately visible.
+  // Replay-origin (no opts) falls back to the spectated player, then to everyone.
+  reviewDeathsAtCallout(zone, opts) {
+    opts = opts || {};
     if (!this.demo) { this._toast && this._toast("Open a match first"); return; }
     const c = this._resolveCallout(zone);
-    const onlyIdx = this.radar.followIdx >= 0 ? this.radar.followIdx : null;
     const name = this.calloutName(zone);
+    // who to filter to: explicit player wins; else (replay-origin only) the spectated player; else all
+    let onlyIdx = null, who = "";
+    if (opts.steamid != null && opts.steamid !== "") {
+      onlyIdx = this.demo.players.findIndex(p => String(p.steamid) === String(opts.steamid));
+      who = (onlyIdx >= 0 && this.demo.players[onlyIdx]) ? this.demo.players[onlyIdx].name : "";
+    } else if (!opts.fromAnalytics && this.radar.followIdx >= 0) {
+      onlyIdx = this.radar.followIdx;
+      who = this.demo.players[onlyIdx] ? this.demo.players[onlyIdx].name : "";
+    }
     const items = [];
     for (const k of (this.demo.kills || [])) {
       if (k.vx == null) continue;
-      if (onlyIdx != null && k.victim !== onlyIdx) continue;
-      const cc = this._calloutAt(k.vx, k.vy, 450);
-      const match = c ? (cc && cc.id === c.id) : (cc && this.calloutName(cc.id) === name);
+      if (onlyIdx != null && onlyIdx >= 0 && k.victim !== onlyIdx) continue;
+      // match the death's location to the row's callout: prefer the parsed last_place_name (vplace) so
+      // it lines up exactly with the Positions table; fall back to nearest-callout-by-distance for
+      // caches parsed before vplace existed (or maps without callout coordinates).
+      let match;
+      if (k.vplace != null && k.vplace !== "") {
+        match = this._sameZone(k.vplace, zone);
+      } else {
+        const cc = this._calloutAt(k.vx, k.vy, 450);
+        match = c ? (cc && cc.id === c.id) : (cc && this.calloutName(cc.id) === name);
+      }
       if (!match) continue;
       const r = this.demo.roundAt ? this.demo.roundAt(k.t) : null;
       const vic = this.demo.players[k.victim] ? this.demo.players[k.victim].name : "player";
@@ -4498,8 +4517,25 @@ const App = {
     }
     items.sort((a, b) => a.t - b.t);
     if (this.radar.focusCallout) this.radar.focusCallout(zone);
-    if (!items.length) { this._toast && this._toast(`No located deaths at ${name}`); return; }
-    this.startSession(items, `Deaths at ${name} (${items.length})`);
+    if (!items.length) {
+      this._toast && this._toast(`No located deaths for ${who || "anyone"} at ${name} in this cached demo.`);
+      return;
+    }
+    if (opts.fromAnalytics) {                     // leave Analytics so the session overlay is visible
+      $("analyticsPanel").classList.remove("show");
+      $("toggleAnalytics").classList.remove("on");
+    }
+    this.startSession(items, (who ? `${who} — ` : "") + `deaths at ${name} (${items.length})`);
+  },
+  // normalize two zone/callout strings for equality (last_place_name vs a callout name/alias/id)
+  _sameZone(a, b) {
+    const norm = s => String(s == null ? "" : s).toLowerCase().replace(/[^a-z0-9]/g, "");
+    const na = norm(a), nb = norm(b);
+    if (!na || !nb) return false;
+    if (na === nb) return true;
+    // also treat them as equal if they resolve to the same effective callout
+    const ca = this._resolveCallout(a), cb = this._resolveCallout(b);
+    return !!(ca && cb && ca.id === cb.id);
   },
   createGoalForCallout(zone) {
     const name = this.calloutName(zone);
