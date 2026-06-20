@@ -320,6 +320,45 @@ body.on-landing .site-footer,body.on-dashboard .site-footer{display:flex}
 @media(max-width:560px){.adm-cfg,.adm-cols,.adm-growth{grid-template-columns:1fr}}
 @media(max-width:760px){.adm-stats{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:420px){.adm-stats{grid-template-columns:repeat(2,1fr)}}
+/* admin health bar */
+.adm-health-bar{display:flex;gap:16px;flex-wrap:wrap;background:#0c1116;border:1px solid var(--line);border-radius:7px;padding:8px 12px;margin:8px 0 4px;font-size:12px}
+.adm-health-item{color:var(--mut)}
+.adm-health-item b{color:var(--txt)}
+.adm-warn{color:#e8a230!important}
+.adm-warn b{color:#e8a230!important}
+.adm-crit{color:#ff6f8b!important}
+.adm-crit b{color:#ff6f8b!important}
+.adm-ok{color:#5fcf80!important}
+/* security warnings */
+.adm-sec-warn{padding:7px 12px;border-radius:6px;font-size:12px;margin:3px 0}
+.adm-sec-warn.adm-warn{background:#2a1e00;border:1px solid #7a5400}
+.adm-sec-warn.adm-crit{background:#2a0010;border:1px solid #8b0030}
+/* failed job retry */
+.ops-fail-retry{margin-left:auto;flex-shrink:0}
+.ops-fail.ops-fail-resolved{opacity:.4;pointer-events:none}
+.ops-fail-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+/* teams section */
+.adm-teams-wrap,.adm-audit-wrap{margin:0 0 12px}
+.adm-teams-list,.adm-audit-list{display:flex;flex-direction:column;gap:4px}
+.adm-team-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#0c1116;border:1px solid var(--line);border-radius:6px;padding:7px 10px;font-size:12px}
+.adm-team-name{font-weight:600;color:var(--txt)}
+.adm-team-owner,.adm-team-stats,.adm-team-date{color:var(--mut)}
+/* audit log */
+.adm-audit-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:5px 8px;border-bottom:1px solid var(--line);font-size:11px}
+.adm-audit-ts{color:var(--mut);min-width:110px}
+.adm-audit-who{font-weight:600;color:var(--txt);min-width:80px}
+.adm-audit-action{border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700;background:var(--panel2);color:var(--accent)}
+.adm-audit-target{color:var(--mut)}
+.adm-audit-detail{color:var(--mut);font-size:10px;word-break:break-all}
+/* user detail drawer */
+.adm-user-row{cursor:pointer}
+.adm-user-row:hover{background:rgba(255,255,255,.03)}
+.adm-user-detail-row td{padding:0}
+.adm-user-detail{display:flex;gap:16px;flex-wrap:wrap;padding:10px 12px;background:#0c1116;border-bottom:1px solid var(--line)}
+.adm-detail-col{flex:1;min-width:140px}
+.adm-detail-col b{display:block;font-size:11px;color:var(--mut);margin-bottom:4px}
+.adm-detail-list{font-size:11px;color:var(--txt);display:flex;flex-direction:column;gap:2px;max-height:120px;overflow-y:auto}
+.adm-detail-demo,.adm-detail-team,.adm-detail-job{padding:2px 0}
 
 /* ---- Dashboard (landing view) ---- */
 #dashboard{display:none}

@@ -129,6 +129,15 @@ CREATE TABLE IF NOT EXISTS goals (
 );
 CREATE INDEX IF NOT EXISTS idx_goals_owner ON goals(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_goals_team ON goals(team_id);
+CREATE TABLE IF NOT EXISTS admin_audit (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  admin_uid INTEGER,
+  action TEXT NOT NULL,
+  target_type TEXT,
+  target_id TEXT,
+  detail TEXT,
+  ts TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
+);
 """
 
 
@@ -615,6 +624,110 @@ def delete_user(user_id, con=None):
         n = c.execute("DELETE FROM users WHERE id=?", (user_id,)).rowcount
         c.commit()
         return bool(n)
+    finally:
+        if con is None:
+            c.close()
+
+
+def log_admin_action(admin_uid, action, target_type=None, target_id=None, detail=None, con=None):
+    c = con or connect()
+    try:
+        c.execute(
+            "INSERT INTO admin_audit(admin_uid,action,target_type,target_id,detail) VALUES(?,?,?,?,?)",
+            (admin_uid, action, target_type,
+             str(target_id) if target_id is not None else None,
+             json.dumps(detail) if detail is not None else None))
+        c.commit()
+    except Exception:
+        pass   # audit log must never break the action it wraps
+    finally:
+        if con is None:
+            c.close()
+
+
+def get_admin_audit(limit=100, con=None):
+    c = con or connect()
+    try:
+        rows = c.execute("""
+            SELECT a.id, a.action, a.target_type, a.target_id, a.detail, a.ts,
+                   u.display_name AS admin_name, u.steam_id_64 AS admin_steamid
+            FROM admin_audit a
+            LEFT JOIN users u ON u.id = a.admin_uid
+            ORDER BY a.id DESC LIMIT ?
+        """, (limit,)).fetchall()
+        out = []
+        for r in rows:
+            out.append({"id": r["id"], "action": r["action"],
+                        "target_type": r["target_type"], "target_id": r["target_id"],
+                        "detail": json.loads(r["detail"]) if r["detail"] else None,
+                        "ts": r["ts"], "admin_name": r["admin_name"],
+                        "admin_steamid": r["admin_steamid"]})
+        return out
+    finally:
+        if con is None:
+            c.close()
+
+
+def get_user_detail(user_id, con=None):
+    c = con or connect()
+    try:
+        u = c.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+        if not u:
+            return None
+        demos_rows = c.execute("""
+            SELECT d.sha1, d.key, d.map, d.rounds, d.created_at, d.score
+            FROM user_demos ud JOIN demos d ON d.sha1=ud.sha1
+            WHERE ud.user_id=? AND (ud.archived IS NULL OR ud.archived=0)
+            ORDER BY d.created_at DESC LIMIT 10
+        """, (user_id,)).fetchall()
+        demo_count_row = c.execute("""
+            SELECT COUNT(*) n FROM user_demos
+            WHERE user_id=? AND (archived IS NULL OR archived=0)
+        """, (user_id,)).fetchone()
+        demo_count = demo_count_row["n"] if demo_count_row else 0
+        teams_rows = c.execute("""
+            SELECT t.id, t.name, t.created_at AS team_created_at, tm.role, tm.joined_at
+            FROM team_members tm JOIN teams t ON t.id=tm.team_id
+            WHERE tm.user_id=?
+        """, (user_id,)).fetchall()
+        job_rows = c.execute("""
+            SELECT id, filename, status, created_at, finished_at, bytes, error
+            FROM jobs WHERE owner_user_id=? ORDER BY created_at DESC LIMIT 5
+        """, (user_id,)).fetchall()
+        return {
+            "id": u["id"], "steam_id_64": u["steam_id_64"],
+            "display_name": u["display_name"], "avatar_url": u["avatar_url"],
+            "tier": u["tier"], "pro_until": u["pro_until"], "role": u["role"],
+            "created_at": u["created_at"], "last_login_at": u["last_login_at"],
+            "demo_count": demo_count,
+            "demos": [dict(d) for d in demos_rows],
+            "teams": [dict(t) for t in teams_rows],
+            "recent_jobs": [{"id": j["id"], "filename": j["filename"],
+                             "status": j["status"], "created_at": j["created_at"],
+                             "finished_at": j["finished_at"], "bytes": j["bytes"],
+                             "error": (j["error"] or "")[:200]} for j in job_rows],
+        }
+    finally:
+        if con is None:
+            c.close()
+
+
+def list_all_teams_admin(con=None):
+    c = con or connect()
+    try:
+        rows = c.execute("""
+            SELECT t.id, t.name, t.invite_code, t.created_at,
+                   u.display_name AS owner_name, u.steam_id_64 AS owner_steamid,
+                   COUNT(DISTINCT tm.user_id) AS member_count,
+                   COUNT(DISTINCT d.sha1) AS demo_count,
+                   MAX(d.created_at) AS last_activity
+            FROM teams t
+            LEFT JOIN users u ON u.id=t.owner_user_id
+            LEFT JOIN team_members tm ON tm.team_id=t.id
+            LEFT JOIN demos d ON d.team_id=t.id
+            GROUP BY t.id ORDER BY t.created_at DESC
+        """).fetchall()
+        return [dict(r) for r in rows]
     finally:
         if con is None:
             c.close()

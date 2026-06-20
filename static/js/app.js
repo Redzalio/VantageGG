@@ -561,7 +561,7 @@ const App = {
   },
   _fmtMap(mp) {
     const raw = String(mp || "?").replace(/^de_/, "").replace(/^cs_/, "");
-    const named = { dust2: "Dust2", ancient: "Ancient", anubis: "Anubis", mirage: "Mirage",
+    const named = { dust2: "Dust 2", ancient: "Ancient", anubis: "Anubis", mirage: "Mirage",
       inferno: "Inferno", nuke: "Nuke", overpass: "Overpass", vertigo: "Vertigo",
       train: "Train", cache: "Cache" };
     return named[raw.toLowerCase()] || raw.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
@@ -1212,6 +1212,19 @@ const App = {
       + `<div class="adm-stats">${tiles.map(([k, v]) => `<div class="dstat"><div class="dstat-v">${v}</div><div class="dstat-k">${k}</div></div>`).join("")}</div>`
       + `<div class="adm-jobs">${proPct}% on Pro${cfg.tiers_enabled ? "" : ` · <span class="round">tiers OFF (everyone has full access)</span>`}</div>`
       + `<div class="dash-sec-head adm-uhead"><h2>Growth &amp; activity</h2></div>${growth}`
+      + (() => {
+          const t = (ops && ops.timing) || {};
+          const disk = (ops && ops.disk) || {};
+          const mb = b => b == null ? "?" : (b >= (1<<30) ? (b/(1<<30)).toFixed(1)+" GB" : Math.round(b/(1<<20))+" MB");
+          const diskWarn = disk.total && disk.free < disk.total * 0.1;
+          const queueWarn = (t.active || 0) > 5;
+          return `<div class="adm-health-bar">
+            <span class="adm-health-item ${queueWarn ? "adm-warn" : ""}">Queue: <b>${t.active || 0}</b> active</span>
+            <span class="adm-health-item">Workers: <b>${t.workers != null ? t.workers : "?"}</b></span>
+            ${disk.free != null ? `<span class="adm-health-item ${diskWarn ? "adm-crit" : ""}">Disk free: <b>${mb(disk.free)}</b></span>` : ""}
+            <span class="adm-health-item">Avg parse: <b>${t.parse && t.parse.avg != null ? t.parse.avg + "s" : "—"}</b></span>
+          </div>`;
+        })()
       + `<div class="dash-sec-head adm-uhead"><h2>Storage &amp; parsing</h2></div>${this._renderOps(ops)}`
       + (this.isAdmin
           ? `<div class="dash-sec-head adm-uhead"><h2>Free-plan limit</h2></div>`
@@ -1222,8 +1235,22 @@ const App = {
       + `<div class="dash-sec-head adm-uhead"><h2>Users</h2>`
       +   `<input id="admUserSearch" class="adm-search" type="search" placeholder="Search name or SteamID…" autocomplete="off"></div>`
       + `<div class="adm-users" id="admUsers"></div>`
+      + `<div class="dash-sec-head adm-uhead"><h2>Teams</h2>
+           <button id="admLoadTeams" class="btn ghost sm">Load teams</button></div>
+         <div id="admTeams" class="adm-teams-wrap"></div>`
+      + `<div class="dash-sec-head adm-uhead"><h2>Audit log</h2>
+           <button id="admLoadAudit" class="btn ghost sm">Load audit log</button></div>
+         <div id="admAudit" class="adm-audit-wrap"></div>`
       + (this.isAdmin ? `<div class="dash-sec-head adm-uhead"><h2>Pricing</h2></div><div id="admPricing" class="adm-pricing"></div>` : "")
-      + `<div class="dash-sec-head adm-uhead"><h2>Deployment</h2></div><div class="adm-cfg">${cfgHtml}</div>`;
+      + (() => {
+          const warns = [];
+          if (!cfg.auth_required) warns.push({cls:"adm-warn", msg:"Login NOT required — anyone can upload demos"});
+          if (!cfg.session_cookie_secure && (cfg.public_base_url||"").startsWith("https")) warns.push({cls:"adm-crit", msg:"Secure cookie is OFF but URL is HTTPS — sessions may leak"});
+          if (!cfg.steam_api_key) warns.push({cls:"adm-warn", msg:"Steam API key missing — auth/avatar features degraded"});
+          if (!cfg.tiers_enabled) warns.push({cls:"adm-warn", msg:"Tiers are OFF — all users have full Pro access"});
+          const warnHtml = warns.map(w => `<div class="adm-sec-warn ${w.cls}">⚠ ${esc(w.msg)}</div>`).join("");
+          return `<div class="dash-sec-head adm-uhead"><h2>Deployment</h2></div>${warnHtml}<div class="adm-cfg">${cfgHtml}</div>`;
+        })();
     $("admPreviewFree").onclick = () => this.togglePreviewFree(true);
     this._bindOps();                       // wire the failed-job drilldown (19B)
     const flSave = $("admFreeLimitSave");  // admin-settable Free-plan upload limit
@@ -1240,6 +1267,41 @@ const App = {
     search.oninput = () => { this._admFilter = search.value; this._renderAdmUserList(); };
     this._renderAdmUserList();
     if (this.isAdmin) this._renderAdminPricing();
+
+    const teamsBtn = $("admLoadTeams");
+    if (teamsBtn) teamsBtn.onclick = async () => {
+      const wrap = $("admTeams");
+      wrap.innerHTML = "<i>Loading…</i>";
+      const data = await fetch("/api/admin/teams").then(r=>r.json()).catch(()=>null);
+      if (!data || data.error) { wrap.innerHTML = "<i>Failed to load.</i>"; return; }
+      const teams = data.teams || [];
+      if (!teams.length) { wrap.innerHTML = "<div class='round'>No teams yet.</div>"; return; }
+      wrap.innerHTML = `<div class="adm-teams-list">${teams.map(t => `
+        <div class="adm-team-row">
+          <span class="adm-team-name">${esc(t.name)}</span>
+          <span class="adm-team-owner">owner: ${esc(t.owner_name||"?")}</span>
+          <span class="adm-team-stats">${t.member_count||0} members · ${t.demo_count||0} demos</span>
+          ${t.last_activity ? `<span class="adm-team-date">${esc(t.last_activity.slice(0,10))}</span>` : ""}
+        </div>`).join("")}</div>`;
+    };
+
+    const auditBtn = $("admLoadAudit");
+    if (auditBtn) auditBtn.onclick = async () => {
+      const wrap = $("admAudit");
+      wrap.innerHTML = "<i>Loading…</i>";
+      const data = await fetch("/api/admin/audit").then(r=>r.json()).catch(()=>null);
+      if (!data || data.error) { wrap.innerHTML = "<i>Failed to load.</i>"; return; }
+      const entries = data.entries || [];
+      if (!entries.length) { wrap.innerHTML = "<div class='round'>No admin actions recorded yet.</div>"; return; }
+      wrap.innerHTML = `<div class="adm-audit-list">${entries.map(e => `
+        <div class="adm-audit-row">
+          <span class="adm-audit-ts">${esc((e.ts||"").replace("T"," "))}</span>
+          <span class="adm-audit-who">${esc(e.admin_name||"?")}</span>
+          <span class="adm-audit-action act-${esc(e.action||"")}">${esc(e.action||"")}</span>
+          <span class="adm-audit-target">${esc(e.target_type||"")} ${esc(e.target_id||"")}</span>
+          ${e.detail ? `<span class="adm-audit-detail">${esc(JSON.stringify(e.detail))}</span>` : ""}
+        </div>`).join("")}</div>`;
+    };
   },
   // Admin "Storage & parsing" section: where the bytes go + upload/parse timing (from the jobs table).
   _renderOps(ops) {
@@ -1274,10 +1336,14 @@ const App = {
       + `<span class="ops-jd" title="upload / queue / parse">${secs(r.upload_s)} / ${secs(r.queue_s)} / ${secs(r.parse_s)}</span></div>`).join("");
     // 19B: failed-job drilldown -- hidden until the Failed tile is clicked; each row expands its error
     const fails = (t.failures || []).map(f =>
-      `<div class="ops-fail"><div class="ops-fail-head"><span class="ops-jf">${esc(f.filename || "?")}</span>`
-      + `<span class="ops-fail-who">${esc(f.who || "")}</span>`
-      + `<span class="ops-fail-when">${esc(String(f.finished_at || f.created_at || "").replace("T", " "))}</span></div>`
-      + `<div class="ops-fail-err">${esc(f.error || "(no error message recorded)")}</div></div>`).join("");
+      `<div class="ops-fail"><div class="ops-fail-head">
+        <span class="ops-jf">${esc(f.filename || "?")}</span>
+        <span class="ops-fail-who">${esc(f.who || "")}</span>
+        <span class="ops-fail-when">${esc(String(f.finished_at || f.created_at || "").replace("T", " "))}</span>
+        ${f.id ? `<button class="btn ghost sm ops-fail-retry" data-job-id="${esc(f.id)}">Retry</button>` : ""}
+      </div>
+      <div class="ops-fail-err">${esc(f.error || "(no error message recorded)")}</div></div>`
+    ).join("");
     const failPanel = `<div id="opsFails" class="ops-fails" hidden>${fails || `<div class="round">No failed jobs.</div>`}</div>`;
     return `<div class="ops-wrap">`
       + `<div class="ops-head">App data total: <b>${mb(total)}</b></div>${bars}${diskLine}`
@@ -1300,6 +1366,17 @@ const App = {
     document.querySelectorAll("#opsFails .ops-fail").forEach(el => {
       const err = el.querySelector(".ops-fail-err");
       if (err) el.onclick = () => err.classList.toggle("full");
+    });
+    document.querySelectorAll("#opsFails .ops-fail-retry").forEach(btn => {
+      btn.onclick = async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.jobId;
+        btn.disabled = true; btn.textContent = "Retrying…";
+        const r = await fetch(`/api/admin/jobs/${encodeURIComponent(id)}/retry`, {method:"POST"})
+          .then(x => x.json()).catch(() => null);
+        if (r && r.ok) { btn.textContent = "Queued"; btn.closest(".ops-fail").classList.add("ops-fail-resolved"); }
+        else { btn.disabled = false; btn.textContent = "Retry"; alert((r && r.error) || "Retry failed"); }
+      };
     });
     // orphaned/reclaimable raw .dem + stale upload temps -> scan, confirm, clean (never cache/stats)
     const rec = $("opsReclaim");
@@ -1398,7 +1475,7 @@ const App = {
       const badge = ps.active ? "pro" : "free";
       const name = u.name || u.steam_id_64 || "user";
       const proTime = ps.label ? `<span class="adm-protime${ps.active ? "" : " adm-protime-exp"}">${esc(ps.label)}</span>` : "";
-      return `<div class="adm-u"><div class="adm-uinfo"><b>${esc(name)}</b>`
+      return `<div class="adm-u adm-user-row" data-uid="${u.id}"><div class="adm-uinfo"><b>${esc(name)}</b>`
         + (isHelper ? ` <span class="adm-role">helper</span>` : "")
         + `<span class="round">${esc(u.steam_id_64 || "")} · ${u.demo_count} demo${u.demo_count === 1 ? "" : "s"}</span></div>`
         + `<span class="adm-tier adm-${badge}">${badge}</span>${proTime}`
@@ -1429,6 +1506,46 @@ const App = {
       if (!ok) return;
       if (await this._adminReq(`/api/admin/users/${b.dataset.deluid}`, "DELETE")) this.renderAdmin();
     });
+    host.querySelectorAll(".adm-user-row").forEach(row => {
+      row.onclick = (e) => {
+        if (e.target.closest("button, select")) return;  // don't trigger on button clicks
+        const uid = Number(row.dataset.uid);
+        this._toggleAdmUserDetail(uid, row);
+      };
+    });
+  },
+  async _toggleAdmUserDetail(uid, rowEl) {
+    const existing = rowEl.nextElementSibling;
+    if (existing && existing.classList.contains("adm-user-detail-row")) {
+      existing.remove(); return;
+    }
+    const detail = await fetch(`/api/admin/users/${uid}/detail`)
+      .then(r => r.json()).catch(() => null);
+    if (!detail || detail.error) return;
+    const mb = b => b != null ? Math.round(b/(1<<20))+" MB" : "—";
+    const demoRows = (detail.demos || []).map(d =>
+      `<div class="adm-detail-demo">${esc(d.map || "?")} · ${d.rounds||0}r · ${esc((d.created_at||"").slice(0,10))}</div>`
+    ).join("");
+    const teamRows = (detail.teams || []).map(t =>
+      `<div class="adm-detail-team">${esc(t.name)} (${esc(t.role||"member")})</div>`
+    ).join("");
+    const jobRows = (detail.recent_jobs || []).map(j =>
+      `<div class="adm-detail-job"><span class="ops-js st-${esc(j.status||"")}">${esc(j.status||"")}</span> ${esc(j.filename||"?")} ${j.bytes!=null?mb(j.bytes):""}</div>`
+    ).join("");
+    const detailEl = document.createElement("tr");
+    detailEl.className = "adm-user-detail-row";
+    detailEl.innerHTML = `<td colspan="20"><div class="adm-user-detail">
+      <div class="adm-detail-col"><b>Demos (${detail.demo_count})</b><div class="adm-detail-list">${demoRows || "<i>none</i>"}</div></div>
+      <div class="adm-detail-col"><b>Teams</b><div class="adm-detail-list">${teamRows || "<i>none</i>"}</div></div>
+      <div class="adm-detail-col"><b>Recent jobs</b><div class="adm-detail-list">${jobRows || "<i>none</i>"}</div></div>
+      <div class="adm-detail-col"><b>Account</b><div class="adm-detail-list">
+        ${detail.steam_id_64 ? `SteamID: ${esc(detail.steam_id_64)}<br>` : ""}
+        Created: ${esc((detail.created_at||"").slice(0,10))}<br>
+        Last login: ${esc((detail.last_login_at||"—").slice(0,10))}
+        ${detail.pro_until ? `<br>Pro until: ${esc(detail.pro_until.slice(0,10))}` : ""}
+      </div></div>
+    </div></td>`;
+    rowEl.after(detailEl);
   },
   // admin write helper -- surfaces failures via a toast instead of silently swallowing them.
   // A 404 almost always means the running server predates this feature -> tell the user to restart.
@@ -2516,7 +2633,7 @@ const App = {
       <div class="da-scroll"><table class="da-form-table">
         <thead><tr><th>Map</th><th>Demos</th><th>Rating</th><th>ADR</th><th>KAST</th><th>Open%</th></tr></thead>
         <tbody>${mapStats.map(m =>
-          `<tr><td class="da-fl">${esc(m.map)}</td><td>${m.count}</td>
+          `<tr><td class="da-fl">${esc(this._fmtMap(m.map))}</td><td>${m.count}</td>
            <td>${f(m.hltv)}</td><td>${f(m.adr)}</td><td>${f(m.kast, "%")}</td><td>${f(m.open_wr, "%")}</td></tr>`
         ).join("")}</tbody>
       </table></div>` : "";
@@ -2575,7 +2692,7 @@ const App = {
         if (!mp) return "";
         return `<tr class="da-detail-match-row">
           <td>${esc((m.created_at || "").slice(0,10))}</td>
-          <td>${esc(m.map || "?")}</td>
+          <td>${esc(this._fmtMap(m.map))}</td>
           <td>${(mp.hltv || 0).toFixed(2)}</td>
           <td>${Math.round(mp.adr || 0)}</td>
           <td>${Math.round(mp.kast || 0)}%</td>
@@ -2637,7 +2754,7 @@ const App = {
       const key = esc(m.key || m.id);
       return `<div class="da-demo-row">
         <div class="da-demo-info">
-          <b>${esc(m.map || "?")}</b>
+          <b>${esc(this._fmtMap(m.map))}</b>
           <span class="round">${m.rounds || 0}r${m.score ? " · " + esc(m.score) : ""} · ${esc(date)}</span>
           <span class="da-demo-players">${esc(playerNames)}</span>
         </div>
@@ -2760,7 +2877,7 @@ const App = {
 
     return `<div class="da-match-header">
       <button class="btn ghost sm da-back-btn">← Back</button>
-      <span class="da-match-title"><b>${esc(md.map || "?")}</b>
+      <span class="da-match-title"><b>${esc(this._fmtMap(md.map))}</b>
         ${md.score ? `<span class="round">${esc(md.score)}</span>` : ""}
         ${md.rounds ? `<span class="da-mutl">${md.rounds}r</span>` : ""}
         <span class="da-mutl">${(md.created_at || "").slice(0,10)}</span>

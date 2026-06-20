@@ -1969,6 +1969,9 @@ def api_admin_config():
             out["free_upload_limit"] = appconfig.set_free_upload_limit(int(body["free_upload_limit"]))
         except (TypeError, ValueError):
             return _nostore({"error": "free_upload_limit must be a whole number"}), 400
+        actor = _admin_or_none()
+        db.log_admin_action(actor.get("id") if actor else None, "set_config",
+                            "config", "free_upload_limit", {"value": out.get("free_upload_limit")})
     return _nostore(out)
 
 
@@ -1985,6 +1988,7 @@ def api_admin_delete_user(uid):
     ok = db.delete_user(uid)
     if ok:
         _wipe_orphaned(shas)
+        db.log_admin_action(admin.get("id"), "delete_user", "user", uid, {})
     return _nostore({"ok": ok}), (200 if ok else 404)
 
 
@@ -2014,6 +2018,10 @@ def api_admin_set_tier(uid):
             pro_until = _add_months(datetime.datetime.now(), months).isoformat(timespec="seconds")
         # months 0 / unknown -> indefinite (pro_until stays None)
     ok = db.set_user_tier(uid, tier, pro_until)
+    if ok:
+        actor = _helper_or_none()
+        db.log_admin_action(actor.get("id") if actor else None, "set_tier",
+                            "user", uid, {"tier": tier, "pro_until": pro_until})
     return _nostore({"ok": ok, "tier": "pro" if tier == "pro" else "free", "pro_until": pro_until}), (200 if ok else 404)
 
 
@@ -2028,6 +2036,8 @@ def api_admin_set_role(uid):
         return _nostore({"error": "you can't change your own role"}), 400
     role = (request.get_json(silent=True) or {}).get("role") or "user"
     ok = db.set_user_role(uid, role)
+    if ok:
+        db.log_admin_action(admin.get("id"), "set_role", "user", uid, {"role": role})
     return _nostore({"ok": ok, "role": "helper" if str(role).lower() == "helper" else "user"}), (200 if ok else 404)
 
 
@@ -2040,7 +2050,58 @@ def api_admin_pricing():
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
         pricing.save_config(prices=data.get("prices"), currency=data.get("currency"))
+        actor = _admin_or_none()
+        db.log_admin_action(actor.get("id") if actor else None, "set_pricing",
+                            "config", "pricing", {"prices": data.get("prices"), "currency": data.get("currency")})
     return _nostore({"config": pricing.get_config(), "plans": pricing.public_plans(), "periods": pricing.PERIODS})
+
+
+@app.route("/api/admin/audit")
+def api_admin_audit():
+    if not _helper_or_none():
+        return _nostore({"error": "admin only"}), 403
+    return _nostore({"entries": db.get_admin_audit(100)})
+
+
+@app.route("/api/admin/users/<int:uid>/detail")
+def api_admin_user_detail(uid):
+    if not _helper_or_none():
+        return _nostore({"error": "admin only"}), 403
+    detail = db.get_user_detail(uid)
+    if not detail:
+        return _nostore({"error": "user not found"}), 404
+    return _nostore(detail)
+
+
+@app.route("/api/admin/teams")
+def api_admin_teams():
+    if not _helper_or_none():
+        return _nostore({"error": "admin only"}), 403
+    return _nostore({"teams": db.list_all_teams_admin()})
+
+
+@app.route("/api/admin/jobs/<job_id>/retry", methods=["POST"])
+def api_admin_retry_job(job_id):
+    if not _admin_or_none():
+        return _nostore({"error": "admin only"}), 403
+    job = jobs.get_job(job_id)
+    if not job:
+        return _nostore({"error": "job not found"}), 404
+    if job.get("status") not in ("failed",):
+        return _nostore({"error": "only failed jobs can be retried"}), 400
+    upload_path = job.get("upload_path")
+    if not upload_path or not os.path.exists(upload_path):
+        return _nostore({"error": "original upload file not found — cannot retry"}), 400
+    jobs._update(job_id, status="queued", progress="queued",
+                 started_at=None, finished_at=None, error=None)
+    try:
+        jobs._wake.set()   # wake local worker thread if any (no-op in separate-worker mode)
+    except Exception:
+        pass
+    actor = _admin_or_none()
+    db.log_admin_action(actor.get("id") if actor else None, "retry_job", "job", job_id,
+                        {"filename": job.get("filename")})
+    return _nostore({"ok": True})
 
 
 # ---- teams / workspaces (Stage 5) -------------------------------------------
