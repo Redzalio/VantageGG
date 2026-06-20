@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>VantageGG</title>
+<title>VantageGG — CS2 demo review & coaching</title>
 <meta name="description" content="VantageGG — upload a CS2 demo and get 2D + 3D replay, deep stats, and coaching that tells you what to fix." />
 <!-- Link preview (Discord / Twitter / Steam unfurl). URL stays lowercase; the brand shows here as VantageGG. -->
 <meta property="og:type" content="website" />
@@ -44,17 +44,27 @@
       <span id="roundLabel" class="round"></span>
     </div>
     <div class="actions">
-      <button id="toggleNames" class="btn ghost on demo-only" title="Toggle player names">Names</button>
+      <!-- mobile-only hamburger: opens the .mob-menu dropdown (all non-Upload actions, stacked) -->
+      <button id="mobMenuToggle" class="btn mob-menu-btn" title="Menu" aria-label="Menu"
+        onclick="this.closest('.actions').classList.toggle('mob-open')">&#9776;</button>
       <button id="toggleAnalytics" class="btn demo-only">Analytics</button>
       <button id="toggleUtil" class="btn demo-only">Utility</button>
       <button id="toggleReview" class="btn demo-only">Review</button>
-      <button id="goalsBtn" class="btn">Goals</button>
-      <button id="searchBtn" class="btn demo-only">Search</button>
-      <button id="toggleTrends" class="btn">Trends</button>
-      <button id="sampleBtn" class="btn">Load sample</button>
       <button id="libraryBtn" class="btn">Library</button>
       <button id="uploadBtn" class="btn primary">Upload</button>
-      <button id="tourHelp" class="btn ghost tour-help" title="Take the quick tour">?</button>
+      <!-- overflow menu: actions that don't fit collapse in here as the topbar narrows -->
+      <div class="more-wrap">
+        <button class="btn more-toggle" id="moreToggle" aria-haspopup="true"
+          onclick="this.closest('.more-wrap').classList.toggle('open')">More &#9662;</button>
+        <div class="more-drop">
+          <button id="goalsBtn" class="btn">Goals</button>
+          <button id="toggleTrends" class="btn">Trends</button>
+          <button id="searchBtn" class="btn demo-only">Search</button>
+          <button id="toggleNames" class="btn ghost on demo-only" title="Toggle player names">Names</button>
+          <button id="sampleBtn" class="btn">Load sample</button>
+          <button id="tourHelp" class="btn ghost tour-help" title="Take the quick tour">?</button>
+        </div>
+      </div>
       <input id="fileInput" type="file" accept=".dem,.zip,.gz,.bz2" multiple hidden />
       <span id="authBox" class="authbox" hidden></span>
     </div>
@@ -72,6 +82,9 @@
   </div>
 
   <main id="stage">
+    <!-- mobile-only: toggles the scoreboard as a left overlay (hidden by default on phones) -->
+    <button id="mobScoreBtn" class="mob-score-btn" title="Toggle scoreboard"
+      onclick="this.closest('#stage').classList.toggle('mob-score-open')">Score</button>
     <aside class="side left">
       <div class="sbteam ct"><span>Counter-Terrorists</span></div>
       <div id="sbCT" class="sblist"></div>
@@ -349,7 +362,7 @@
               <li>Team workspaces &amp; playbook</li>
             </ul>
             <a class="btn primary land-signin" href="/login/steam">Sign in to start</a>
-            <div class="lp-soon">Early access: billing isn&rsquo;t live yet &mdash; approved users get Pro while testing.</div>
+            <div class="lp-soon">Early access &mdash; billing is coming soon. Approved testers get Pro free while we finish checkout.</div>
           </div>
         </div>
       </div>
@@ -487,7 +500,7 @@
         <li>Unlimited demo uploads</li>
       </ul>
       <button id="upCta" class="btn primary up-cta">Get Pro — Monthly</button>
-      <div class="up-soon">Early access: billing isn&rsquo;t live yet &mdash; approved testers get Pro free while we build out checkout.</div>
+      <div class="up-soon">Early access &mdash; billing isn&rsquo;t wired yet. You have been approved for Pro while we finish checkout.</div>
     </div>
   </div>
 
@@ -575,6 +588,17 @@
     <button id="cookieOk" class="btn primary sm">Got it</button>
   </div>
 
+  <!-- tiny outside-click closer for the topbar overflow/mobile menus (no framework) -->
+  <script>
+  document.addEventListener('click', function (e) {
+    var mw = document.querySelector('.more-wrap.open');
+    if (mw && !mw.contains(e.target)) mw.classList.remove('open');
+    var ac = document.querySelector('.actions.mob-open');
+    if (ac && !ac.contains(e.target)) ac.classList.remove('mob-open');
+    // a click on any action button (other than the toggle itself) also closes the mobile menu
+    if (ac && e.target.closest('.actions .btn') && !e.target.closest('#mobMenuToggle')) ac.classList.remove('mob-open');
+  });
+  </script>
   <script type="module" src="static/js/app.js"></script>
 </body>
 </html>

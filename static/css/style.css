@@ -90,7 +90,35 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:none;bor
 .round{color:var(--mut);font-size:13px}
 .rclock{font-variant-numeric:tabular-nums;font-weight:700;font-size:16px;color:#e8edf2;min-width:44px;text-align:center}
 .rclock:empty{display:none}
-.actions{margin-left:auto;display:flex;gap:8px}
+.actions{margin-left:auto;display:flex;gap:8px;align-items:center;min-width:0}
+
+/* ---- Topbar overflow ("More") menu + responsive collapse ----
+   The secondary actions live ONCE in the DOM inside .more-drop (unique IDs, app.js binds by id).
+   >=1400px: .more-drop is flattened back into the toolbar row and the More toggle is hidden, so
+             every action shows inline like before.
+   <1400px : .more-drop becomes an absolute popover gated by .more-wrap.open, and the More button
+             shows -- this is what stops the 1280px horizontal overflow. */
+.mob-menu-btn{display:none}                 /* hamburger: phones only (shown <=760px) */
+.more-wrap{position:relative;display:flex;align-items:center;gap:8px}
+.more-toggle{white-space:nowrap;display:none}
+.more-drop{display:contents}                /* >=1400px: children sit inline in .actions */
+@media(max-width:1400px){
+  .more-toggle{display:inline-flex;align-items:center}
+  .more-drop{position:absolute;top:calc(100% + 6px);right:0;z-index:60;display:none;
+    flex-direction:column;gap:6px;min-width:170px;padding:8px;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    box-shadow:0 14px 40px rgba(0,0,0,.5)}
+  .more-wrap.open .more-drop{display:flex}
+  .more-drop .btn{width:100%;justify-content:flex-start;text-align:left}
+  .more-drop .tour-help{width:100%;border-radius:8px;text-align:left}   /* undo round ?-pill inside menu */
+}
+/* Below 1100px collapse harder: tighten spacing + trim button padding so the demo toggles
+   (Analytics/Utility/Review) + Library + Upload + More all stay on one line. */
+@media(max-width:1100px){
+  .actions{gap:6px}
+  .actions > .btn:not(.primary){padding:7px 10px}
+  .more-drop{min-width:190px}
+}
 
 .btn{background:var(--panel2);color:var(--txt);border:1px solid var(--line);
   padding:8px 14px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;
@@ -577,7 +605,10 @@ body.on-landing #topbar .actions > *:not(#authBox){display:none}
   width:20px;height:46px;cursor:pointer;font-size:14px}
 .side-restore.show{display:block} .side-restore:hover{color:var(--accent)}
 .side{background:var(--panel);overflow-y:auto;padding:12px}
-.side.left{border-right:1px solid var(--line);overflow:hidden;padding:8px}   /* all 10 fit, no scrollbar */
+.side.left{border-right:1px solid var(--line);overflow-y:auto;padding:8px}   /* scroll when 10 rows don't fit (narrow viewports) */
+.side.left::-webkit-scrollbar{width:4px}
+.side.left::-webkit-scrollbar-track{background:transparent}
+.side.left::-webkit-scrollbar-thumb{background:var(--line);border-radius:2px}
 .side.right{border-left:1px solid var(--line)}
 .side h3{margin:6px 4px 8px;font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut)}
 
@@ -1513,4 +1544,59 @@ table.sb tr.sel{background:rgba(232,116,59,.12)} table.sb .sep td{height:8px;bor
   #stage{grid-template-columns:200px 1fr}
   .side.right{display:none}
   .an-grid{grid-template-columns:1fr}
+}
+
+/* ---- Phone layout (<=760px) ----
+   Single-column replay: both side rails drop out so the map gets the full width.
+   The scoreboard returns on demand as a left overlay via the floating "Score" button,
+   and the topbar collapses to just Upload + a hamburger that opens the rest stacked. */
+.mob-score-btn{display:none}   /* desktop: hidden; turned on inside the media query below */
+@media(max-width:760px){
+  /* stage -> one column; the .viewport (map) takes everything */
+  #stage{grid-template-columns:1fr}
+  #stage .side.left,#stage .side.right{display:none}
+  /* keep the right-panel restore tab out of the way on phones */
+  .side-restore{display:none!important}
+
+  /* floating Score toggle (bottom-left, above the map/HUD) */
+  .mob-score-btn{display:inline-flex;align-items:center;justify-content:center;position:absolute;
+    left:10px;bottom:88px;z-index:14;background:var(--panel2);color:var(--txt);
+    border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;
+    cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.45)}
+  .mob-score-btn:hover{border-color:var(--accent);color:var(--accent)}
+  /* when open: scoreboard slides in as a full-height left overlay above the viewport */
+  #stage.mob-score-open .side.left{display:block;position:absolute;left:0;top:0;bottom:0;z-index:15;
+    width:min(280px,86vw);overflow-y:auto;box-shadow:6px 0 24px rgba(0,0,0,.5)}
+
+  /* topbar: drop the match score block and trim spacing so things fit a 390px phone */
+  #topbar{gap:10px;padding:0 10px}
+  .match{display:none}
+
+  /* CLOSED state: actions row shows only the hamburger + Upload (primary), nothing else. */
+  .mob-menu-btn{display:inline-flex;align-items:center;justify-content:center;font-size:16px;line-height:1}
+  .actions{gap:8px}
+  .actions > *{display:none}                       /* hide every child... */
+  .actions > #mobMenuToggle{display:inline-flex}   /* ...keep hamburger... */
+  .actions > #uploadBtn{display:inline-flex}        /* ...and Upload inline */
+
+  /* OPEN state (.actions.mob-open): the row becomes a vertical dropdown sheet under the topbar.
+     The real buttons (unique IDs intact) flow in document order as a stacked column. */
+  .actions.mob-open{position:absolute;top:54px;right:8px;left:8px;z-index:60;
+    flex-direction:column;align-items:stretch;gap:6px;padding:8px;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    box-shadow:0 14px 40px rgba(0,0,0,.5)}
+  .actions.mob-open > *{display:flex}              /* reveal Analytics/Utility/Review/Library/Upload... */
+  .actions.mob-open > #fileInput{display:none}     /* ...but never the hidden file input */
+  .actions.mob-open > #authBox[hidden]{display:none}
+  .actions.mob-open > #mobMenuToggle{align-self:flex-end;width:auto}   /* hamburger pinned top-right to close */
+  .actions.mob-open .btn{width:100%;justify-content:flex-start;text-align:left}
+  /* .more-wrap flattens: its toggle disappears, its drop renders inline as part of the stack */
+  .actions.mob-open .more-wrap{display:flex;flex-direction:column;gap:6px;position:static}
+  .actions.mob-open .more-toggle{display:none}
+  .actions.mob-open .more-drop{display:flex;position:static;flex-direction:column;gap:6px;
+    background:none;border:0;box-shadow:none;padding:0;min-width:0}
+  .actions.mob-open .more-drop .tour-help{width:100%;border-radius:8px;text-align:left}
+
+  /* the floating progress strip + banners shouldn't crowd the narrow header */
+  .pro-preview-banner,.admin-preview-banner{font-size:12px;padding:8px 10px;gap:8px;flex-wrap:wrap}
 }

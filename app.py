@@ -133,17 +133,32 @@ if steamauth.auth_enabled() and not os.environ.get("SECRET_KEY"):
 
 
 def current_user():
-    """The logged-in user dict, or a synthetic 'local' user when auth isn't enabled. Returns None
-    only when auth is REQUIRED and nobody is logged in (data access is gated on this in Stage 5)."""
+    """The logged-in user dict, or a synthetic 'local' user ONLY in pure-local mode. Returns None for
+    an unauthenticated visitor on ANY auth-enabled deployment.
+
+    SECURITY: the fallback is gated on auth_enabled() (AUTH_REQUIRED *or* PUBLIC_BASE_URL set), NOT
+    auth_required() (AUTH_REQUIRED only). A site with PUBLIC_BASE_URL set but AUTH_REQUIRED unset is a
+    real public deployment -- handing anonymous visitors the synthetic 'local' user there gave them
+    is_admin=True + tier=pro and exposed /api/admin/* and private dashboards to the internet. Pure-local
+    mode (neither env set) is unchanged: a single 'local' owner that is admin/Pro and sees everything.
+    Returning None here is what makes _scope_or_block()/require_auth_when_locked()/is_admin()/tier_of()
+    fail closed for anonymous users (they already treat None as 'no user')."""
     uid = session.get("uid")
     if uid is not None:
         u = db.get_user(uid)
         if u:
             return u
         session.pop("uid", None)                       # stale session: user row no longer exists
-    if steamauth.auth_required():
-        return None
-    return {"id": None, "name": "Local", "local": True}
+    if steamauth.auth_enabled():
+        return None                                    # auth-enabled + not logged in -> anonymous
+    return {"id": None, "name": "Local", "local": True}   # pure-local install: single owner = admin/Pro
+
+
+def anon_user():
+    """A read-only, no-privilege user struct for an unauthenticated visitor on an auth-enabled site.
+    Never 'local' (so is_admin/tier_of stay False/free) and has no id (so it owns/sees nothing). Used
+    by /api/me to give the frontend an explicit anonymous identity instead of a bare null."""
+    return {"id": None, "name": None, "local": False, "anonymous": True}
 
 
 def current_user_id():
@@ -766,11 +781,15 @@ def _gather_files():
 
 
 def require_auth_when_locked():
-    """In AUTH_REQUIRED mode, reject anonymous requests up front. Returns a (response, 401) tuple to
-    return immediately, or None when the request may proceed. Gates resource-creating / data endpoints
-    (upload, jobs, nade media) so anonymous traffic can't burn disk/CPU/queue or read others' data on
-    the locked-down hosted site. Local/open mode (auth not required) is unaffected."""
-    if steamauth.auth_required() and current_user() is None:
+    """On any AUTH-ENABLED deployment, reject anonymous requests up front. Returns a (response, 401)
+    tuple to return immediately, or None when the request may proceed. Gates resource-creating / data
+    endpoints (upload, jobs, nade media) so anonymous traffic can't burn disk/CPU/queue or read others'
+    data on a hosted site. Pure-local mode (neither AUTH_REQUIRED nor PUBLIC_BASE_URL set) is unaffected.
+
+    SECURITY: gated on auth_enabled() (AUTH_REQUIRED *or* PUBLIC_BASE_URL), not auth_required() alone --
+    a PUBLIC_BASE_URL-only deployment is public-facing and must also block anonymous resource use. In
+    auth-enabled mode current_user() is None for an unauthenticated visitor, so this fails closed."""
+    if steamauth.auth_enabled() and current_user() is None:
         return _nostore({"error": "login required"}), 401
     return None
 
@@ -1442,13 +1461,17 @@ def steam_callback():
 
 @app.route("/api/me")
 def api_me():
-    """Current auth state for the frontend. In local mode: auth_enabled=False + a synthetic user."""
+    """Current auth state for the frontend. Pure-local mode: auth_enabled=False + a synthetic 'local'
+    user (admin/Pro). Auth-enabled + signed out: an explicit ANONYMOUS user struct (is_admin=False,
+    is_helper=False, tier=free, authenticated=False) -- never the privileged local user."""
     u = current_user()
+    # auth-enabled visitor with no session -> expose an explicit anon identity, not the local owner.
+    view = u if u is not None else (anon_user() if steamauth.auth_enabled() else None)
     teams = db.teams_for_user(u["id"]) if (u and u.get("id")) else []
     return _nostore({"authenticated": bool(u and u.get("id")),
                      "auth_enabled": steamauth.auth_enabled(),
                      "auth_required": steamauth.auth_required(),
-                     "user": u, "teams": teams,
+                     "user": view, "teams": teams,
                      "is_admin": is_admin(u), "is_helper": is_helper(u), "tier": tier_of(u),
                      "entitlements": entitlements(u), "tiers_enabled": TIERS_ENABLED,
                      "upload_quota": upload_allowance(u), "pricing": pricing.public_plans(),

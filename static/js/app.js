@@ -5,6 +5,14 @@ import { View3D } from "./view3d.js";
 import { openAnalytics, closeAnalytics } from "./analytics.js";
 
 const $ = (id) => document.getElementById(id);
+let _activeUploads = 0;   // in-flight demo upload requests (beforeunload guard: don't lose them)
+// True while any tracked parse job is still queued/parsing/analyzing (set by _trackJobs' poll).
+function _hasActiveJobs() {
+  const live = App._liveJobs;
+  if (!live) return false;
+  for (const st of live.values()) if (["queued", "parsing", "analyzing"].includes(st)) return true;
+  return false;
+}
 const fmt = (s) => {
   s = Math.max(0, s);
   const m = Math.floor(s / 60), sec = Math.floor(s % 60);
@@ -118,6 +126,10 @@ const App = {
     window.addEventListener("resize", () => {
       this.radar.resize(); this.radar.fit(); this.view3d.resize(); this.resizeDraw();
       if (this.view3d.active && this.miniRadar.map) { this.miniRadar.resize(); this.miniRadar.fit(); }
+    });
+    // Warn before leaving while a demo is still uploading or parsing (don't silently lose the work).
+    window.addEventListener("beforeunload", (e) => {
+      if (_activeUploads > 0 || _hasActiveJobs()) { e.preventDefault(); return (e.returnValue = ""); }
     });
     this.maps = await fetch("static/maps/maps.json").then(r => r.json()).catch(() => ({}));
     this.initDraw();
@@ -1678,11 +1690,13 @@ const App = {
         else this._upStrip("uploading", { pct, label: `Uploading… ${pct}%` });
       };
       xhr.onload = () => {
+        _activeUploads = Math.max(0, _activeUploads - 1);
         let j = null; try { j = JSON.parse(xhr.responseText); } catch (e) { /* non-JSON */ }
         if (xhr.status !== 200) resolve({ error: (j && j.error) || xhr.statusText || ("HTTP " + xhr.status), upsell: !!(j && j.upsell) });
         else resolve(j || {});
       };
-      xhr.onerror = () => reject(new Error("network"));
+      xhr.onerror = () => { _activeUploads = Math.max(0, _activeUploads - 1); reject(new Error("network")); };
+      _activeUploads++;
       xhr.send(fd);
     });
   },
@@ -1709,6 +1723,7 @@ const App = {
     const doneIds = new Set();
     let stage = "Parsing", finished = false;
     this._jobDismissed = false;
+    this._liveJobs = new Map();      // jobId -> latest status (beforeunload guard reads this)
     const DEFAULT_EST = 40;         // sec, when the server couldn't size the file
     const fmtEta = (s) => s >= 60 ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}` : `${Math.round(s)}s`;
     const render = () => {
@@ -1736,6 +1751,7 @@ const App = {
       const mine = all.filter(j => ids.has(j.id));
       const now = Date.now();
       mine.forEach(j => {
+        this._liveJobs.set(j.id, j.status);
         if (j.est_total_s) est[j.id] = j.est_total_s;
         if (["parsing", "analyzing"].includes(j.status) && !seen[j.id]) seen[j.id] = now;
         if (j.status === "done") { doneIds.add(j.id); if (!seen[j.id]) seen[j.id] = now; }
@@ -1747,7 +1763,7 @@ const App = {
         render();
         setTimeout(poll, 2000); return;
       }
-      finished = true; clearInterval(this._jobTick);
+      finished = true; clearInterval(this._jobTick); this._liveJobs.clear();   // nothing active -> drop the guard
       const done = mine.filter(j => j.status === "done");
       const failed = mine.filter(j => j.status === "failed");
       if (failed.length) console.warn("Parse failures:\n" +
@@ -4296,7 +4312,8 @@ const App = {
     el.className = "upstrip up-" + state + ((state === "parsing" && opts.pct == null) ? " indet" : "");
     if ((state === "uploading" || state === "parsing" || state === "done") && opts.pct != null)
       fill.style.width = Math.max(2, Math.min(100, opts.pct)) + "%";
-    if (lab) lab.textContent = opts.label || "";
+    if (lab) lab.textContent = (opts.label || "")
+      + (state === "parsing" && _activeUploads === 0 ? " · Parsing continues if you leave" : "");
     if (x) x.onclick = () => this._upStrip("hide");
     if (opts.autohide) this._upStripT = setTimeout(() => this._upStrip("hide"), opts.autohide);
   },
