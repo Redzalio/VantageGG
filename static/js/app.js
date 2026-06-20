@@ -2253,6 +2253,7 @@ const App = {
       this.clearPositionsOnMap();                   // drop any prior match's death/kill spots
       this._suggRaw = null; if (this.closeSuggest) this.closeSuggest();   // suggestions are per-demo
       this.radar.setMap(mapMeta, img, lower);
+      this._fetchCallouts(json.map);
       this.miniRadar.setMap(mapMeta, img, lower);   // 3D-overlay minimap (re-fit on enter3D when sized)
       this.view3d.setMap(mapMeta, img);
       this.view3d.setDemo(this.demo);
@@ -3594,7 +3595,7 @@ const App = {
     const r = this.radar;
     this._settings = [   // short labels; full meaning in the title tooltip
       ["Names", "showNames"], ["Trajectories", "showTrajectories"],
-      ["Traces", "showTraces"], ["Utility", "showUtil"],
+      ["Traces", "showTraces"], ["Utility", "showUtil"], ["Callouts", "showCallouts"],
     ];
     // bullet-impact players grouped by side into a collapsible header (auto-open if any are selected)
     const teamGroup = (tm, label) => {
@@ -4357,6 +4358,20 @@ const App = {
       body: JSON.stringify(s.nade) }).then(r => r.json()).catch(() => null);
     if (saved && saved.id) { btn.textContent = "✓ added"; btn.disabled = true; this.library = null; this._ensureLibrary(); }
   },
+  async _fetchCallouts(mapName) {
+    if (!mapName) return;
+    const data = await fetch(`api/callouts/${encodeURIComponent(mapName)}`).then(r => r.json()).catch(() => null);
+    const callouts = (data && Array.isArray(data.callouts)) ? data.callouts : [];
+    this.radar._calloutData = callouts;
+    if (this.miniRadar) this.miniRadar._calloutData = callouts;
+  },
+  openLibraryAtCallout(callout) {
+    this.libCalloutSearch = callout || "";
+    this.setUtilMode("library");
+    this.buildLibrary();
+    const up = $("utilPanel");
+    if (up && !up.classList.contains("show")) this.toggleUtil(true);
+  },
   async _ensureLibrary() {
     if (!this.library) this.library = await fetch("api/nades?t=" + Date.now()).then(r => r.json()).catch(() => []);
     return this.library;
@@ -4397,18 +4412,27 @@ const App = {
     await this._ensureLibrary();
     this.libFilter = this.libFilter || "all";
     const types = [["all", "All"], ["smoke", "Smoke"], ["molotov", "Molotov"], ["flash", "Flash"], ["he", "HE"]];
+    const searchVal = this.libCalloutSearch || "";
     $("libTypes").innerHTML = types.map(([k, l]) =>
-      `<button class="chip ${k === this.libFilter ? "on" : ""}" data-lt="${k}">${l}</button>`).join("");
+      `<button class="chip ${k === this.libFilter ? "on" : ""}" data-lt="${k}">${l}</button>`).join("")
+      + `<input id="libCalloutInp" type="text" placeholder="Callout…" value="${esc(searchVal)}"
+          style="margin-left:8px;padding:3px 8px;font-size:12px;background:var(--panel2);border:1px solid var(--line);border-radius:4px;color:var(--txt);width:110px;vertical-align:middle">`;
     $("libTypes").querySelectorAll(".chip").forEach(c => c.onclick = () => {
       this.libFilter = c.dataset.lt; this.buildLibrary();
       if ($("libSuggestions").dataset.open === "1") this._paintSuggestions();   // keep suggestions in sync
     });
+    const inp = $("libCalloutInp");
+    if (inp) inp.oninput = (e) => { this.libCalloutSearch = e.target.value; this.applyLibrary(); };
     this.applyLibrary();
   },
   applyLibrary() {
     const map = this.demo ? this.demo.map : null;
+    const cq = (this.libCalloutSearch || "").trim().toLowerCase();
     const res = (this.library || []).filter(n =>
-      (!map || n.map === map) && (this.libFilter === "all" || n.type === this.libFilter));
+      (!map || n.map === map)
+      && (this.libFilter === "all" || n.type === this.libFilter)
+      && (!cq || (n.target_callout || "").toLowerCase().includes(cq)
+                || (n.throw_callout || "").toLowerCase().includes(cq)));
     $("libCount").textContent = `${res.length} lineup${res.length === 1 ? "" : "s"} | ${map || "--"} | pick where it lands`;
     // group by WHERE it lands (target callout) -- pick a target, then a throw spot
     const groups = {};

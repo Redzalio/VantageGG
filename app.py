@@ -2104,6 +2104,23 @@ def api_admin_retry_job(job_id):
     return _nostore({"ok": True})
 
 
+# ---- callouts / location knowledge ------------------------------------------
+@app.route("/api/callouts/<map_name>")
+def api_callouts_map(map_name):
+    """Serve callout data for a map (used by the 2D radar overlay)."""
+    from callouts import load_callouts
+    callouts = load_callouts(map_name)
+    return jsonify({"map": map_name, "callouts": callouts})
+
+
+@app.route("/api/callouts")
+def api_callouts_list():
+    """List maps that have callout data (used by admin panel)."""
+    from callouts import available_maps, callout_info
+    maps = available_maps()
+    return jsonify({"maps": maps, "info": [callout_info(m) for m in maps]})
+
+
 # ---- teams / workspaces (Stage 5) -------------------------------------------
 @app.route("/api/teams", methods=["GET", "POST"])
 def api_teams():

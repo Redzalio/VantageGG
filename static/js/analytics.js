@@ -246,6 +246,11 @@ function render() {
       APP.showPositionsOnMap(idx, el.dataset.pname);
     };
   });
+  $("analyticsBody").querySelectorAll("[data-callout-util]").forEach(b => b.onclick = (e) => {
+    e.stopPropagation();
+    const zone = b.dataset.calloutUtil;
+    if (typeof APP !== "undefined" && APP.openLibraryAtCallout) APP.openLibraryAtCallout(zone);
+  });
 }
 
 // --- P3 coaching cards ------------------------------------------------------
@@ -1044,11 +1049,12 @@ function positionsCard(p) {
     return `<tr><td class="pz-zn">${esc(r.zone)}</td>
       <td class="pz-kd ${cls}">${r.k}-${r.d}</td>
       <td class="pz-side">${side.join(" ")}</td>
-      <td class="pz-open-c">${open}</td></tr>`;
+      <td class="pz-open-c">${open}</td>
+      <td class="pz-acts"><button class="pz-act" data-callout-util="${esc(r.zone)}" title="Show saved utility to ${esc(r.zone)}">Utility</button></td></tr>`;
   }).join("");
   if (!rows) return `<div class="card"><div class="card-h">Positions</div><div class="empty">Not enough data.</div></div>`;
   return `<div class="card"><div class="card-h">Positions <em>K-D by callout &middot; side &middot; opening</em></div>
-    <table class="pz-table"><thead><tr><th>Callout</th><th>K-D</th><th>By side</th><th title="opening duels won-lost">Open</th></tr></thead>
+    <table class="pz-table"><thead><tr><th>Callout</th><th>K-D</th><th>By side</th><th title="opening duels won-lost">Open</th><th></th></tr></thead>
     <tbody>${rows}</tbody></table>${posMapBtn(p)}</div>`;
 }
 

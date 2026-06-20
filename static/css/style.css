@@ -1724,3 +1724,9 @@ table.sb tr.sel{background:rgba(232,116,59,.12)} table.sb .sep td{height:8px;bor
   /* the floating progress strip + banners shouldn't crowd the narrow header */
   .pro-preview-banner,.admin-preview-banner{font-size:12px;padding:8px 10px;gap:8px;flex-wrap:wrap}
 }
+
+/* Callout action buttons in positionsCard */
+.pz-acts { white-space: nowrap; }
+.pz-act { font-size: 10px; padding: 2px 6px; background: var(--panel2); border: 1px solid var(--line);
+  border-radius: 4px; color: var(--mut); cursor: pointer; transition: color .15s, border-color .15s; }
+.pz-act:hover { color: var(--txt); border-color: var(--acc); }

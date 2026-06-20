@@ -1,0 +1,22 @@
+{
+  "map": "de_anubis",
+  "version": 1,
+  "source": "community_knowledge",
+  "callouts": [
+    {"id":"t_spawn","name":"T Spawn","aliases":["TSpawn","T Side"],"world":{"x":-2400,"y":2500},"side":"t","notes":""},
+    {"id":"palace","name":"Palace","aliases":["Palace","TPalace"],"world":{"x":-1800,"y":2500},"side":"t","notes":""},
+    {"id":"mid","name":"Mid","aliases":["Mid","TMid","CenterMid"],"world":{"x":-800,"y":2000},"side":"both","notes":""},
+    {"id":"a_main","name":"A Main","aliases":["AMain","TMain","Main"],"world":{"x":-1200,"y":1500},"side":"t","notes":""},
+    {"id":"a_site","name":"A Site","aliases":["BombsiteA","ASite","A"],"world":{"x":200,"y":1000},"side":"both","notes":""},
+    {"id":"a_short","name":"A Short","aliases":["AShort","Short","Stairs"],"world":{"x":-200,"y":1500},"side":"both","notes":""},
+    {"id":"water","name":"Water","aliases":["Water","River","Crossing"],"world":{"x":-400,"y":1800},"side":"both","notes":""},
+    {"id":"a_ct","name":"A CT","aliases":["ACT","CT Side A"],"world":{"x":600,"y":1200},"side":"ct","notes":""},
+    {"id":"ct_spawn","name":"CT Spawn","aliases":["CTSpawn","CT","CT Side"],"world":{"x":900,"y":1800},"side":"ct","notes":""},
+    {"id":"b_main","name":"B Main","aliases":["BMain","B Street","BStreet"],"world":{"x":-1800,"y":500},"side":"t","notes":""},
+    {"id":"b_site","name":"B Site","aliases":["BombsiteB","BSite","B"],"world":{"x":200,"y":500},"side":"both","notes":""},
+    {"id":"b_ct","name":"B CT","aliases":["BCT","CT Side B"],"world":{"x":800,"y":500},"side":"ct","notes":""},
+    {"id":"connector","name":"Connector","aliases":["Connector","Con"],"world":{"x":-200,"y":2000},"side":"both","notes":""},
+    {"id":"canal","name":"Canal","aliases":["Canal","Lower","Bridge"],"world":{"x":-600,"y":1200},"side":"both","notes":""},
+    {"id":"column","name":"Column","aliases":["Column","A Column","APillar"],"world":{"x":0,"y":1000},"side":"both","notes":""}
+  ]
+}

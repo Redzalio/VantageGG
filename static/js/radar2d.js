@@ -29,6 +29,8 @@ export class Radar2D {
     this._camTarget = null;   // for smooth follow
     this._hoverNade = null;   // searchOverlay throw currently under the cursor (util mode)
     this.dpr = Math.min(2, window.devicePixelRatio || 1);
+    this.showCallouts = false;
+    this._calloutData = null;   // [{id,name,world:{x,y},...}] from /api/callouts/<map>
   }
 
   setMap(map, img, imgLower) {
@@ -174,6 +176,7 @@ export class Radar2D {
 
     // #62b: a player's death/kill SPOTS for the whole match (set by app, persists across scrubbing)
     if (this.posOverlay) this._drawPosOverlay(ctx);
+    if (this.showCallouts && this._calloutData && this._calloutData.length) this._drawCallouts(ctx);
   }
 
   // Where a player won (green dots) and died (red x) across the whole match -- the visual
@@ -198,6 +201,40 @@ export class Radar2D {
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
+  }
+
+  // Callout overlay: named dots for each callout in _calloutData.
+  // Toggled by the "Callouts" checkbox in settings. Data loaded from /api/callouts/<map>.
+  _drawCallouts(ctx) {
+    if (!this._calloutData) return;
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    for (const c of this._calloutData) {
+      const w = c.world;
+      if (!w || w.x == null || w.y == null) continue;
+      const [sx, sy] = this.worldToScreen(w.x, w.y);
+      // skip if outside canvas
+      if (sx < -20 || sx > this.W + 20 || sy < -20 || sy > this.H + 20) continue;
+      const r = 3 * this.dpr;
+      // dot
+      ctx.beginPath();
+      ctx.arc(sx, sy, r, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,240,180,0.9)";
+      ctx.fill();
+      ctx.lineWidth = this.dpr;
+      ctx.strokeStyle = "rgba(0,0,0,0.7)";
+      ctx.stroke();
+      // label
+      const fs = 9 * this.dpr;
+      ctx.font = `600 ${fs}px sans-serif`;
+      ctx.shadowColor = "#000";
+      ctx.shadowBlur = 3 * this.dpr;
+      ctx.fillStyle = "rgba(255,245,200,0.95)";
+      ctx.fillText(c.name, sx, sy - r - 3 * this.dpr);
+      ctx.shadowBlur = 0;
+    }
+    ctx.restore();
   }
 
   _drawSearchNade(ctx, g, hot) {

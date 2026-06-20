@@ -146,7 +146,7 @@ def normalize(raw):
     scope = g("scope") or {}
     if not isinstance(scope, dict):
         scope = {}
-    scope = {k: scope.get(k) for k in ("map", "player", "side", "role", "buy", "group", "members", "label") if scope.get(k)}
+    scope = {k: scope.get(k) for k in ("map", "player", "side", "role", "buy", "group", "members", "label", "callout") if scope.get(k)}
     # A "squad"/"team" group averages a metric over a snapshot of YOUR players' steamids -- so a goal
     # tracks your side, not the whole-match average (analytics.players is all 10, opponents included).
     # squad = your auto-detected stack; team = a team you created/joined. Either has no single
