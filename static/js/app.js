@@ -2439,7 +2439,7 @@ const App = {
     if (!data) return;
     const el = $("daBody"), view = this._daView || "overview";
     if (view === "match-detail") {
-      el.innerHTML = this._daMatchDetailHtml(this._daMatchData);
+      el.innerHTML = `<div class="da-fade">${this._daMatchDetailHtml(this._daMatchData)}</div>`;
       el.querySelector(".da-back-btn")?.addEventListener("click", () => {
         this._daView = "demos"; this._renderDaView();
         const modal = $("dashAnalyticsModal");
@@ -2451,9 +2451,9 @@ const App = {
       });
       return;
     }
-    if (view === "overview") el.innerHTML = this._daOverviewHtml(data);
+    if (view === "overview") el.innerHTML = `<div class="da-fade">${this._daOverviewHtml(data)}</div>`;
     else if (view === "players") {
-      el.innerHTML = this._daPlayersHtml(data);
+      el.innerHTML = `<div class="da-fade">${this._daPlayersHtml(data)}</div>`;
       el.querySelectorAll(".da-player-row").forEach(row => {
         row.addEventListener("click", () => {
           const sid = row.dataset.sid;
@@ -2462,7 +2462,7 @@ const App = {
         });
       });
     } else if (view === "issues") {
-      el.innerHTML = this._daIssuesHtml(data);
+      el.innerHTML = `<div class="da-fade">${this._daIssuesHtml(data)}</div>`;
       el.querySelectorAll(".gl-rc-goal").forEach(b => b.onclick = () => {
         $("dashAnalyticsModal").classList.remove("show");
         const t = b.dataset.target !== "" && b.dataset.target != null ? parseFloat(b.dataset.target) : undefined;
@@ -2470,7 +2470,7 @@ const App = {
           title: b.dataset.title, area: b.dataset.area, ...(t != null && !isNaN(t) ? { target: t } : {}) });
       });
     } else {
-      el.innerHTML = this._daDemosHtml(data);
+      el.innerHTML = `<div class="da-fade">${this._daDemosHtml(data)}</div>`;
       el.querySelectorAll(".da-open-analytics").forEach(b => b.onclick = () => this._openDaMatchDetail(b.dataset.key));
       el.querySelectorAll(".da-open-replay").forEach(b => b.onclick = () => {
         $("dashAnalyticsModal").classList.remove("show");
@@ -2663,36 +2663,98 @@ const App = {
   },
   _daMatchDetailHtml(md) {
     if (!md) return `<div class="da-empty">No match data.</div>`;
-    const analytics = md.analytics || {};
-    const players = analytics.players || [];
-    const insights = analytics.insights || {};
-    // Flatten issues/coaching across players
-    const issues = [];
-    const positives = [];
-    for (const [sid, items] of Object.entries(insights)) {
+    const an = md.analytics || {};
+    const players = an.players || [];
+    const insights = an.insights || {};
+    const teamCoaching = (an.team_coaching || {}).teams || [];
+    const roundCards = an.round_cards || [];
+    const f = (v, unit = "") => v != null ? `${v}${unit}` : "—";
+
+    // BUG FIX: insights use .text not .label
+    const issues = [], positives = [];
+    for (const items of Object.values(insights)) {
       for (const it of (items || [])) {
-        if (it.polarity === "issue" && it.label) issues.push(it.label);
-        else if (it.polarity === "good" && it.label) positives.push(it.label);
+        if (it.polarity === "issue" && it.text) issues.push(it.text);
+        else if (it.polarity === "good" && it.text) positives.push(it.text);
       }
     }
-    // Dedupe
     const topIssues = [...new Set(issues)].slice(0, 5);
     const topGood = [...new Set(positives)].slice(0, 3);
 
-    const playerRows = players.slice(0, 10).map(p =>
-      `<tr><td class="da-pname">${esc(p.name || p.steamid || "?")}</td>
-       <td>${(p.hltv || 0).toFixed(2)}</td><td>${Math.round(p.adr || 0)}</td>
-       <td>${Math.round(p.kast || 0)}%</td><td>${(p.kd || 0).toFixed(2)}</td>
-       <td>${Math.round(p.open_wr || 0)}%</td></tr>`).join("");
+    // Team stats (first team = assumed your side)
+    let teamStatsHtml = "";
+    if (teamCoaching.length) {
+      const tc = teamCoaching[0];
+      const entry = tc.entry || {}, retake = tc.retake || {};
+      teamStatsHtml = `<div class="da-section-head">Team stats</div>
+        <div class="da-kpis">
+          <div class="da-kpi da-kpi-sm"><span class="da-kv">${tc.trade_pct != null ? Math.round(tc.trade_pct) + "%" : "—"}</span><span class="da-kl">Trade%</span></div>
+          <div class="da-kpi da-kpi-sm"><span class="da-kv">${entry.wr != null ? Math.round(entry.wr) + "%" : "—"}</span><span class="da-kl">Entry WR</span></div>
+          <div class="da-kpi da-kpi-sm"><span class="da-kv">${retake.wr != null ? Math.round(retake.wr) + "%" : "—"}</span><span class="da-kl">Retake WR</span></div>
+          ${tc.won != null ? `<div class="da-kpi da-kpi-sm"><span class="da-kv">${tc.won}W–${tc.lost}L</span><span class="da-kl">Record</span></div>` : ""}
+        </div>`;
+    }
 
+    // Key issues and positives from insights
     const issueHtml = topIssues.length
-      ? `<div class="da-section-head">Key fixes</div><ul class="da-detail-issues">${topIssues.map(l => `<li>${esc(l)}</li>`).join("")}</ul>` : "";
+      ? `<div class="da-section-head">Key fixes</div>
+         <ul class="da-detail-issues">${topIssues.map(l => `<li>${esc(l)}</li>`).join("")}</ul>` : "";
     const goodHtml = topGood.length
-      ? `<div class="da-section-head">What went well</div><ul class="da-detail-good">${topGood.map(l => `<li>${esc(l)}</li>`).join("")}</ul>` : "";
+      ? `<div class="da-section-head">What went well</div>
+         <ul class="da-detail-good">${topGood.map(l => `<li>${esc(l)}</li>`).join("")}</ul>` : "";
+
+    // Per-player high-severity focus items
+    const allFocus = players.flatMap(p =>
+      (p.focus || []).filter(fi => fi.severity === "high").slice(0, 2)
+        .map(fi => ({ pname: p.name || p.steamid, area: fi.area, fix: fi.fix || fi.detail || "" }))
+    ).slice(0, 5);
+    const focusHtml = allFocus.length
+      ? `<div class="da-section-head">Player priorities</div>
+         <div class="da-focus-list">${allFocus.map(fi =>
+           `<div class="da-focus-item da-focus-recurring_issue">
+              <span class="da-focus-label">${esc(fi.pname)}</span>
+              <span class="da-focus-detail">${esc(fi.area)}: ${esc(fi.fix)}</span>
+            </div>`
+         ).join("")}</div>` : "";
+
+    // Practice plan from team coaching
+    const planItems = teamCoaching.flatMap(tc => (tc.practice_plan || []).slice(0, 2));
+    const planHtml = planItems.length
+      ? `<div class="da-section-head">Practice plan</div>
+         <div class="da-practice-list">${planItems.map(item =>
+           `<div class="da-practice-item">
+              <span class="da-practice-focus">${esc(item.focus || "")}</span>
+              ${item.drill ? `<span class="da-practice-drill">${esc(item.drill)}</span>` : ""}
+            </div>`
+         ).join("")}</div>` : "";
+
+    // Key rounds that have a summary
+    const keyRounds = roundCards.filter(r => r.summary).slice(0, 4);
+    const roundsHtml = keyRounds.length
+      ? `<div class="da-section-head">Key rounds</div>
+         <div class="da-rounds-list">${keyRounds.map(r =>
+           `<div class="da-round-card">
+              <span class="da-round-num">R${r.round}</span>
+              <span class="da-round-summary">${esc(r.summary)}</span>
+            </div>`
+         ).join("")}</div>` : "";
+
+    // Players table with roles + colour-coded rating
+    const playerRows = players.slice(0, 10).map(p =>
+      `<tr>
+        <td class="da-pname">${esc(p.name || p.steamid || "?")}${(p.ct_role || p.t_role) ? `<span class="da-role-chip">${esc(p.ct_role || p.t_role)}</span>` : ""}</td>
+        <td class="${(p.hltv || 0) >= 1.1 ? "da-stat-good" : (p.hltv || 0) < 0.8 ? "da-stat-bad" : ""}">${(p.hltv || 0).toFixed(2)}</td>
+        <td>${Math.round(p.adr || 0)}</td>
+        <td>${Math.round(p.kast || 0)}%</td>
+        <td>${Math.round(p.open_wr || 0)}%</td>
+        <td>${Math.round(p.traded_pct || 0)}%</td>
+        <td>${(p.udr || 0).toFixed(1)}</td>
+      </tr>`
+    ).join("");
     const playerHtml = playerRows
       ? `<div class="da-section-head">Players</div>
          <div class="da-scroll"><table class="da-table">
-           <thead><tr><th>Player</th><th>Rating</th><th>ADR</th><th>KAST</th><th>K/D</th><th>Open%</th></tr></thead>
+           <thead><tr><th>Player</th><th>Rating</th><th>ADR</th><th>KAST</th><th>Open%</th><th>Trade%</th><th>UDR</th></tr></thead>
            <tbody>${playerRows}</tbody>
          </table></div>` : "";
 
@@ -2705,7 +2767,7 @@ const App = {
       </span>
       <button class="btn ghost sm da-replay-btn">Open replay</button>
     </div>
-    <div class="da-match-body">${issueHtml}${goodHtml}${playerHtml}</div>`;
+    <div class="da-match-body">${teamStatsHtml}${issueHtml}${goodHtml}${focusHtml}${planHtml}${roundsHtml}${playerHtml}</div>`;
   },
 
   // --- multi-demo trends + team config (cross-match "am I getting better?") -

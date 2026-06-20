@@ -13,7 +13,7 @@ export async function openAnalytics(app) {
   const A = app.demo && app.demo.analytics;
   $("analyticsPanel").classList.add("show");
   $("toggleAnalytics").classList.add("on");
-  if (!A) { $("analyticsBody").innerHTML = `<div class="empty">No analytics for this demo. Upload a real .dem to get coaching.</div>`; return; }
+  if (!A) { renderNoAnalytics(app); return; }   // older demo with no analytics -> basic scoreboard fallback
   // map steamid -> replay index for jump-to-replay
   app._sidToIdx = {};
   app.demo.players.forEach((p, i) => app._sidToIdx[p.steamid] = i);
@@ -25,6 +25,42 @@ export async function openAnalytics(app) {
   SEL = pickDefaultPlayer(A);
   APP.myTeamId = resolveMyTeam(A);   // which side is "yours" for THIS demo (per-demo, no roster needed)
   render();
+}
+
+// Fallback when app.demo.analytics is missing (demo parsed before the analytics pipeline existed).
+// We can't show coaching, but the top-level demo JSON still has players + kill events, so render a
+// basic K/D scoreboard from demo.statsUpTo() (final cumulative K/A/D) rather than a dead-end message.
+function renderNoAnalytics(app) {
+  const note = `<div class="empty">Analytics were not computed for this demo. Re-upload the file to generate coaching data. Showing basic scoreboard data only.</div>`;
+  const d = app && app.demo;
+  const players = (d && d.players) || [];
+  if (!players.length) { $("analyticsBody").innerHTML = note; return; }
+  // statsUpTo(Infinity) -> final cumulative {k,a,d} per player index (same source the replay scoreboard uses)
+  const stats = (d && typeof d.statsUpTo === "function") ? d.statsUpTo(Infinity) : players.map(() => ({ k: 0, a: 0, d: 0 }));
+  const rowFor = (tm) => players
+    .map((p, i) => ({ p, s: stats[i] || { k: 0, a: 0, d: 0 }, i }))
+    .filter(x => x.p.team === tm)
+    .sort((a, b) => b.s.k - a.s.k)
+    .map(({ p, s }) => {
+      const kd = s.d ? (s.k / s.d) : s.k;   // avoid divide-by-zero (0 deaths -> show raw kills as K/D)
+      return `<tr><td class="nm">${esc(p.name)}</td><td>${s.k}</td><td>${s.d}</td><td>${kd.toFixed(2)}</td></tr>`;
+    }).join("");
+  const head = `<tr><th>Player</th><th>K</th><th>D</th><th>K/D</th></tr>`;
+  const ct = rowFor(3), t = rowFor(2);
+  const body = (ct || t)
+    ? `<table class="sb"><thead>${head}</thead>
+         <tbody class="ct">${ct}</tbody>
+         <tbody class="sep"><tr><td colspan="4"></td></tr></tbody>
+         <tbody class="t">${t}</tbody></table>`
+    // no team info (team==0/unset for every player) -> one flat table, no CT/T split
+    : `<table class="sb"><thead>${head}</thead><tbody>${
+        players.map((p, i) => {
+          const s = stats[i] || { k: 0, a: 0, d: 0 };
+          const kd = s.d ? (s.k / s.d) : s.k;
+          return `<tr><td class="nm">${esc(p.name)}</td><td>${s.k}</td><td>${s.d}</td><td>${kd.toFixed(2)}</td></tr>`;
+        }).join("")
+      }</tbody></table>`;
+  $("analyticsBody").innerHTML = `${note}<div class="card wide"><div class="card-h">Scoreboard <em>basic data</em></div>${body}</div>`;
 }
 
 const SEL_KEY = "cs2dp_selected_steamid";
