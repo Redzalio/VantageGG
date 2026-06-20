@@ -1,22 +1,385 @@
 {
   "map": "de_anubis",
-  "version": 1,
-  "source": "community_knowledge",
+  "version": 2,
+  "source": "demo_calibrated",
   "callouts": [
-    {"id":"t_spawn","name":"T Spawn","aliases":["TSpawn","T Side"],"world":{"x":-2400,"y":2500},"side":"t","notes":""},
-    {"id":"palace","name":"Palace","aliases":["Palace","TPalace"],"world":{"x":-1800,"y":2500},"side":"t","notes":""},
-    {"id":"mid","name":"Mid","aliases":["Mid","TMid","CenterMid"],"world":{"x":-800,"y":2000},"side":"both","notes":""},
-    {"id":"a_main","name":"A Main","aliases":["AMain","TMain","Main"],"world":{"x":-1200,"y":1500},"side":"t","notes":""},
-    {"id":"a_site","name":"A Site","aliases":["BombsiteA","ASite","A"],"world":{"x":200,"y":1000},"side":"both","notes":""},
-    {"id":"a_short","name":"A Short","aliases":["AShort","Short","Stairs"],"world":{"x":-200,"y":1500},"side":"both","notes":""},
-    {"id":"water","name":"Water","aliases":["Water","River","Crossing"],"world":{"x":-400,"y":1800},"side":"both","notes":""},
-    {"id":"a_ct","name":"A CT","aliases":["ACT","CT Side A"],"world":{"x":600,"y":1200},"side":"ct","notes":""},
-    {"id":"ct_spawn","name":"CT Spawn","aliases":["CTSpawn","CT","CT Side"],"world":{"x":900,"y":1800},"side":"ct","notes":""},
-    {"id":"b_main","name":"B Main","aliases":["BMain","B Street","BStreet"],"world":{"x":-1800,"y":500},"side":"t","notes":""},
-    {"id":"b_site","name":"B Site","aliases":["BombsiteB","BSite","B"],"world":{"x":200,"y":500},"side":"both","notes":""},
-    {"id":"b_ct","name":"B CT","aliases":["BCT","CT Side B"],"world":{"x":800,"y":500},"side":"ct","notes":""},
-    {"id":"connector","name":"Connector","aliases":["Connector","Con"],"world":{"x":-200,"y":2000},"side":"both","notes":""},
-    {"id":"canal","name":"Canal","aliases":["Canal","Lower","Bridge"],"world":{"x":-600,"y":1200},"side":"both","notes":""},
-    {"id":"column","name":"Column","aliases":["Column","A Column","APillar"],"world":{"x":0,"y":1000},"side":"both","notes":""}
+    {
+      "id": "t_spawn",
+      "name": "T Spawn",
+      "aliases": [
+        "TSpawn",
+        "T Side"
+      ],
+      "world": {
+        "x": -227,
+        "y": -1540
+      },
+      "side": "t"
+    },
+    {
+      "id": "ct_spawn",
+      "name": "CT Spawn",
+      "aliases": [
+        "CTSpawn",
+        "CT Side"
+      ],
+      "world": {
+        "x": -125,
+        "y": 2554
+      },
+      "side": "ct"
+    },
+    {
+      "id": "a_site",
+      "name": "A Site",
+      "aliases": [
+        "BombsiteA",
+        "ASite",
+        "A"
+      ],
+      "world": {
+        "x": 1287,
+        "y": 1784
+      },
+      "side": "both"
+    },
+    {
+      "id": "b_site",
+      "name": "B Site",
+      "aliases": [
+        "BombsiteB",
+        "BSite",
+        "B"
+      ],
+      "world": {
+        "x": -1191,
+        "y": 589
+      },
+      "side": "both"
+    },
+    {
+      "id": "mid",
+      "name": "Mid",
+      "aliases": [
+        "Middle",
+        "Mid",
+        "MidArea"
+      ],
+      "world": {
+        "x": 192,
+        "y": 1033
+      },
+      "side": "both"
+    },
+    {
+      "id": "canal",
+      "name": "Canal",
+      "aliases": [
+        "Canal",
+        "Canal Area"
+      ],
+      "world": {
+        "x": 539,
+        "y": 269
+      },
+      "side": "both"
+    },
+    {
+      "id": "ct_side_upper",
+      "name": "CT Side Upper",
+      "aliases": [
+        "CTSideUpper",
+        "CT Upper",
+        "A Short CT"
+      ],
+      "world": {
+        "x": -479,
+        "y": 2155
+      },
+      "side": "ct"
+    },
+    {
+      "id": "outside_long",
+      "name": "Outside Long",
+      "aliases": [
+        "OutsideLong",
+        "B Long",
+        "B Outside"
+      ],
+      "world": {
+        "x": -1574,
+        "y": -1
+      },
+      "side": "t"
+    },
+    {
+      "id": "main",
+      "name": "A Main",
+      "aliases": [
+        "Main",
+        "AMain",
+        "A Main"
+      ],
+      "world": {
+        "x": 1598,
+        "y": 1135
+      },
+      "side": "both"
+    },
+    {
+      "id": "connector",
+      "name": "Connector",
+      "aliases": [
+        "Connector",
+        "Con"
+      ],
+      "world": {
+        "x": -740,
+        "y": 196
+      },
+      "side": "both"
+    },
+    {
+      "id": "bridge",
+      "name": "Bridge",
+      "aliases": [
+        "Bridge",
+        "Mid Bridge"
+      ],
+      "world": {
+        "x": -176,
+        "y": -50
+      },
+      "side": "both"
+    },
+    {
+      "id": "mid_doors",
+      "name": "Mid Doors",
+      "aliases": [
+        "MidDoors",
+        "Mid Doors"
+      ],
+      "world": {
+        "x": 204,
+        "y": 522
+      },
+      "side": "both"
+    },
+    {
+      "id": "ruins",
+      "name": "Ruins",
+      "aliases": [
+        "Ruins",
+        "B Ruins",
+        "T to B Lower"
+      ],
+      "world": {
+        "x": -967,
+        "y": -678
+      },
+      "side": "t"
+    },
+    {
+      "id": "street",
+      "name": "Street",
+      "aliases": [
+        "Street",
+        "T Street",
+        "T Side Lower"
+      ],
+      "world": {
+        "x": 723,
+        "y": -538
+      },
+      "side": "t"
+    },
+    {
+      "id": "palace_interior",
+      "name": "Palace",
+      "aliases": [
+        "PalaceInterior",
+        "Palace",
+        "T Palace"
+      ],
+      "world": {
+        "x": -336,
+        "y": 1392
+      },
+      "side": "both"
+    },
+    {
+      "id": "walkway",
+      "name": "Walkway",
+      "aliases": [
+        "Walkway",
+        "A Walkway",
+        "A Short"
+      ],
+      "world": {
+        "x": 813,
+        "y": 1404
+      },
+      "side": "both"
+    },
+    {
+      "id": "t_stairs",
+      "name": "T Stairs",
+      "aliases": [
+        "TStairs",
+        "T Stairs",
+        "B T Stairs"
+      ],
+      "world": {
+        "x": 809,
+        "y": -134
+      },
+      "side": "t"
+    },
+    {
+      "id": "back_of_b",
+      "name": "Back of B",
+      "aliases": [
+        "BackofB",
+        "Back of B",
+        "B Back"
+      ],
+      "world": {
+        "x": -685,
+        "y": 697
+      },
+      "side": "ct"
+    },
+    {
+      "id": "alley",
+      "name": "Alley",
+      "aliases": [
+        "Alley",
+        "B Alley"
+      ],
+      "world": {
+        "x": -1192,
+        "y": 1225
+      },
+      "side": "ct"
+    },
+    {
+      "id": "fountain",
+      "name": "Fountain",
+      "aliases": [
+        "Fountain",
+        "A Fountain"
+      ],
+      "world": {
+        "x": 1649,
+        "y": 1925
+      },
+      "side": "ct"
+    },
+    {
+      "id": "heaven",
+      "name": "Heaven",
+      "aliases": [
+        "Heaven",
+        "A Heaven"
+      ],
+      "world": {
+        "x": 867,
+        "y": 2053
+      },
+      "side": "ct"
+    },
+    {
+      "id": "t_side_upper",
+      "name": "T Side Upper",
+      "aliases": [
+        "TSideUpper",
+        "T Upper",
+        "Upper B T"
+      ],
+      "world": {
+        "x": 1362,
+        "y": 304
+      },
+      "side": "t"
+    },
+    {
+      "id": "lower_tunnel",
+      "name": "Lower Tunnel",
+      "aliases": [
+        "LowerTunnel",
+        "Lower Tunnel",
+        "B Tunnel Low"
+      ],
+      "world": {
+        "x": -890,
+        "y": 1609
+      },
+      "side": "ct"
+    },
+    {
+      "id": "bricks",
+      "name": "Bricks",
+      "aliases": [
+        "Bricks",
+        "B Bricks"
+      ],
+      "world": {
+        "x": -913,
+        "y": 1107
+      },
+      "side": "ct"
+    },
+    {
+      "id": "snipers_nest",
+      "name": "Sniper's Nest",
+      "aliases": [
+        "SnipersNest",
+        "Sniper Nest"
+      ],
+      "world": {
+        "x": -1149,
+        "y": 1801
+      },
+      "side": "ct"
+    },
+    {
+      "id": "tunnel",
+      "name": "Tunnel",
+      "aliases": [
+        "Tunnel",
+        "A Tunnel"
+      ],
+      "world": {
+        "x": 346,
+        "y": 2264
+      },
+      "side": "ct"
+    },
+    {
+      "id": "tunnel_stairs",
+      "name": "Tunnel Stairs",
+      "aliases": [
+        "TunnelStairs",
+        "Tunnel Stairs"
+      ],
+      "world": {
+        "x": 566,
+        "y": 1944
+      },
+      "side": "ct"
+    },
+    {
+      "id": "water",
+      "name": "Water",
+      "aliases": [
+        "Water",
+        "CT Water"
+      ],
+      "world": {
+        "x": -93,
+        "y": 2969
+      },
+      "side": "ct"
+    }
   ]
 }

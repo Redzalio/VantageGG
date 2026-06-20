@@ -1,22 +1,409 @@
 {
   "map": "de_cache",
-  "version": 1,
-  "source": "community_knowledge",
+  "version": 2,
+  "source": "demo_calibrated",
   "callouts": [
-    {"id":"t_spawn","name":"T Spawn","aliases":["TSpawn","T Side","T Roof"],"world":{"x":-3100,"y":2000},"side":"t","notes":""},
-    {"id":"main","name":"Main","aliases":["Main","T Main","AMain"],"world":{"x":-1800,"y":1800},"side":"t","notes":""},
-    {"id":"mid","name":"Mid","aliases":["Mid","Garage","MidGarage","SquidGarage"],"world":{"x":-800,"y":1500},"side":"both","notes":""},
-    {"id":"highway","name":"Highway","aliases":["Highway","T Highway","Catwalk"],"world":{"x":-2000,"y":1000},"side":"both","notes":""},
-    {"id":"a_site","name":"A Site","aliases":["BombsiteA","ASite","A"],"world":{"x":200,"y":1500},"side":"both","notes":""},
-    {"id":"a_main","name":"A Main","aliases":["AMain","A Hall","AHall"],"world":{"x":-700,"y":2000},"side":"both","notes":""},
-    {"id":"a_ct","name":"A CT","aliases":["ACT","A Side CT"],"world":{"x":700,"y":1500},"side":"ct","notes":""},
-    {"id":"ct_spawn","name":"CT Spawn","aliases":["CTSpawn","CT","CT Side"],"world":{"x":1200,"y":1200},"side":"ct","notes":""},
-    {"id":"b_main","name":"B Main","aliases":["BMain","B Hall","BHall"],"world":{"x":-2500,"y":200},"side":"t","notes":""},
-    {"id":"b_site","name":"B Site","aliases":["BombsiteB","BSite","B"],"world":{"x":0,"y":100},"side":"both","notes":""},
-    {"id":"b_ct","name":"B CT","aliases":["BCT","B Side CT"],"world":{"x":800,"y":200},"side":"ct","notes":""},
-    {"id":"squeaky","name":"Squeaky","aliases":["Squeaky","SqueakyDoor","Sqeaky"],"world":{"x":-1200,"y":1000},"side":"both","notes":""},
-    {"id":"checkers","name":"Checkers","aliases":["Checkers","Mid Checkers","MidCheckers"],"world":{"x":-500,"y":900},"side":"both","notes":""},
-    {"id":"ivy","name":"Ivy","aliases":["Ivy","A Ivy","AIvy"],"world":{"x":-300,"y":1800},"side":"both","notes":""},
-    {"id":"sun_room","name":"Sun Room","aliases":["SunRoom","Sun Room","Sunroom"],"world":{"x":500,"y":800},"side":"ct","notes":""}
+    {
+      "id": "t_spawn",
+      "name": "T Spawn",
+      "aliases": [
+        "TSpawn",
+        "T Side",
+        "T Roof"
+      ],
+      "world": {
+        "x": 2974,
+        "y": 37
+      },
+      "side": "t"
+    },
+    {
+      "id": "ct_spawn",
+      "name": "CT Spawn",
+      "aliases": [
+        "CTSpawn",
+        "CT Side",
+        "CT"
+      ],
+      "world": {
+        "x": -1459,
+        "y": 772
+      },
+      "side": "ct"
+    },
+    {
+      "id": "a_site",
+      "name": "A Site",
+      "aliases": [
+        "BombsiteA",
+        "ASite",
+        "A"
+      ],
+      "world": {
+        "x": 53,
+        "y": 1691
+      },
+      "side": "both"
+    },
+    {
+      "id": "b_site",
+      "name": "B Site",
+      "aliases": [
+        "BombsiteB",
+        "BSite",
+        "B"
+      ],
+      "world": {
+        "x": -83,
+        "y": -903
+      },
+      "side": "both"
+    },
+    {
+      "id": "mid",
+      "name": "Mid",
+      "aliases": [
+        "Mid",
+        "Mid Area"
+      ],
+      "world": {
+        "x": 93,
+        "y": 220
+      },
+      "side": "both"
+    },
+    {
+      "id": "garage",
+      "name": "Garage",
+      "aliases": [
+        "Garage",
+        "Mid Garage"
+      ],
+      "world": {
+        "x": 1179,
+        "y": 159
+      },
+      "side": "both"
+    },
+    {
+      "id": "b_main",
+      "name": "B Main",
+      "aliases": [
+        "BMain",
+        "B Hall"
+      ],
+      "world": {
+        "x": 411,
+        "y": -735
+      },
+      "side": "t"
+    },
+    {
+      "id": "b_halls",
+      "name": "B Halls",
+      "aliases": [
+        "BHalls",
+        "B Halls",
+        "B Hallway"
+      ],
+      "world": {
+        "x": 895,
+        "y": -928
+      },
+      "side": "t"
+    },
+    {
+      "id": "a_main",
+      "name": "A Main",
+      "aliases": [
+        "AMain",
+        "A Hall",
+        "A Hallway"
+      ],
+      "world": {
+        "x": 647,
+        "y": 1380
+      },
+      "side": "both"
+    },
+    {
+      "id": "truck",
+      "name": "Truck",
+      "aliases": [
+        "Truck",
+        "A Truck"
+      ],
+      "world": {
+        "x": -810,
+        "y": 1115
+      },
+      "side": "ct"
+    },
+    {
+      "id": "checkers",
+      "name": "Checkers",
+      "aliases": [
+        "Checkers",
+        "Mid Checkers"
+      ],
+      "world": {
+        "x": 150,
+        "y": -367
+      },
+      "side": "both"
+    },
+    {
+      "id": "highway",
+      "name": "Highway",
+      "aliases": [
+        "Highway",
+        "A Highway"
+      ],
+      "world": {
+        "x": -194,
+        "y": 836
+      },
+      "side": "ct"
+    },
+    {
+      "id": "ct_lane",
+      "name": "CT Lane",
+      "aliases": [
+        "CTLane",
+        "CT Lane"
+      ],
+      "world": {
+        "x": -905,
+        "y": 117
+      },
+      "side": "ct"
+    },
+    {
+      "id": "tree_room",
+      "name": "Tree Room",
+      "aliases": [
+        "TreeRoom",
+        "Tree Room"
+      ],
+      "world": {
+        "x": -789,
+        "y": -800
+      },
+      "side": "ct"
+    },
+    {
+      "id": "outside_a",
+      "name": "Outside A",
+      "aliases": [
+        "OutsideA",
+        "Outside A",
+        "A Yard"
+      ],
+      "world": {
+        "x": 1299,
+        "y": 632
+      },
+      "side": "both"
+    },
+    {
+      "id": "forklift",
+      "name": "Forklift",
+      "aliases": [
+        "ForkLift",
+        "Fork Lift",
+        "Ivy"
+      ],
+      "world": {
+        "x": 275,
+        "y": 1358
+      },
+      "side": "both"
+    },
+    {
+      "id": "connector",
+      "name": "Connector",
+      "aliases": [
+        "Connector",
+        "Con",
+        "Mid Con"
+      ],
+      "world": {
+        "x": -490,
+        "y": 72
+      },
+      "side": "both"
+    },
+    {
+      "id": "sun_room",
+      "name": "Sun Room",
+      "aliases": [
+        "SunRoom",
+        "Sun Room",
+        "B Sun Room"
+      ],
+      "world": {
+        "x": 785,
+        "y": -1344
+      },
+      "side": "ct"
+    },
+    {
+      "id": "headshot",
+      "name": "Headshot",
+      "aliases": [
+        "Headshot",
+        "B Headshot"
+      ],
+      "world": {
+        "x": -377,
+        "y": -1183
+      },
+      "side": "ct"
+    },
+    {
+      "id": "squeaky",
+      "name": "Squeaky",
+      "aliases": [
+        "Squeaky",
+        "A Squeaky"
+      ],
+      "world": {
+        "x": 223,
+        "y": 2008
+      },
+      "side": "both"
+    },
+    {
+      "id": "vents",
+      "name": "Vents",
+      "aliases": [
+        "Vents",
+        "B Vents",
+        "Mid Vents"
+      ],
+      "world": {
+        "x": 514,
+        "y": -253
+      },
+      "side": "both"
+    },
+    {
+      "id": "heaven",
+      "name": "Heaven",
+      "aliases": [
+        "Heaven",
+        "B Heaven"
+      ],
+      "world": {
+        "x": -545,
+        "y": -616
+      },
+      "side": "ct"
+    },
+    {
+      "id": "t_yard",
+      "name": "T Yard",
+      "aliases": [
+        "TYard",
+        "T Yard"
+      ],
+      "world": {
+        "x": 2041,
+        "y": 260
+      },
+      "side": "t"
+    },
+    {
+      "id": "bus_stop",
+      "name": "Bus Stop",
+      "aliases": [
+        "BusStop",
+        "Bus Stop"
+      ],
+      "world": {
+        "x": -1277,
+        "y": 270
+      },
+      "side": "ct"
+    },
+    {
+      "id": "a_halls",
+      "name": "A Halls",
+      "aliases": [
+        "AHalls",
+        "A Halls"
+      ],
+      "world": {
+        "x": 791,
+        "y": 2067
+      },
+      "side": "ct"
+    },
+    {
+      "id": "a_stairs",
+      "name": "A Stairs",
+      "aliases": [
+        "AStairs",
+        "A Stairs"
+      ],
+      "world": {
+        "x": 759,
+        "y": 737
+      },
+      "side": "ct"
+    },
+    {
+      "id": "outside_b",
+      "name": "Outside B",
+      "aliases": [
+        "OutsideB",
+        "Outside B",
+        "B Yard"
+      ],
+      "world": {
+        "x": 1931,
+        "y": -637
+      },
+      "side": "t"
+    },
+    {
+      "id": "quad",
+      "name": "Quad",
+      "aliases": [
+        "Quad",
+        "A Quad"
+      ],
+      "world": {
+        "x": -306,
+        "y": 2180
+      },
+      "side": "ct"
+    },
+    {
+      "id": "useless",
+      "name": "Useless",
+      "aliases": [
+        "Useless",
+        "Mid Useless"
+      ],
+      "world": {
+        "x": 1156,
+        "y": -274
+      },
+      "side": "both"
+    },
+    {
+      "id": "boost",
+      "name": "Boost",
+      "aliases": [
+        "Boost",
+        "A Boost"
+      ],
+      "world": {
+        "x": 834,
+        "y": 615
+      },
+      "side": "both"
+    }
   ]
 }

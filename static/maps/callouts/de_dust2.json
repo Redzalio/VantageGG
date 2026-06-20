@@ -1,27 +1,318 @@
 {
   "map": "de_dust2",
-  "version": 1,
-  "source": "community_knowledge",
+  "version": 2,
+  "source": "demo_calibrated",
   "callouts": [
-    {"id":"t_spawn","name":"T Spawn","aliases":["TSpawn","T Side"],"world":{"x":-2200,"y":2000},"side":"t","notes":""},
-    {"id":"t_mid","name":"T Mid Doors","aliases":["TMidDoors","MidDoors","OutsideMidDoors"],"world":{"x":-1300,"y":1200},"side":"t","notes":""},
-    {"id":"upper_mid","name":"Upper Mid","aliases":["UpperMid","TopMid","ShortMid"],"world":{"x":-600,"y":1500},"side":"both","notes":""},
-    {"id":"long_doors","name":"Long Doors","aliases":["LongDoors","Long Doors","Doors"],"world":{"x":-1100,"y":2200},"side":"t","notes":""},
-    {"id":"long","name":"Long","aliases":["Long","A Long","ALong"],"world":{"x":-500,"y":2500},"side":"both","notes":""},
-    {"id":"a_site","name":"A Site","aliases":["BombsiteA","ASite","A"],"world":{"x":700,"y":2300},"side":"both","notes":""},
-    {"id":"a_short","name":"Short","aliases":["Short","AShort","Cat"],"world":{"x":300,"y":1900},"side":"both","notes":""},
-    {"id":"catwalk","name":"Catwalk","aliases":["Catwalk","ShortCat"],"world":{"x":-100,"y":2200},"side":"both","notes":""},
-    {"id":"a_ct","name":"A CT","aliases":["ACT","A CT Side","CTside"],"world":{"x":900,"y":1600},"side":"ct","notes":""},
-    {"id":"goose","name":"Goose","aliases":["Goose","A Goose","AGoose"],"world":{"x":900,"y":2500},"side":"ct","notes":""},
-    {"id":"pit","name":"Pit","aliases":["Pit","A Pit","APit"],"world":{"x":600,"y":2700},"side":"ct","notes":""},
-    {"id":"ct_spawn","name":"CT Spawn","aliases":["CTSpawn","CT","CT Side"],"world":{"x":1200,"y":1500},"side":"ct","notes":""},
-    {"id":"b_tunnels","name":"B Tunnels","aliases":["Tunnels","BTunnels","BotTunnels","BottomTunnels"],"world":{"x":-1600,"y":500},"side":"t","notes":""},
-    {"id":"upper_tunnels","name":"Upper Tunnels","aliases":["UpperTunnels","TopTunnel","TopTunnels"],"world":{"x":-1600,"y":1000},"side":"both","notes":""},
-    {"id":"b_site","name":"B Site","aliases":["BombsiteB","BSite","B"],"world":{"x":200,"y":700},"side":"both","notes":""},
-    {"id":"b_window","name":"B Window","aliases":["Window","BWindow","B Window"],"world":{"x":500,"y":900},"side":"both","notes":""},
-    {"id":"platform","name":"Platform","aliases":["Platform","B Platform","BPlatform"],"world":{"x":300,"y":600},"side":"both","notes":""},
-    {"id":"b_ct","name":"B CT","aliases":["BCT","B CT","B Side CT"],"world":{"x":900,"y":900},"side":"ct","notes":""},
-    {"id":"car","name":"Car","aliases":["Car","B Car","BCar"],"world":{"x":100,"y":700},"side":"both","notes":""},
-    {"id":"mid","name":"Mid","aliases":["Mid","BottomMid","Catwalk"],"world":{"x":-100,"y":1200},"side":"both","notes":""}
+    {
+      "id": "t_spawn",
+      "name": "T Spawn",
+      "aliases": [
+        "TSpawn",
+        "T Side"
+      ],
+      "world": {
+        "x": -750,
+        "y": -768
+      },
+      "side": "t"
+    },
+    {
+      "id": "ct_spawn",
+      "name": "CT Spawn",
+      "aliases": [
+        "CTSpawn",
+        "CT Side",
+        "CT"
+      ],
+      "world": {
+        "x": 239,
+        "y": 2369
+      },
+      "side": "ct"
+    },
+    {
+      "id": "a_site",
+      "name": "A Site",
+      "aliases": [
+        "BombsiteA",
+        "ASite",
+        "A"
+      ],
+      "world": {
+        "x": 1111,
+        "y": 2675
+      },
+      "side": "both"
+    },
+    {
+      "id": "b_site",
+      "name": "B Site",
+      "aliases": [
+        "BombsiteB",
+        "BSite",
+        "B"
+      ],
+      "world": {
+        "x": -1776,
+        "y": 2260
+      },
+      "side": "both"
+    },
+    {
+      "id": "long_a",
+      "name": "Long A",
+      "aliases": [
+        "LongA",
+        "Long",
+        "A Long"
+      ],
+      "world": {
+        "x": 1462,
+        "y": 1650
+      },
+      "side": "both"
+    },
+    {
+      "id": "long_doors",
+      "name": "Long Doors",
+      "aliases": [
+        "LongDoors",
+        "Doors"
+      ],
+      "world": {
+        "x": 751,
+        "y": 771
+      },
+      "side": "t"
+    },
+    {
+      "id": "outside_long",
+      "name": "Outside Long",
+      "aliases": [
+        "OutsideLong",
+        "Pit",
+        "Long Pit"
+      ],
+      "world": {
+        "x": 305,
+        "y": -25
+      },
+      "side": "t"
+    },
+    {
+      "id": "catwalk",
+      "name": "Catwalk",
+      "aliases": [
+        "Catwalk",
+        "Short",
+        "AShort"
+      ],
+      "world": {
+        "x": -61,
+        "y": 1350
+      },
+      "side": "both"
+    },
+    {
+      "id": "short_stairs",
+      "name": "Short Stairs",
+      "aliases": [
+        "ShortStairs",
+        "Stairs Short"
+      ],
+      "world": {
+        "x": 373,
+        "y": 1635
+      },
+      "side": "both"
+    },
+    {
+      "id": "under_a",
+      "name": "Under A",
+      "aliases": [
+        "UnderA",
+        "Under A",
+        "CT A"
+      ],
+      "world": {
+        "x": 875,
+        "y": 2208
+      },
+      "side": "ct"
+    },
+    {
+      "id": "extended_a",
+      "name": "Extended A",
+      "aliases": [
+        "ExtendedA",
+        "Goose",
+        "A Goose"
+      ],
+      "world": {
+        "x": 416,
+        "y": 2249
+      },
+      "side": "ct"
+    },
+    {
+      "id": "a_ramp",
+      "name": "A Ramp",
+      "aliases": [
+        "ARamp",
+        "A Ramp"
+      ],
+      "world": {
+        "x": 1371,
+        "y": 2609
+      },
+      "side": "both"
+    },
+    {
+      "id": "mid_doors",
+      "name": "Mid Doors",
+      "aliases": [
+        "MidDoors",
+        "Mid",
+        "CT Mid Doors"
+      ],
+      "world": {
+        "x": -519,
+        "y": 2115
+      },
+      "side": "both"
+    },
+    {
+      "id": "middle",
+      "name": "Mid",
+      "aliases": [
+        "Middle",
+        "Mid Area"
+      ],
+      "world": {
+        "x": -390,
+        "y": 1247
+      },
+      "side": "both"
+    },
+    {
+      "id": "top_mid",
+      "name": "Top Mid",
+      "aliases": [
+        "TopofMid",
+        "TopMid",
+        "T Mid"
+      ],
+      "world": {
+        "x": -315,
+        "y": 261
+      },
+      "side": "both"
+    },
+    {
+      "id": "upper_tunnels",
+      "name": "Upper Tunnels",
+      "aliases": [
+        "UpperTunnel",
+        "Upper Tunnels",
+        "Short Tunnels"
+      ],
+      "world": {
+        "x": -1812,
+        "y": 1260
+      },
+      "side": "both"
+    },
+    {
+      "id": "lower_tunnels",
+      "name": "Lower Tunnels",
+      "aliases": [
+        "LowerTunnel",
+        "Lower Tunnels",
+        "Long Tunnels"
+      ],
+      "world": {
+        "x": -853,
+        "y": 1395
+      },
+      "side": "both"
+    },
+    {
+      "id": "tunnel_stairs",
+      "name": "Tunnel Stairs",
+      "aliases": [
+        "TunnelStairs"
+      ],
+      "world": {
+        "x": -1143,
+        "y": 1147
+      },
+      "side": "both"
+    },
+    {
+      "id": "outside_tunnels",
+      "name": "Outside Tunnels",
+      "aliases": [
+        "OutsideTunnel",
+        "Outside B"
+      ],
+      "world": {
+        "x": -1580,
+        "y": 340
+      },
+      "side": "t"
+    },
+    {
+      "id": "b_doors",
+      "name": "B Doors",
+      "aliases": [
+        "BDoors",
+        "B Doors"
+      ],
+      "world": {
+        "x": -1103,
+        "y": 2358
+      },
+      "side": "ct"
+    },
+    {
+      "id": "hole",
+      "name": "Hole",
+      "aliases": [
+        "Hole",
+        "B Hole"
+      ],
+      "world": {
+        "x": -1320,
+        "y": 2666
+      },
+      "side": "ct"
+    },
+    {
+      "id": "pit",
+      "name": "Pit (Long)",
+      "aliases": [
+        "Pit",
+        "A Pit",
+        "Long Pit"
+      ],
+      "world": {
+        "x": 1424,
+        "y": 504
+      },
+      "side": "ct"
+    },
+    {
+      "id": "t_ramp",
+      "name": "T Ramp",
+      "aliases": [
+        "TRamp",
+        "T-side Ramp"
+      ],
+      "world": {
+        "x": -1888,
+        "y": -331
+      },
+      "side": "t"
+    }
   ]
 }

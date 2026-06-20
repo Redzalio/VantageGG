@@ -1,22 +1,251 @@
 {
   "map": "de_ancient",
-  "version": 1,
-  "source": "community_knowledge",
+  "version": 2,
+  "source": "demo_calibrated",
   "callouts": [
-    {"id":"t_spawn","name":"T Spawn","aliases":["TSpawn","T Side"],"world":{"x":-2500,"y":1000},"side":"t","notes":""},
-    {"id":"a_ramp","name":"A Ramp","aliases":["ARamp","Ramp","A Ramp"],"world":{"x":-1500,"y":800},"side":"t","notes":""},
-    {"id":"a_site","name":"A Site","aliases":["BombsiteA","ASite","A"],"world":{"x":-500,"y":500},"side":"both","notes":""},
-    {"id":"a_lobby","name":"A Lobby","aliases":["ALobby","Temple","ATemple"],"world":{"x":-800,"y":1200},"side":"both","notes":""},
-    {"id":"a_short","name":"A Short","aliases":["AShort","Short","CatA"],"world":{"x":-200,"y":1000},"side":"both","notes":""},
-    {"id":"ct_mid","name":"CT Mid","aliases":["CTMid","MiddleArea"],"world":{"x":100,"y":1000},"side":"ct","notes":""},
-    {"id":"mid","name":"Mid","aliases":["Mid","MiddleMid","CenterMid"],"world":{"x":-500,"y":1200},"side":"both","notes":""},
-    {"id":"ct_spawn","name":"CT Spawn","aliases":["CTSpawn","CT Side","CT"],"world":{"x":500,"y":700},"side":"ct","notes":""},
-    {"id":"cave","name":"Cave","aliases":["Cave","BCave","B Cave"],"world":{"x":-1200,"y":100},"side":"both","notes":""},
-    {"id":"b_ramp","name":"B Ramp","aliases":["BRamp","BHallway","B Ramp"],"world":{"x":-2000,"y":0},"side":"both","notes":""},
-    {"id":"b_site","name":"B Site","aliases":["BombsiteB","BSite","B"],"world":{"x":-700,"y":-200},"side":"both","notes":""},
-    {"id":"b_ct","name":"B CT","aliases":["BCT","B CT"],"world":{"x":200,"y":-200},"side":"ct","notes":""},
-    {"id":"tunnel","name":"Tunnel","aliases":["Tunnel","CTunnels","Tunnels"],"world":{"x":-400,"y":200},"side":"both","notes":""},
-    {"id":"donut","name":"Donut","aliases":["Donut","Ring","Circle"],"world":{"x":-200,"y":1300},"side":"both","notes":""},
-    {"id":"pillar","name":"Pillar","aliases":["Pillar","A Pillar","APillar"],"world":{"x":-600,"y":700},"side":"both","notes":""}
+    {
+      "id": "t_spawn",
+      "name": "T Spawn",
+      "aliases": [
+        "TSpawn",
+        "T Side"
+      ],
+      "world": {
+        "x": -466,
+        "y": -2223
+      },
+      "side": "t"
+    },
+    {
+      "id": "ct_spawn",
+      "name": "CT Spawn",
+      "aliases": [
+        "CTSpawn",
+        "CT Side",
+        "CT"
+      ],
+      "world": {
+        "x": -377,
+        "y": 1611
+      },
+      "side": "ct"
+    },
+    {
+      "id": "a_site",
+      "name": "A Site",
+      "aliases": [
+        "BombsiteA",
+        "ASite",
+        "A"
+      ],
+      "world": {
+        "x": -1570,
+        "y": 790
+      },
+      "side": "both"
+    },
+    {
+      "id": "b_site",
+      "name": "B Site",
+      "aliases": [
+        "BombsiteB",
+        "BSite",
+        "B"
+      ],
+      "world": {
+        "x": 976,
+        "y": 53
+      },
+      "side": "both"
+    },
+    {
+      "id": "mid",
+      "name": "Mid",
+      "aliases": [
+        "Middle",
+        "Mid",
+        "MidArea"
+      ],
+      "world": {
+        "x": -540,
+        "y": -526
+      },
+      "side": "both"
+    },
+    {
+      "id": "top_mid",
+      "name": "Top Mid",
+      "aliases": [
+        "TopofMid",
+        "TopMid",
+        "Donut"
+      ],
+      "world": {
+        "x": -442,
+        "y": 105
+      },
+      "side": "both"
+    },
+    {
+      "id": "side_entrance",
+      "name": "Side Entrance",
+      "aliases": [
+        "SideEntrance",
+        "Cave",
+        "B Cave"
+      ],
+      "world": {
+        "x": 422,
+        "y": -148
+      },
+      "side": "both"
+    },
+    {
+      "id": "ramp",
+      "name": "Ramp",
+      "aliases": [
+        "Ramp",
+        "B Ramp",
+        "Side Ramp"
+      ],
+      "world": {
+        "x": 1273,
+        "y": -556
+      },
+      "side": "both"
+    },
+    {
+      "id": "t_side_upper",
+      "name": "T Side Upper",
+      "aliases": [
+        "TSideUpper",
+        "T Side Upper",
+        "Upper Mid T"
+      ],
+      "world": {
+        "x": 184,
+        "y": -803
+      },
+      "side": "t"
+    },
+    {
+      "id": "outside",
+      "name": "Outside",
+      "aliases": [
+        "Outside",
+        "A Outside",
+        "T to A"
+      ],
+      "world": {
+        "x": -1275,
+        "y": -1092
+      },
+      "side": "t"
+    },
+    {
+      "id": "alley",
+      "name": "Alley",
+      "aliases": [
+        "Alley",
+        "A Alley"
+      ],
+      "world": {
+        "x": 653,
+        "y": 735
+      },
+      "side": "ct"
+    },
+    {
+      "id": "t_side_lower",
+      "name": "T Side Lower",
+      "aliases": [
+        "TSideLower",
+        "T Side Lower"
+      ],
+      "world": {
+        "x": 982,
+        "y": -776
+      },
+      "side": "t"
+    },
+    {
+      "id": "main_hall",
+      "name": "Main Hall",
+      "aliases": [
+        "MainHall",
+        "Main Hall",
+        "A Hall"
+      ],
+      "world": {
+        "x": -1970,
+        "y": -63
+      },
+      "side": "both"
+    },
+    {
+      "id": "side_hall",
+      "name": "Side Hall",
+      "aliases": [
+        "SideHall",
+        "Side Hall"
+      ],
+      "world": {
+        "x": -1322,
+        "y": 49
+      },
+      "side": "both"
+    },
+    {
+      "id": "ruins",
+      "name": "Ruins",
+      "aliases": [
+        "Ruins",
+        "B Ruins"
+      ],
+      "world": {
+        "x": 1013,
+        "y": -1224
+      },
+      "side": "t"
+    },
+    {
+      "id": "house",
+      "name": "House",
+      "aliases": [
+        "House",
+        "A House"
+      ],
+      "world": {
+        "x": -385,
+        "y": 722
+      },
+      "side": "ct"
+    },
+    {
+      "id": "tunnel",
+      "name": "Tunnel",
+      "aliases": [
+        "Tunnel",
+        "B Tunnel",
+        "T Tunnel"
+      ],
+      "world": {
+        "x": 146,
+        "y": -1838
+      },
+      "side": "t"
+    },
+    {
+      "id": "water",
+      "name": "Water",
+      "aliases": [
+        "Water"
+      ],
+      "world": {
+        "x": 552,
+        "y": -1738
+      },
+      "side": "t"
+    }
   ]
 }

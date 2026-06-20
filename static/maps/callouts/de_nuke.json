@@ -1,22 +1,248 @@
 {
   "map": "de_nuke",
-  "version": 1,
-  "source": "community_knowledge",
+  "version": 2,
+  "source": "community_knowledge_unverified",
   "callouts": [
-    {"id":"t_spawn","name":"T Spawn","aliases":["TSpawn","T Side","Outside"],"world":{"x":-2800,"y":1500},"side":"t","notes":""},
-    {"id":"ramp","name":"Ramp","aliases":["TRamp","Ramp","MainRamp"],"world":{"x":-2000,"y":1000},"side":"both","notes":""},
-    {"id":"lobby","name":"Lobby","aliases":["Lobby","TLobby"],"world":{"x":-1500,"y":1500},"side":"t","notes":""},
-    {"id":"a_site","name":"A Site","aliases":["BombsiteA","ASite","A","UpperBomb"],"world":{"x":-1000,"y":1000},"side":"both","floor":"upper","notes":""},
-    {"id":"b_site","name":"B Site","aliases":["BombsiteB","BSite","B","LowerBomb"],"world":{"x":-1000,"y":1000},"side":"both","floor":"lower","notes":""},
-    {"id":"heaven","name":"Heaven","aliases":["Heaven","AHaven","CTHeaven"],"world":{"x":-500,"y":800},"side":"ct","notes":""},
-    {"id":"ct_spawn","name":"CT Spawn","aliases":["CTSpawn","CT","CT Side"],"world":{"x":0,"y":1500},"side":"ct","notes":""},
-    {"id":"rafters","name":"Rafters","aliases":["Rafters","Catwalk","ACatwalk"],"world":{"x":-800,"y":1200},"side":"both","notes":""},
-    {"id":"hut","name":"Hut","aliases":["Hut","OutsideHut","Outside Hut"],"world":{"x":-1800,"y":2200},"side":"t","notes":""},
-    {"id":"silo","name":"Silo","aliases":["Silo","CSilo"],"world":{"x":-2000,"y":2500},"side":"t","notes":""},
-    {"id":"squeaky","name":"Squeaky","aliases":["Squeaky","SqueakyDoor","Door"],"world":{"x":-1300,"y":1200},"side":"both","notes":""},
-    {"id":"vent","name":"Vent","aliases":["Vent","Vents","BVent"],"world":{"x":-1100,"y":800},"side":"both","notes":""},
-    {"id":"secret","name":"Secret","aliases":["Secret","Ladder","LadderRoom"],"world":{"x":-1500,"y":600},"side":"both","notes":""},
-    {"id":"radio","name":"Radio","aliases":["Radio","RadioRoom"],"world":{"x":-300,"y":1800},"side":"ct","notes":""},
-    {"id":"outside","name":"Outside","aliases":["Outside","Yard","OutsideArea"],"world":{"x":-2500,"y":2000},"side":"t","notes":""}
+    {
+      "id": "t_spawn",
+      "name": "T Spawn",
+      "aliases": [
+        "TSpawn",
+        "T Side",
+        "Outside"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "t",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "ramp",
+      "name": "Ramp",
+      "aliases": [
+        "TRamp",
+        "Ramp",
+        "MainRamp"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "lobby",
+      "name": "Lobby",
+      "aliases": [
+        "Lobby",
+        "TLobby"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "t",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "a_site",
+      "name": "A Site",
+      "aliases": [
+        "BombsiteA",
+        "ASite",
+        "A",
+        "UpperBomb"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "floor": "upper",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "b_site",
+      "name": "B Site",
+      "aliases": [
+        "BombsiteB",
+        "BSite",
+        "B",
+        "LowerBomb"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "floor": "lower",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "heaven",
+      "name": "Heaven",
+      "aliases": [
+        "Heaven",
+        "AHaven",
+        "CTHeaven"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "ct",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "ct_spawn",
+      "name": "CT Spawn",
+      "aliases": [
+        "CTSpawn",
+        "CT",
+        "CT Side"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "ct",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "rafters",
+      "name": "Rafters",
+      "aliases": [
+        "Rafters",
+        "Catwalk",
+        "ACatwalk"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "hut",
+      "name": "Hut",
+      "aliases": [
+        "Hut",
+        "OutsideHut",
+        "Outside Hut"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "t",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "silo",
+      "name": "Silo",
+      "aliases": [
+        "Silo",
+        "CSilo"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "t",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "squeaky",
+      "name": "Squeaky",
+      "aliases": [
+        "Squeaky",
+        "SqueakyDoor",
+        "Door"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "vent",
+      "name": "Vent",
+      "aliases": [
+        "Vent",
+        "Vents",
+        "BVent"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "secret",
+      "name": "Secret",
+      "aliases": [
+        "Secret",
+        "Ladder",
+        "LadderRoom"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "radio",
+      "name": "Radio",
+      "aliases": [
+        "Radio",
+        "RadioRoom"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "ct",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "outside",
+      "name": "Outside",
+      "aliases": [
+        "Outside",
+        "Yard",
+        "OutsideArea"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "t",
+      "notes": "",
+      "confidence": "unverified"
+    }
   ]
 }

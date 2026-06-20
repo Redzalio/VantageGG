@@ -1,27 +1,315 @@
 {
   "map": "de_mirage",
-  "version": 1,
-  "source": "community_knowledge",
+  "version": 2,
+  "source": "demo_calibrated",
   "callouts": [
-    {"id":"t_spawn","name":"T Spawn","aliases":["TSpawn","T Side"],"world":{"x":-2200,"y":-2300},"side":"t","notes":""},
-    {"id":"ramp","name":"Ramp","aliases":["TRamp","Ramp","TopRamp"],"world":{"x":-600,"y":-2100},"side":"t","notes":""},
-    {"id":"short","name":"Short","aliases":["AShort","TShort","Short"],"world":{"x":-1400,"y":-700},"side":"both","notes":""},
-    {"id":"jungle","name":"Jungle","aliases":["Jungle","TVan"],"world":{"x":-900,"y":-500},"side":"both","notes":""},
-    {"id":"catwalk","name":"Catwalk","aliases":["Catwalk","Cat"],"world":{"x":-400,"y":-650},"side":"both","notes":""},
-    {"id":"top_mid","name":"Top Mid","aliases":["TopofMid","TopMid","Mid","TTop"],"world":{"x":-650,"y":-750},"side":"both","notes":""},
-    {"id":"window","name":"Window","aliases":["Window","MidWindow","ConnectorWindow"],"world":{"x":-100,"y":-750},"side":"both","notes":""},
-    {"id":"connector","name":"Connector","aliases":["Connector","Con"],"world":{"x":-200,"y":-1050},"side":"both","notes":""},
-    {"id":"a_short_ct","name":"A Short CT","aliases":["AShortCT","CTShort","ShortA"],"world":{"x":0,"y":-300},"side":"ct","notes":""},
-    {"id":"a_site","name":"A Site","aliases":["BombsiteA","ASite","A"],"world":{"x":170,"y":-1100},"side":"both","notes":""},
-    {"id":"a_ct","name":"A CT","aliases":["ACT","A CT","CT A"],"world":{"x":350,"y":-1400},"side":"ct","notes":""},
-    {"id":"stairs","name":"Stairs","aliases":["CTStairs","AStairs","Stairs"],"world":{"x":0,"y":-1350},"side":"ct","notes":""},
-    {"id":"ct_spawn","name":"CT Spawn","aliases":["CTSpawn","CT Side","CT"],"world":{"x":460,"y":-1900},"side":"ct","notes":""},
-    {"id":"market","name":"Market","aliases":["Market","MarketArea"],"world":{"x":200,"y":-750},"side":"ct","notes":""},
-    {"id":"market_window","name":"Market Window","aliases":["MarketWindow","MktWindow"],"world":{"x":170,"y":-600},"side":"ct","notes":""},
-    {"id":"b_apartments","name":"Apartments","aliases":["Apartments","BApps","BApp","Apps"],"world":{"x":-1900,"y":-200},"side":"both","notes":""},
-    {"id":"b_short","name":"B Short","aliases":["BShort","ShortB","B Short"],"world":{"x":-1050,"y":-700},"side":"both","notes":""},
-    {"id":"b_site","name":"B Site","aliases":["BombsiteB","BSite","B"],"world":{"x":-1180,"y":-1100},"side":"both","notes":""},
-    {"id":"van","name":"Van","aliases":["Van","BVan"],"world":{"x":-700,"y":-1100},"side":"both","notes":""},
-    {"id":"bench","name":"Bench","aliases":["Bench","BBench"],"world":{"x":-1000,"y":-1100},"side":"ct","notes":""}
+    {
+      "id": "t_spawn",
+      "name": "T Spawn",
+      "aliases": [
+        "TSpawn",
+        "T Side"
+      ],
+      "world": {
+        "x": 1214,
+        "y": -160
+      },
+      "side": "t"
+    },
+    {
+      "id": "ct_spawn",
+      "name": "CT Spawn",
+      "aliases": [
+        "CTSpawn",
+        "CT Side"
+      ],
+      "world": {
+        "x": -1562,
+        "y": -1805
+      },
+      "side": "ct"
+    },
+    {
+      "id": "a_site",
+      "name": "A Site",
+      "aliases": [
+        "BombsiteA",
+        "ASite",
+        "A"
+      ],
+      "world": {
+        "x": -445,
+        "y": -1893
+      },
+      "side": "both"
+    },
+    {
+      "id": "b_site",
+      "name": "B Site",
+      "aliases": [
+        "BombsiteB",
+        "BSite",
+        "B"
+      ],
+      "world": {
+        "x": -1855,
+        "y": 257
+      },
+      "side": "both"
+    },
+    {
+      "id": "mid",
+      "name": "Mid",
+      "aliases": [
+        "Middle",
+        "Mid",
+        "MidArea"
+      ],
+      "world": {
+        "x": -620,
+        "y": -724
+      },
+      "side": "both"
+    },
+    {
+      "id": "catwalk",
+      "name": "Catwalk",
+      "aliases": [
+        "Catwalk",
+        "Cat"
+      ],
+      "world": {
+        "x": -772,
+        "y": -198
+      },
+      "side": "both"
+    },
+    {
+      "id": "palace",
+      "name": "Palace",
+      "aliases": [
+        "PalaceInterior",
+        "Palace",
+        "T Palace"
+      ],
+      "world": {
+        "x": 372,
+        "y": -2026
+      },
+      "side": "t"
+    },
+    {
+      "id": "top_mid",
+      "name": "Top Mid",
+      "aliases": [
+        "TopofMid",
+        "TopMid",
+        "Window"
+      ],
+      "world": {
+        "x": 332,
+        "y": -484
+      },
+      "side": "both"
+    },
+    {
+      "id": "underpass",
+      "name": "Underpass",
+      "aliases": [
+        "Underpass",
+        "B Short"
+      ],
+      "world": {
+        "x": -897,
+        "y": 221
+      },
+      "side": "both"
+    },
+    {
+      "id": "connector",
+      "name": "Connector",
+      "aliases": [
+        "Connector",
+        "Con"
+      ],
+      "world": {
+        "x": -691,
+        "y": -1112
+      },
+      "side": "both"
+    },
+    {
+      "id": "palace_alley",
+      "name": "Palace Alley",
+      "aliases": [
+        "PalaceAlley",
+        "Short",
+        "A Short",
+        "ShortToA"
+      ],
+      "world": {
+        "x": 754,
+        "y": -1334
+      },
+      "side": "t"
+    },
+    {
+      "id": "shop",
+      "name": "Shop",
+      "aliases": [
+        "Shop",
+        "B Apps Short"
+      ],
+      "world": {
+        "x": -1905,
+        "y": -523
+      },
+      "side": "both"
+    },
+    {
+      "id": "back_alley",
+      "name": "Back Alley",
+      "aliases": [
+        "BackAlley",
+        "B Back"
+      ],
+      "world": {
+        "x": -405,
+        "y": 594
+      },
+      "side": "both"
+    },
+    {
+      "id": "apartments",
+      "name": "Apartments",
+      "aliases": [
+        "Apartments",
+        "BApps",
+        "Apps",
+        "B Apartments"
+      ],
+      "world": {
+        "x": -1568,
+        "y": 733
+      },
+      "side": "t"
+    },
+    {
+      "id": "t_ramp",
+      "name": "T Ramp",
+      "aliases": [
+        "TRamp",
+        "Ramp",
+        "A Ramp"
+      ],
+      "world": {
+        "x": 385,
+        "y": -1603
+      },
+      "side": "t"
+    },
+    {
+      "id": "jungle",
+      "name": "Jungle",
+      "aliases": [
+        "Jungle"
+      ],
+      "world": {
+        "x": -946,
+        "y": -1398
+      },
+      "side": "both"
+    },
+    {
+      "id": "snipers_nest",
+      "name": "Sniper's Nest",
+      "aliases": [
+        "SnipersNest",
+        "Van",
+        "B Van"
+      ],
+      "world": {
+        "x": -1174,
+        "y": -709
+      },
+      "side": "both"
+    },
+    {
+      "id": "side_alley",
+      "name": "Side Alley",
+      "aliases": [
+        "SideAlley"
+      ],
+      "world": {
+        "x": 655,
+        "y": 422
+      },
+      "side": "t"
+    },
+    {
+      "id": "truck",
+      "name": "Truck",
+      "aliases": [
+        "Truck",
+        "B Truck"
+      ],
+      "world": {
+        "x": -2217,
+        "y": 742
+      },
+      "side": "t"
+    },
+    {
+      "id": "house",
+      "name": "House",
+      "aliases": [
+        "House"
+      ],
+      "world": {
+        "x": 368,
+        "y": 775
+      },
+      "side": "t"
+    },
+    {
+      "id": "stairs",
+      "name": "Stairs",
+      "aliases": [
+        "Stairs",
+        "CTStairs",
+        "A Stairs"
+      ],
+      "world": {
+        "x": -481,
+        "y": -1477
+      },
+      "side": "ct"
+    },
+    {
+      "id": "ladder",
+      "name": "Ladder",
+      "aliases": [
+        "Ladder",
+        "B Ladder"
+      ],
+      "world": {
+        "x": -1161,
+        "y": -312
+      },
+      "side": "both"
+    },
+    {
+      "id": "scaffolding",
+      "name": "Scaffolding",
+      "aliases": [
+        "Scaffolding",
+        "Scaff"
+      ],
+      "world": {
+        "x": -39,
+        "y": -2088
+      },
+      "side": "ct"
+    }
   ]
 }

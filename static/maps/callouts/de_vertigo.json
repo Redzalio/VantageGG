@@ -1,21 +1,236 @@
 {
   "map": "de_vertigo",
-  "version": 1,
-  "source": "community_knowledge",
+  "version": 2,
+  "source": "community_knowledge_unverified",
   "callouts": [
-    {"id":"t_spawn","name":"T Spawn","aliases":["TSpawn","T Side","Elevator"],"world":{"x":-2800,"y":1000},"side":"t","notes":""},
-    {"id":"a_main","name":"A Main","aliases":["AMain","Ramp","ARamp","Main Ramp"],"world":{"x":-1800,"y":800},"side":"t","notes":""},
-    {"id":"a_site","name":"A Site","aliases":["BombsiteA","ASite","A"],"world":{"x":-800,"y":600},"side":"both","notes":""},
-    {"id":"a_ct","name":"A CT","aliases":["ACT","A Side CT","A Ledge"],"world":{"x":-200,"y":400},"side":"ct","notes":""},
-    {"id":"scaffolding","name":"Scaffolding","aliases":["Scaffolding","Scafs","Scaffs","Scaffold"],"world":{"x":-1200,"y":1200},"side":"both","notes":""},
-    {"id":"mid","name":"Mid","aliases":["Mid","T Mid","MidArea","MiddleArea"],"world":{"x":-1200,"y":400},"side":"both","notes":""},
-    {"id":"ct_spawn","name":"CT Spawn","aliases":["CTSpawn","CT Side","CT"],"world":{"x":0,"y":700},"side":"ct","notes":""},
-    {"id":"stairs","name":"Stairs","aliases":["Stairs","CT Stairs","CTStairs","A Stairs"],"world":{"x":0,"y":1000},"side":"ct","notes":""},
-    {"id":"b_main","name":"B Main","aliases":["BMain","B Ramp","BRamp","B Hall"],"world":{"x":-2500,"y":-200},"side":"t","notes":""},
-    {"id":"b_site","name":"B Site","aliases":["BombsiteB","BSite","B"],"world":{"x":-800,"y":-400},"side":"both","notes":""},
-    {"id":"b_ct","name":"B CT","aliases":["BCT","B Side CT"],"world":{"x":100,"y":-200},"side":"ct","notes":""},
-    {"id":"heaven","name":"Heaven","aliases":["Heaven","AWall","A Wall","A Ledge"],"world":{"x":-600,"y":600},"side":"ct","notes":""},
-    {"id":"connector","name":"Connector","aliases":["Connector","Short","Con"],"world":{"x":-600,"y":200},"side":"both","notes":""},
-    {"id":"b_short","name":"B Short","aliases":["BShort","B Short","Short B"],"world":{"x":-1400,"y":-200},"side":"both","notes":""}
+    {
+      "id": "t_spawn",
+      "name": "T Spawn",
+      "aliases": [
+        "TSpawn",
+        "T Side",
+        "Elevator"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "t",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "a_main",
+      "name": "A Main",
+      "aliases": [
+        "AMain",
+        "Ramp",
+        "ARamp",
+        "Main Ramp"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "t",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "a_site",
+      "name": "A Site",
+      "aliases": [
+        "BombsiteA",
+        "ASite",
+        "A"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "a_ct",
+      "name": "A CT",
+      "aliases": [
+        "ACT",
+        "A Side CT",
+        "A Ledge"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "ct",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "scaffolding",
+      "name": "Scaffolding",
+      "aliases": [
+        "Scaffolding",
+        "Scafs",
+        "Scaffs",
+        "Scaffold"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "mid",
+      "name": "Mid",
+      "aliases": [
+        "Mid",
+        "T Mid",
+        "MidArea",
+        "MiddleArea"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "ct_spawn",
+      "name": "CT Spawn",
+      "aliases": [
+        "CTSpawn",
+        "CT Side",
+        "CT"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "ct",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "stairs",
+      "name": "Stairs",
+      "aliases": [
+        "Stairs",
+        "CT Stairs",
+        "CTStairs",
+        "A Stairs"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "ct",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "b_main",
+      "name": "B Main",
+      "aliases": [
+        "BMain",
+        "B Ramp",
+        "BRamp",
+        "B Hall"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "t",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "b_site",
+      "name": "B Site",
+      "aliases": [
+        "BombsiteB",
+        "BSite",
+        "B"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "b_ct",
+      "name": "B CT",
+      "aliases": [
+        "BCT",
+        "B Side CT"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "ct",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "heaven",
+      "name": "Heaven",
+      "aliases": [
+        "Heaven",
+        "AWall",
+        "A Wall",
+        "A Ledge"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "ct",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "connector",
+      "name": "Connector",
+      "aliases": [
+        "Connector",
+        "Short",
+        "Con"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "b_short",
+      "name": "B Short",
+      "aliases": [
+        "BShort",
+        "B Short",
+        "Short B"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    }
   ]
 }

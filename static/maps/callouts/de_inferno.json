@@ -1,27 +1,319 @@
 {
   "map": "de_inferno",
-  "version": 1,
-  "source": "community_knowledge",
+  "version": 2,
+  "source": "community_knowledge_unverified",
   "callouts": [
-    {"id":"t_spawn","name":"T Spawn","aliases":["TSpawn","T Side"],"world":{"x":-1700,"y":2800},"side":"t","notes":""},
-    {"id":"top_banana","name":"Top Banana","aliases":["TopBanana","TopofBanana","BananaTop"],"world":{"x":-1300,"y":1800},"side":"t","notes":""},
-    {"id":"banana","name":"Banana","aliases":["Banana","BananaToBomb"],"world":{"x":-900,"y":1300},"side":"both","notes":""},
-    {"id":"b_site","name":"B Site","aliases":["BombsiteB","BSite","B"],"world":{"x":-300,"y":1100},"side":"both","notes":""},
-    {"id":"b_car","name":"B Car","aliases":["BCar","Car","BombCar"],"world":{"x":-600,"y":1400},"side":"both","notes":""},
-    {"id":"dark","name":"Dark","aliases":["Dark","BDark"],"world":{"x":-700,"y":900},"side":"ct","notes":""},
-    {"id":"b_ct","name":"B CT","aliases":["BCT","B CT"],"world":{"x":300,"y":1000},"side":"ct","notes":""},
-    {"id":"short_b","name":"Short","aliases":["Short","ShortToB","NewBox"],"world":{"x":-100,"y":1300},"side":"ct","notes":""},
-    {"id":"boiler","name":"Boiler","aliases":["Boiler","NewBox","BBoiler"],"world":{"x":-200,"y":1100},"side":"ct","notes":""},
-    {"id":"ct_spawn","name":"CT Spawn","aliases":["CTSpawn","CT Side","CT"],"world":{"x":1200,"y":900},"side":"ct","notes":""},
-    {"id":"second_mid","name":"Second Mid","aliases":["SecondMid","2ndMid","Mid2"],"world":{"x":500,"y":1600},"side":"both","notes":""},
-    {"id":"library","name":"Library","aliases":["Library","Lib"],"world":{"x":700,"y":2200},"side":"ct","notes":""},
-    {"id":"mid","name":"Mid","aliases":["Mid","MidArch"],"world":{"x":200,"y":2000},"side":"both","notes":""},
-    {"id":"pit","name":"Pit","aliases":["Pit","APit","A Pit"],"world":{"x":1500,"y":700},"side":"ct","notes":""},
-    {"id":"a_ramp","name":"A Ramp","aliases":["ARamp","Ramp","RampToA"],"world":{"x":700,"y":2800},"side":"both","notes":""},
-    {"id":"a_site","name":"A Site","aliases":["BombsiteA","ASite","A"],"world":{"x":1300,"y":2400},"side":"both","notes":""},
-    {"id":"a_short","name":"A Short","aliases":["AShort","Short"],"world":{"x":1200,"y":3000},"side":"both","notes":""},
-    {"id":"arch","name":"Arch","aliases":["Arch","TArch","T Arch"],"world":{"x":200,"y":3200},"side":"t","notes":""},
-    {"id":"apartments","name":"Apartments","aliases":["Apartments","Apps","Apts"],"world":{"x":-700,"y":3000},"side":"t","notes":""},
-    {"id":"balcony","name":"Balcony","aliases":["Balcony","Bal"],"world":{"x":-300,"y":3200},"side":"t","notes":""}
+    {
+      "id": "t_spawn",
+      "name": "T Spawn",
+      "aliases": [
+        "TSpawn",
+        "T Side"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "t",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "top_banana",
+      "name": "Top Banana",
+      "aliases": [
+        "TopBanana",
+        "TopofBanana",
+        "BananaTop"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "t",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "banana",
+      "name": "Banana",
+      "aliases": [
+        "Banana",
+        "BananaToBomb"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "b_site",
+      "name": "B Site",
+      "aliases": [
+        "BombsiteB",
+        "BSite",
+        "B"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "b_car",
+      "name": "B Car",
+      "aliases": [
+        "BCar",
+        "Car",
+        "BombCar"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "dark",
+      "name": "Dark",
+      "aliases": [
+        "Dark",
+        "BDark"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "ct",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "b_ct",
+      "name": "B CT",
+      "aliases": [
+        "BCT",
+        "B CT"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "ct",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "short_b",
+      "name": "Short",
+      "aliases": [
+        "Short",
+        "ShortToB",
+        "NewBox"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "ct",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "boiler",
+      "name": "Boiler",
+      "aliases": [
+        "Boiler",
+        "NewBox",
+        "BBoiler"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "ct",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "ct_spawn",
+      "name": "CT Spawn",
+      "aliases": [
+        "CTSpawn",
+        "CT Side",
+        "CT"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "ct",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "second_mid",
+      "name": "Second Mid",
+      "aliases": [
+        "SecondMid",
+        "2ndMid",
+        "Mid2"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "library",
+      "name": "Library",
+      "aliases": [
+        "Library",
+        "Lib"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "ct",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "mid",
+      "name": "Mid",
+      "aliases": [
+        "Mid",
+        "MidArch"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "pit",
+      "name": "Pit",
+      "aliases": [
+        "Pit",
+        "APit",
+        "A Pit"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "ct",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "a_ramp",
+      "name": "A Ramp",
+      "aliases": [
+        "ARamp",
+        "Ramp",
+        "RampToA"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "a_site",
+      "name": "A Site",
+      "aliases": [
+        "BombsiteA",
+        "ASite",
+        "A"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "a_short",
+      "name": "A Short",
+      "aliases": [
+        "AShort",
+        "Short"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "arch",
+      "name": "Arch",
+      "aliases": [
+        "Arch",
+        "TArch",
+        "T Arch"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "t",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "apartments",
+      "name": "Apartments",
+      "aliases": [
+        "Apartments",
+        "Apps",
+        "Apts"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "t",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "balcony",
+      "name": "Balcony",
+      "aliases": [
+        "Balcony",
+        "Bal"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "t",
+      "notes": "",
+      "confidence": "unverified"
+    }
   ]
 }

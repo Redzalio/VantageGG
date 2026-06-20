@@ -1,22 +1,248 @@
 {
   "map": "de_train",
-  "version": 1,
-  "source": "community_knowledge",
+  "version": 2,
+  "source": "community_knowledge_unverified",
   "callouts": [
-    {"id":"t_spawn","name":"T Spawn","aliases":["TSpawn","T Side"],"world":{"x":-2000,"y":1400},"side":"t","notes":""},
-    {"id":"t_con","name":"T Con","aliases":["TCon","T Connector"],"world":{"x":-1400,"y":1000},"side":"t","notes":""},
-    {"id":"ivy","name":"Ivy","aliases":["Ivy","T Ivy","TIvy"],"world":{"x":-1600,"y":800},"side":"both","notes":""},
-    {"id":"a_main","name":"A Main","aliases":["AMain","A Side","OutsideA"],"world":{"x":-1200,"y":1200},"side":"t","notes":""},
-    {"id":"a_site","name":"A Site","aliases":["BombsiteA","ASite","A"],"world":{"x":0,"y":1000},"side":"both","notes":""},
-    {"id":"a_upper","name":"A Upper","aliases":["AUpper","Upper A","Catwalk","Cat"],"world":{"x":0,"y":800},"side":"both","notes":""},
-    {"id":"a_lower","name":"A Lower","aliases":["ALower","Lower A","Tracks"],"world":{"x":0,"y":1200},"side":"both","notes":""},
-    {"id":"ct_con","name":"CT Con","aliases":["CTCon","Connector","CT Connector"],"world":{"x":400,"y":800},"side":"ct","notes":""},
-    {"id":"ct_spawn","name":"CT Spawn","aliases":["CTSpawn","CT","CT Side"],"world":{"x":800,"y":1000},"side":"ct","notes":""},
-    {"id":"b_main","name":"B Main","aliases":["BMain","B Side","OutsideB"],"world":{"x":-1200,"y":200},"side":"both","notes":""},
-    {"id":"b_site","name":"B Site","aliases":["BombsiteB","BSite","B"],"world":{"x":0,"y":200},"side":"both","notes":""},
-    {"id":"b_upper","name":"B Upper","aliases":["BUpper","Upper B","B Catwalk"],"world":{"x":0,"y":0},"side":"both","notes":""},
-    {"id":"b_lower","name":"B Lower","aliases":["BLower","Lower B","Hay","B Hay"],"world":{"x":0,"y":400},"side":"both","notes":""},
-    {"id":"popdog","name":"Popdog","aliases":["Popdog","Pop Dog","Inner","Popdog Tunnel"],"world":{"x":-600,"y":500},"side":"both","notes":""},
-    {"id":"ladder","name":"Ladder","aliases":["Ladder","Popdog Ladder","LadderRoom"],"world":{"x":-600,"y":700},"side":"both","notes":""}
+    {
+      "id": "t_spawn",
+      "name": "T Spawn",
+      "aliases": [
+        "TSpawn",
+        "T Side"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "t",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "t_con",
+      "name": "T Con",
+      "aliases": [
+        "TCon",
+        "T Connector"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "t",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "ivy",
+      "name": "Ivy",
+      "aliases": [
+        "Ivy",
+        "T Ivy",
+        "TIvy"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "a_main",
+      "name": "A Main",
+      "aliases": [
+        "AMain",
+        "A Side",
+        "OutsideA"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "t",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "a_site",
+      "name": "A Site",
+      "aliases": [
+        "BombsiteA",
+        "ASite",
+        "A"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "a_upper",
+      "name": "A Upper",
+      "aliases": [
+        "AUpper",
+        "Upper A",
+        "Catwalk",
+        "Cat"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "a_lower",
+      "name": "A Lower",
+      "aliases": [
+        "ALower",
+        "Lower A",
+        "Tracks"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "ct_con",
+      "name": "CT Con",
+      "aliases": [
+        "CTCon",
+        "Connector",
+        "CT Connector"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "ct",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "ct_spawn",
+      "name": "CT Spawn",
+      "aliases": [
+        "CTSpawn",
+        "CT",
+        "CT Side"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "ct",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "b_main",
+      "name": "B Main",
+      "aliases": [
+        "BMain",
+        "B Side",
+        "OutsideB"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "b_site",
+      "name": "B Site",
+      "aliases": [
+        "BombsiteB",
+        "BSite",
+        "B"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "b_upper",
+      "name": "B Upper",
+      "aliases": [
+        "BUpper",
+        "Upper B",
+        "B Catwalk"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "b_lower",
+      "name": "B Lower",
+      "aliases": [
+        "BLower",
+        "Lower B",
+        "Hay",
+        "B Hay"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "popdog",
+      "name": "Popdog",
+      "aliases": [
+        "Popdog",
+        "Pop Dog",
+        "Inner",
+        "Popdog Tunnel"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
+      "id": "ladder",
+      "name": "Ladder",
+      "aliases": [
+        "Ladder",
+        "Popdog Ladder",
+        "LadderRoom"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "both",
+      "notes": "",
+      "confidence": "unverified"
+    }
   ]
 }
