@@ -19,6 +19,22 @@
       "confidence": "unverified"
     },
     {
+      "id": "ct_spawn",
+      "name": "CT Spawn",
+      "aliases": [
+        "CTSpawn",
+        "CT Side",
+        "CT"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "ct",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
       "id": "top_banana",
       "name": "Top Banana",
       "aliases": [
@@ -30,7 +46,7 @@
         "x": null,
         "y": null
       },
-      "side": "t",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     },
@@ -92,7 +108,7 @@
         "x": null,
         "y": null
       },
-      "side": "ct",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     },
@@ -107,7 +123,7 @@
         "x": null,
         "y": null
       },
-      "side": "ct",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     },
@@ -123,7 +139,7 @@
         "x": null,
         "y": null
       },
-      "side": "ct",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     },
@@ -139,23 +155,7 @@
         "x": null,
         "y": null
       },
-      "side": "ct",
-      "notes": "",
-      "confidence": "unverified"
-    },
-    {
-      "id": "ct_spawn",
-      "name": "CT Spawn",
-      "aliases": [
-        "CTSpawn",
-        "CT Side",
-        "CT"
-      ],
-      "world": {
-        "x": null,
-        "y": null
-      },
-      "side": "ct",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     },
@@ -186,7 +186,7 @@
         "x": null,
         "y": null
       },
-      "side": "ct",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     },
@@ -217,7 +217,7 @@
         "x": null,
         "y": null
       },
-      "side": "ct",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     },
@@ -280,7 +280,7 @@
         "x": null,
         "y": null
       },
-      "side": "t",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     },
@@ -296,7 +296,7 @@
         "x": null,
         "y": null
       },
-      "side": "t",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     },
@@ -311,7 +311,7 @@
         "x": null,
         "y": null
       },
-      "side": "t",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     }

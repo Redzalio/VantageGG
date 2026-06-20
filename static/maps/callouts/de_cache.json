@@ -96,7 +96,7 @@
         "x": 411,
         "y": -735
       },
-      "side": "t"
+      "side": "both"
     },
     {
       "id": "b_halls",
@@ -110,7 +110,7 @@
         "x": 895,
         "y": -928
       },
-      "side": "t"
+      "side": "both"
     },
     {
       "id": "a_main",
@@ -137,7 +137,7 @@
         "x": -810,
         "y": 1115
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "checkers",
@@ -163,7 +163,7 @@
         "x": -194,
         "y": 836
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "ct_lane",
@@ -176,7 +176,7 @@
         "x": -905,
         "y": 117
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "tree_room",
@@ -189,7 +189,7 @@
         "x": -789,
         "y": -800
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "outside_a",
@@ -245,7 +245,7 @@
         "x": 785,
         "y": -1344
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "headshot",
@@ -258,7 +258,7 @@
         "x": -377,
         "y": -1183
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "squeaky",
@@ -298,7 +298,7 @@
         "x": -545,
         "y": -616
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "t_yard",
@@ -311,7 +311,7 @@
         "x": 2041,
         "y": 260
       },
-      "side": "t"
+      "side": "both"
     },
     {
       "id": "bus_stop",
@@ -324,7 +324,7 @@
         "x": -1277,
         "y": 270
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "a_halls",
@@ -337,7 +337,7 @@
         "x": 791,
         "y": 2067
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "a_stairs",
@@ -350,7 +350,7 @@
         "x": 759,
         "y": 737
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "outside_b",
@@ -364,7 +364,7 @@
         "x": 1931,
         "y": -637
       },
-      "side": "t"
+      "side": "both"
     },
     {
       "id": "quad",
@@ -377,7 +377,7 @@
         "x": -306,
         "y": 2180
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "useless",

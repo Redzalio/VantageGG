@@ -83,7 +83,7 @@
         "x": 751,
         "y": 771
       },
-      "side": "t"
+      "side": "both"
     },
     {
       "id": "outside_long",
@@ -97,7 +97,7 @@
         "x": 305,
         "y": -25
       },
-      "side": "t"
+      "side": "both"
     },
     {
       "id": "catwalk",
@@ -138,7 +138,7 @@
         "x": 875,
         "y": 2208
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "extended_a",
@@ -152,7 +152,7 @@
         "x": 416,
         "y": 2249
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "a_ramp",
@@ -259,7 +259,7 @@
         "x": -1580,
         "y": 340
       },
-      "side": "t"
+      "side": "both"
     },
     {
       "id": "b_doors",
@@ -272,7 +272,7 @@
         "x": -1103,
         "y": 2358
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "hole",
@@ -285,7 +285,7 @@
         "x": -1320,
         "y": 2666
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "pit",
@@ -299,7 +299,7 @@
         "x": 1424,
         "y": 504
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "t_ramp",
@@ -312,7 +312,7 @@
         "x": -1888,
         "y": -331
       },
-      "side": "t"
+      "side": "both"
     }
   ]
 }

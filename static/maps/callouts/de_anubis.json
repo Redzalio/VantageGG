@@ -96,7 +96,7 @@
         "x": -479,
         "y": 2155
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "outside_long",
@@ -110,7 +110,7 @@
         "x": -1574,
         "y": -1
       },
-      "side": "t"
+      "side": "both"
     },
     {
       "id": "main",
@@ -177,7 +177,7 @@
         "x": -967,
         "y": -678
       },
-      "side": "t"
+      "side": "both"
     },
     {
       "id": "street",
@@ -191,7 +191,7 @@
         "x": 723,
         "y": -538
       },
-      "side": "t"
+      "side": "both"
     },
     {
       "id": "palace_interior",
@@ -233,7 +233,7 @@
         "x": 809,
         "y": -134
       },
-      "side": "t"
+      "side": "both"
     },
     {
       "id": "back_of_b",
@@ -247,7 +247,7 @@
         "x": -685,
         "y": 697
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "alley",
@@ -260,7 +260,7 @@
         "x": -1192,
         "y": 1225
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "fountain",
@@ -273,7 +273,7 @@
         "x": 1649,
         "y": 1925
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "heaven",
@@ -286,7 +286,7 @@
         "x": 867,
         "y": 2053
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "t_side_upper",
@@ -300,7 +300,7 @@
         "x": 1362,
         "y": 304
       },
-      "side": "t"
+      "side": "both"
     },
     {
       "id": "lower_tunnel",
@@ -314,7 +314,7 @@
         "x": -890,
         "y": 1609
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "bricks",
@@ -327,7 +327,7 @@
         "x": -913,
         "y": 1107
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "snipers_nest",
@@ -340,7 +340,7 @@
         "x": -1149,
         "y": 1801
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "tunnel",
@@ -353,7 +353,7 @@
         "x": 346,
         "y": 2264
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "tunnel_stairs",
@@ -366,7 +366,7 @@
         "x": 566,
         "y": 1944
       },
-      "side": "ct"
+      "side": "both"
     },
     {
       "id": "water",
@@ -379,7 +379,7 @@
         "x": -93,
         "y": 2969
       },
-      "side": "ct"
+      "side": "both"
     }
   ]
 }

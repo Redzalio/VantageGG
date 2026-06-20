@@ -20,6 +20,22 @@
       "confidence": "unverified"
     },
     {
+      "id": "ct_spawn",
+      "name": "CT Spawn",
+      "aliases": [
+        "CTSpawn",
+        "CT",
+        "CT Side"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "ct",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
       "id": "ramp",
       "name": "Ramp",
       "aliases": [
@@ -46,7 +62,7 @@
         "x": null,
         "y": null
       },
-      "side": "t",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     },
@@ -98,23 +114,7 @@
         "x": null,
         "y": null
       },
-      "side": "ct",
-      "notes": "",
-      "confidence": "unverified"
-    },
-    {
-      "id": "ct_spawn",
-      "name": "CT Spawn",
-      "aliases": [
-        "CTSpawn",
-        "CT",
-        "CT Side"
-      ],
-      "world": {
-        "x": null,
-        "y": null
-      },
-      "side": "ct",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     },
@@ -146,7 +146,7 @@
         "x": null,
         "y": null
       },
-      "side": "t",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     },
@@ -161,7 +161,7 @@
         "x": null,
         "y": null
       },
-      "side": "t",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     },
@@ -224,7 +224,7 @@
         "x": null,
         "y": null
       },
-      "side": "ct",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     },
@@ -240,7 +240,7 @@
         "x": null,
         "y": null
       },
-      "side": "t",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     }

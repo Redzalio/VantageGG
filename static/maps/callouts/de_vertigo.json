@@ -20,6 +20,22 @@
       "confidence": "unverified"
     },
     {
+      "id": "ct_spawn",
+      "name": "CT Spawn",
+      "aliases": [
+        "CTSpawn",
+        "CT Side",
+        "CT"
+      ],
+      "world": {
+        "x": null,
+        "y": null
+      },
+      "side": "ct",
+      "notes": "",
+      "confidence": "unverified"
+    },
+    {
       "id": "a_main",
       "name": "A Main",
       "aliases": [
@@ -32,7 +48,7 @@
         "x": null,
         "y": null
       },
-      "side": "t",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     },
@@ -64,7 +80,7 @@
         "x": null,
         "y": null
       },
-      "side": "ct",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     },
@@ -103,22 +119,6 @@
       "confidence": "unverified"
     },
     {
-      "id": "ct_spawn",
-      "name": "CT Spawn",
-      "aliases": [
-        "CTSpawn",
-        "CT Side",
-        "CT"
-      ],
-      "world": {
-        "x": null,
-        "y": null
-      },
-      "side": "ct",
-      "notes": "",
-      "confidence": "unverified"
-    },
-    {
       "id": "stairs",
       "name": "Stairs",
       "aliases": [
@@ -131,7 +131,7 @@
         "x": null,
         "y": null
       },
-      "side": "ct",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     },
@@ -148,7 +148,7 @@
         "x": null,
         "y": null
       },
-      "side": "t",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     },
@@ -179,7 +179,7 @@
         "x": null,
         "y": null
       },
-      "side": "ct",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     },
@@ -196,7 +196,7 @@
         "x": null,
         "y": null
       },
-      "side": "ct",
+      "side": "both",
       "notes": "",
       "confidence": "unverified"
     },
