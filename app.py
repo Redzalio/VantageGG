@@ -52,6 +52,8 @@ import coaching_summary                                 # heuristic NL coaching 
 import compare                                          # player-vs-player comparison (presentation over trends)
 import export_report                                    # rich match-report export: text / JSON / printable HTML
 import analytics_migrations                             # in-place, .dem-free upgrade of stale cached analytics
+import sidestats                                        # own/team CT-T round winrate by map (from cached analytics)
+import benchmarks                                       # source-agnostic skill-bucket benchmark layer (no fake data)
 from schema import ANALYTICS_VERSION, SCHEMA_VERSION   # dep-free; safe at import time
 
 
@@ -1655,6 +1657,102 @@ def api_tendencies(steamid):
         ok = db.visible_predicate(sc)
         matches = [m for m in matches if ok(m.get("sha"))]
     return _nostore(tendencies.cross_tendencies(matches, steamid))
+
+
+@app.route("/api/sidestats")
+def api_sidestats():
+    """Own/team CT & T round-winrate per map across the caller's visible matches (map-pool / veto view).
+    ?player=<steamid> scopes to that player's team; omit for the started-CT team. Pro analytics."""
+    mode, sc = _scope_or_block()
+    if mode == "blocked":
+        return _nostore({"error": "login required"}), 401
+    gate = require_feature("advancedAnalytics")
+    if gate:
+        return gate
+    steamid = request.args.get("player") or None
+    matches = goals._matches(CACHE)
+    if sc is not None:
+        ok = db.visible_predicate(sc)
+        matches = [m for m in matches if ok(m.get("sha"))]
+    pairs = [(m["analytics"], m.get("map")) for m in matches if isinstance(m.get("analytics"), dict)]
+    return _nostore({"maps": sidestats.aggregate_side_winrates(pairs, steamid=steamid)})
+
+
+@app.route("/api/benchmarks/compare")
+def api_benchmarks_compare():
+    """Compare a player's cross-match averages against a sourced skill-bucket benchmark dataset.
+    Returns honest 'unavailable' (never a guessed number) when no sourced dataset covers a metric.
+    ?player=<steamid>&type=premier_rating|faceit_level&bucket=<label> (or &rating= / &elo= to derive)."""
+    mode, sc = _scope_or_block()
+    if mode == "blocked":
+        return _nostore({"error": "login required"}), 401
+    gate = require_feature("advancedAnalytics")
+    if gate:
+        return gate
+    steamid = request.args.get("player") or None
+    btype = request.args.get("type") or "premier_rating"
+    bucket = request.args.get("bucket") or None
+    def _int(v):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+    if not bucket:                                       # derive the bucket from a raw rating/elo if given
+        if btype == "faceit_level" and request.args.get("elo"):
+            lvl = benchmarks.faceit_level(_int(request.args.get("elo")))
+            bucket = str(lvl) if lvl else None
+        elif request.args.get("rating"):
+            bucket = benchmarks.premier_bucket(_int(request.args.get("rating")))
+    stats = {}
+    if steamid:
+        tr = db.player_trends(steamid, scope=sc) or {}
+        stats = tr.get("averages") or {}
+    region = request.args.get("region") or "all"
+    map_filter = request.args.get("map") or "all"
+    if not bucket:
+        return _nostore({"available": False, "reason": "no bucket selected", "metrics": []})
+    return _nostore(benchmarks.compare(stats, btype, bucket, region=region, map_filter=map_filter))
+
+
+@app.route("/api/admin/benchmarks", methods=["GET", "POST"])
+def api_admin_benchmarks():
+    """Admin: list loaded benchmark datasets, or import a sourced one. Import accepts the raw rows from a
+    sourced provider (e.g. a Leetify public-data-library response) + provenance; values are normalized,
+    attributed, and stored. No fake data: unsupported metrics are simply never emitted."""
+    u = _admin_or_none()
+    if u is None:
+        return _nostore({"error": "admin only"}), 403
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+        rows = body.get("rows")
+        if not isinstance(rows, list) or not rows:
+            return _nostore({"error": "need a non-empty 'rows' array from a sourced dataset"}), 400
+        try:
+            records = benchmarks.parse_leetify_pdl(
+                rows, kind=body.get("kind", "performance-metric-tool"),
+                source_url=body.get("source_url"), source_date=body.get("source_date"),
+                source_name=body.get("source_name", "Leetify"),
+                aggregate_premier=bool(body.get("aggregate_premier", True)))
+            if not records:
+                return _nostore({"error": "no usable benchmark rows found in that import"}), 400
+            fname = (body.get("source_name", "leetify") + "_" + (body.get("source_date") or "import")
+                     ).lower().replace(" ", "_").replace("/", "-") + ".json"
+            path = benchmarks.save_datasets(records, fname)
+            db.log_admin_action(u.get("id"), "benchmarks_import", "benchmark",
+                                os.path.basename(path), {"records": len(records)})
+            return _nostore({"ok": True, "records": len(records), "file": os.path.basename(path)})
+        except Exception as e:
+            return _nostore({"error": f"import failed: {e}"}), 400
+    # GET: a compact provenance summary of what's loaded (for the admin status panel)
+    ds = benchmarks.load_datasets()
+    summary = {}
+    for r in ds:
+        k = (r.get("source_name"), r.get("source_date"), r.get("bucket_type"))
+        summary.setdefault(str(k), {"source_name": r.get("source_name"), "source_date": r.get("source_date"),
+                                    "source_url": r.get("source_url"), "bucket_type": r.get("bucket_type"),
+                                    "buckets": 0})
+        summary[str(k)]["buckets"] += 1
+    return _nostore({"datasets": list(summary.values()), "total_records": len(ds)})
 
 
 @app.route("/api/playbook", methods=["GET"])

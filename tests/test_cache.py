@@ -107,7 +107,10 @@ def test_sample_regenerates_when_missing(tmp_path, monkeypatch):
 
 
 def test_sample_drops_stale_analytics(tmp_path, monkeypatch):
+    # truly-stale analytics (no in-place migration path) is dropped so the UI shows the honest empty
+    # state instead of wrong numbers. Force "unmigratable" by clearing the migration registry.
     monkeypatch.setattr(app, "CACHE", str(tmp_path))
+    monkeypatch.setattr(app.analytics_migrations, "MIGRATIONS", {})
     p = os.path.join(str(tmp_path), "sample.json")
     app.atomic_write_json(p, {"version": SCHEMA_VERSION, "frames": [], "map": "de_x",
                               "rounds": [], "players": [],
@@ -115,6 +118,23 @@ def test_sample_drops_stale_analytics(tmp_path, monkeypatch):
     r = app.app.test_client().get("/api/sample", headers={"Accept-Encoding": "identity"})
     data = json.loads(r.data)
     assert data["analytics"] is None and app.replay_valid(data)
+
+
+def test_sample_migrates_stale_analytics(tmp_path, monkeypatch):
+    # stale-BUT-migratable analytics is upgraded in place (.dem-free) instead of dropped, so old demos
+    # keep coaching data + pick up new derivable fields (here: econ_verdict back-fill on round_cards).
+    monkeypatch.setattr(app, "CACHE", str(tmp_path))
+    p = os.path.join(str(tmp_path), "sample.json")
+    app.atomic_write_json(p, {"version": SCHEMA_VERSION, "frames": [], "map": "de_x",
+                              "rounds": [], "players": [],
+                              "analytics": {"version": ANALYTICS_VERSION - 1,
+                                            "round_cards": [{"round": 1, "winner": "CT",
+                                                             "buy_ct": "full", "buy_t": "eco"}]}})
+    r = app.app.test_client().get("/api/sample", headers={"Accept-Encoding": "identity"})
+    data = json.loads(r.data)
+    assert data["analytics"] is not None
+    assert data["analytics"]["version"] == ANALYTICS_VERSION              # upgraded, not dropped
+    assert data["analytics"]["round_cards"][0]["econ_verdict"] == "eco_loss"
 
 
 def test_sample_serves_valid_unchanged(tmp_path, monkeypatch):

@@ -381,8 +381,8 @@ const App = {
     this._initPricingToggle();
     this._updateProPreviewBanner();
   },
-  // billing-period toggle on the pricing card. Presentational only -- billing isn't live yet, so this
-  // just shows the per-month price + how it's billed; the CTA stays the honest "early access" message.
+  // billing-period toggle on the pricing card. Presentational: shows the per-month price + how it's
+  // billed; the CTA opens real Stripe Checkout when billing is enabled, else an honest support note.
   // Live plans, keyed by period -- from the server (me.pricing, editable in the admin panel), or the
   // built-in fallback. One source for the landing card, the upgrade modal, and the upsell.
   _plans() {
@@ -2935,6 +2935,28 @@ const App = {
 
   // --- multi-demo trends + team config (cross-match "am I getting better?") -
   // Player-vs-player comparison (Pro). Renders a side-by-side metric table from /api/compare.
+  // CT/T round win rate by map across visible matches (map-pool / veto focus). Own data, scope-aware.
+  async renderSideStats(steamid) {
+    const out = $("trSides"); if (!out) return;
+    out.innerHTML = `<div class="empty">Loading…</div>`;
+    const q = steamid ? ("?player=" + encodeURIComponent(steamid)) : "";
+    const r = await fetch("api/sidestats" + q).then(r => r.ok ? r.json() : null).catch(() => null);
+    const maps = (r && r.maps) || {};
+    const keys = Object.keys(maps).sort();
+    if (!keys.length) { out.innerHTML = `<div class="empty">Not enough side data yet — review a few more matches.</div>`; return; }
+    const cls = wr => wr >= 55 ? "ss-good" : wr <= 45 ? "ss-bad" : "ss-neu";
+    const rows = keys.map(m => {
+      const d = maps[m];
+      const pretty = this._prettyMap ? this._prettyMap(m) : m;
+      const ss = d.small_sample ? ` <span class="ss-flag" title="small sample — treat as a hint">small</span>` : "";
+      return `<tr><td class="ss-map">${esc(pretty)}${ss}</td>
+        <td class="${cls(d.ct_wr)}">${d.ct_wr}%</td><td class="${cls(d.t_wr)}">${d.t_wr}%</td>
+        <td class="ss-g">${d.games}</td></tr>`;
+    }).join("");
+    out.innerHTML = `<table class="ss-table"><thead><tr><th>Map</th>
+      <th title="CT-side round win %">CT</th><th title="T-side round win %">T</th><th>Games</th></tr></thead>
+      <tbody>${rows}</tbody></table>`;
+  },
   async renderCompare(a, b) {
     const out = $("trCompareOut"); if (!out) return;
     if (!a || !b) { out.innerHTML = ""; return; }
@@ -2974,6 +2996,7 @@ const App = {
     // player change re-renders trend + tendencies; map change only filters the trend series
     sel.onchange = () => {
       this.renderTrend(sel.value, $("trMap").value); this.renderTendencies(sel.value);
+      this.renderSideStats(sel.value);
       if (cmp && cmp.value) this.renderCompare(sel.value, cmp.value); else if ($("trCompareOut")) $("trCompareOut").innerHTML = "";
     };
     $("trMap").onchange = () => this.renderTrend(sel.value, $("trMap").value);
@@ -2983,6 +3006,7 @@ const App = {
     const def = want || prefer;                          // default the trend to YOU (or your top teammate)
     if (def) { sel.value = def; this.renderTrend(def, "all"); this.renderTendencies(def); }
     else { $("trBody").innerHTML = `<div class="empty">Upload a few demos, then come back to see your trend.</div>`; $("trTend").innerHTML = ""; }
+    this.renderSideStats(def || null);                   // CT/T by map (own data, scope-aware)
     $("trMatchCount").textContent = matches.length ? `${matches.length}` : "";
     $("trMatches").innerHTML = matches.length
       ? matches.map(m => `<div class="tr-mrow"><b>${esc(m.map || "?")}</b> <span class="round">${esc((m.created_at || "").slice(0, 10))} | ${m.rounds}r${m.score ? " | " + esc(m.score) : ""}</span></div>`).join("")

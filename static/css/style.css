@@ -1232,6 +1232,15 @@ textarea.lf-in{height:46px;resize:vertical;font-family:inherit}
 .cmp-table td.cmp-k{text-align:left;color:var(--mut)}
 .cmp-table td.cmp-win{color:var(--good,#5fbf5f);font-weight:700}
 .cmp-sum{font-size:12px;color:var(--mut);margin-top:8px;line-height:1.6}
+/* CT/T win rate by map */
+.ss-table{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+.ss-table th{text-align:right;color:var(--mut);font-weight:600;padding:4px 8px;border-bottom:1px solid var(--line)}
+.ss-table th:first-child{text-align:left}
+.ss-table td{padding:4px 8px;text-align:right;border-bottom:1px solid #161c25}
+.ss-table td.ss-map{text-align:left;text-transform:capitalize}
+.ss-good{color:var(--good,#5fbf5f);font-weight:700} .ss-bad{color:var(--bad,#e25555);font-weight:700} .ss-neu{color:var(--txt)}
+.ss-g{color:var(--mut)}
+.ss-flag{font-size:9px;color:var(--mut);border:1px solid var(--line);border-radius:5px;padding:0 4px;font-weight:700}
 .tr-row{display:grid;grid-template-columns:1.6fr .8fr .8fr .8fr .8fr .8fr;gap:6px;font-size:12px;
   padding:4px 4px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
 .tr-row.tr-head{color:var(--mut);font-weight:600;border-top:0}
