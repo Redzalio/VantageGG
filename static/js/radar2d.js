@@ -291,7 +291,7 @@ export class Radar2D {
   }
 
   _r(scaleUnits) { return scaleUnits / this.map.scale * this.zoom; }
-  _dotR() { return clamp(6 * Math.pow(this.zoom / this.fitZoom, 0.5), 4.5, 18) * this.dpr * this.dotSize; }
+  _dotR() { return clamp(7 * Math.pow(this.zoom / this.fitZoom, 0.5), 5.5, 20) * this.dpr * this.dotSize; }
 
   _drawPlayer(ctx, p, followed) {
     const [sx, sy] = this.worldToScreen(p.x, p.y);

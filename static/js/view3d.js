@@ -948,8 +948,8 @@ export class View3D {
     const c = document.createElement("canvas"); c.width = 256; c.height = 128;
     const tex = new THREE.CanvasTexture(c);
     const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
-    spr.scale.set(4.4, 2.2, 1);                 // ~30% smaller than before so it doesn't dwarf the soldier model
-    spr.position.y = PLAYER_H * S + 1.7;        // float just above the head (lowered to match the smaller sprite)
+    spr.scale.set(2.0, 1.0, 1);
+    spr.position.y = PLAYER_H * S + 0.6;        // close above the head
     spr.renderOrder = 31;
     return { sprite: spr, canvas: c, ctx: c.getContext("2d"), tex, last: "" };
   }
@@ -975,21 +975,24 @@ export class View3D {
     const ctx = lbl.ctx, W = 256;
     ctx.clearRect(0, 0, W, 128);
     if (flashFrac > 0) this._drawCrossedEye(ctx, W / 2, 15, flashFrac);   // above the healthbar/name
-    ctx.fillStyle = "rgba(8,11,15,0.72)"; ctx.fillRect(6, 32, W - 12, 90);
-    const nm = name.length > 16 ? name.slice(0, 15) + "..." : name;   // no jersey number here (it lives on the 2D dot)
+    const nm = name.length > 16 ? name.slice(0, 15) + "..." : name;
     ctx.font = "bold 26px Inter, system-ui, sans-serif";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.shadowColor = "rgba(0,0,0,0.95)"; ctx.shadowBlur = 5;
     ctx.fillStyle = nameHex; ctx.fillText(nm, W / 2, 52);
+    ctx.shadowBlur = 0;
     const bx = 24, by = 70, bw = W - 48, bh = 14;
-    ctx.fillStyle = "#222a33"; ctx.fillRect(bx, by, bw, bh);
+    ctx.fillStyle = "rgba(8,11,15,0.55)"; ctx.fillRect(bx, by, bw, bh);
     const frac = Math.max(0, Math.min(1, hp / 100));
     ctx.fillStyle = hp > 40 ? "#5fbf5f" : "#e25555"; ctx.fillRect(bx, by, bw * frac, bh);
+    ctx.shadowColor = "rgba(0,0,0,0.9)"; ctx.shadowBlur = 3;
     ctx.fillStyle = "#eef2f6"; ctx.font = "bold 15px Inter, system-ui, sans-serif";
     ctx.fillText(hp + " HP", W / 2, by + bh / 2 + 1);
-    if (gun) {                                   // equipped weapon, under the healthbar (3D only; model gun is fixed)
+    if (gun) {
       ctx.fillStyle = "#cfd6de"; ctx.font = "600 18px Inter, system-ui, sans-serif";
       ctx.fillText(gun.replace(/_/g, " ").toUpperCase(), W / 2, 108);
     }
+    ctx.shadowBlur = 0;
     lbl.tex.needsUpdate = true;
   }
 
@@ -1203,7 +1206,7 @@ export class View3D {
       // fixed scale dwarfs the model up close and shrinks to nothing at range. Scale ~linearly with
       // camera distance (clamped), and fold in the dot-size slider so it drives 3D too (#11/#12).
       const camDist = this.camera.position.distanceTo(pl.group.position);
-      const lscl = (this.labelScale || 1) * Math.min(8.5, Math.max(3.2, camDist * 0.085));
+      const lscl = (this.labelScale || 1) * Math.min(5.0, Math.max(1.8, camDist * 0.052));
       pl.label.sprite.scale.set(lscl, lscl * 0.5, 1);
       // POV cone flat on the floor, team-coloured, yawed to facing (toggle: this.showCone)
       pl.cone.visible = this.showCone;
