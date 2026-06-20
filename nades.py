@@ -71,6 +71,42 @@ def _nid(n):
     return "n_" + hashlib.sha1(base.encode("utf-8")).hexdigest()[:10]
 
 
+# ---- callout matching (utility-by-location) ---------------------------------
+def _norm_callout(s):
+    import re
+    return re.sub(r"[^a-z0-9]", "", str(s or "").lower())
+
+
+def nades_for_callout(nade_list, callout, threshold=400):
+    """Saved nades relevant to a callout, by NAME or GEOMETRY. `callout` is an effective-callout dict
+    (id, name, aliases, world, boundary). A nade matches if its target/throw callout text resolves to
+    this callout, OR its land_pos is inside the callout's boundary / within `threshold` of its center.
+    Returns [(nade, why)] with why in {'name','inside','near'} (name > inside > near priority)."""
+    import math
+    import callouts as _co
+    toks = {_norm_callout(callout.get("id")), _norm_callout(callout.get("name"))}
+    toks |= {_norm_callout(a) for a in (callout.get("aliases") or [])}
+    toks.discard("")
+    w = callout.get("world") or {}
+    cx, cy = w.get("x"), w.get("y")
+    bnd = callout.get("boundary")
+    out = []
+    for n in nade_list:
+        why = None
+        if _norm_callout(n.get("target_callout")) in toks or _norm_callout(n.get("throw_callout")) in toks:
+            why = "name"
+        else:
+            lp = n.get("land_pos")
+            if lp and len(lp) >= 2 and lp[0] is not None and lp[1] is not None:
+                if bnd and _co.point_in_polygon(lp[0], lp[1], bnd):
+                    why = "inside"
+                elif cx is not None and cy is not None and math.hypot(lp[0] - cx, lp[1] - cy) <= threshold:
+                    why = "near"
+        if why:
+            out.append((n, why))
+    return out
+
+
 def normalize(raw):
     """Map a raw / csnades-style dict to our schema (tolerant of many field spellings)."""
     g = raw.get

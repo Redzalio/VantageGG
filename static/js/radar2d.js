@@ -31,6 +31,7 @@ export class Radar2D {
     this.dpr = Math.min(2, window.devicePixelRatio || 1);
     this.showCallouts = false;
     this._calloutData = null;   // [{id,name,world:{x,y},...}] from /api/callouts/<map>
+    this._focusCalloutId = null; this._focusCalloutT = 0;   // transient focus-ring highlight
   }
 
   setMap(map, img, imgLower) {
@@ -203,13 +204,17 @@ export class Radar2D {
     ctx.globalAlpha = 1;
   }
 
-  // Callout overlay: named dots for each callout in _calloutData.
+  // Callout overlay: translucent boundary polygons + named dots for each callout in _calloutData.
   // Toggled by the "Callouts" checkbox in settings. Data loaded from /api/callouts/<map>.
   _drawCallouts(ctx) {
     if (!this._calloutData) return;
     ctx.save();
+    // boundaries first so the dots/labels stay readable on top
+    for (const c of this._calloutData) this._drawCalloutBoundary(ctx, c);
     ctx.textAlign = "center";
     ctx.textBaseline = "alphabetic";
+    // transient focus highlight (set by focusCallout) -- brighter ring for ~1.5s
+    const fade = this._focusCalloutT ? Math.max(0, 1 - (performance.now() - this._focusCalloutT) / 1500) : 0;
     for (const c of this._calloutData) {
       const w = c.world;
       if (!w || w.x == null || w.y == null) continue;
@@ -217,6 +222,14 @@ export class Radar2D {
       // skip if outside canvas
       if (sx < -20 || sx > this.W + 20 || sy < -20 || sy > this.H + 20) continue;
       const r = 3 * this.dpr;
+      // focus ring (pulses out + fades) on the just-focused callout (match focusCallout's id-or-name key)
+      if (fade > 0 && (c.id != null ? c.id : c.name) === this._focusCalloutId) {
+        ctx.beginPath();
+        ctx.arc(sx, sy, r + (4 + (1 - fade) * 10) * this.dpr, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(255,240,180,${(0.9 * fade).toFixed(3)})`;
+        ctx.lineWidth = 2 * this.dpr;
+        ctx.stroke();
+      }
       // dot
       ctx.beginPath();
       ctx.arc(sx, sy, r, 0, Math.PI * 2);
@@ -235,6 +248,78 @@ export class Radar2D {
       ctx.shadowBlur = 0;
     }
     ctx.restore();
+  }
+
+  // One callout's boundary polygon: subtle translucent fill + stroke. Skips <3-point polys.
+  _drawCalloutBoundary(ctx, c) {
+    const b = c.boundary;
+    if (!b || b.length < 3) return;
+    ctx.beginPath();
+    for (let i = 0; i < b.length; i++) {
+      const [sx, sy] = this.worldToScreen(b[i][0], b[i][1]);
+      if (i) ctx.lineTo(sx, sy); else ctx.moveTo(sx, sy);
+    }
+    ctx.closePath();
+    ctx.fillStyle = "rgba(255,240,180,0.08)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,240,180,0.5)";
+    ctx.lineWidth = this.dpr;
+    ctx.stroke();
+  }
+
+  // Center + zoom the camera on a callout by id, name, or alias (case/space/punct-insensitive).
+  // Returns true if found (and it has world coords), false otherwise. Camera state is read by the
+  // app's RAF render loop. Aliases matter because callers pass raw engine zone tokens (e.g. "BombsiteA").
+  focusCallout(idOrName) {
+    if (!this._calloutData || !this.map || idOrName == null) return false;
+    const norm = s => String(s == null ? "" : s).toLowerCase().replace(/[^a-z0-9]/g, "");
+    const key = norm(idOrName);
+    if (!key) return false;
+    const c = this._calloutData.find(c =>
+      norm(c.id) === key || norm(c.name) === key ||
+      (c.aliases || []).some(a => norm(a) === key));
+    if (!c || !c.world || c.world.x == null || c.world.y == null) return false;
+    this.followIdx = -1; this._camTarget = null;              // break any follow, like pan()
+    this.camX = this.rxFromWorld(c.world.x);
+    this.camY = this.ryFromWorld(c.world.y);
+    this.zoom = clamp(this.fitZoom * 2.2, this.fitZoom * 0.4, this.fitZoom * 12);
+    this._focusCalloutId = c.id != null ? c.id : c.name;     // transient highlight (~1.5s)
+    this._focusCalloutT = performance.now();
+    return true;
+  }
+
+  // Callout under a screen point (CSS px): nearest dot within ~18px, else first boundary polygon
+  // that contains the point. Returns the callout object or null. (Hit-test for click-to-focus.)
+  pickCallout(sxCss, syCss) {
+    if (!this.map || !this._calloutData || !this._calloutData.length) return null;
+    const px = sxCss * this.dpr, py = syCss * this.dpr;
+    const thresh = 18 * this.dpr;
+    let best = null, bestD = thresh;
+    for (const c of this._calloutData) {                      // nearest dot first
+      const w = c.world;
+      if (!w || w.x == null || w.y == null) continue;
+      const [dx, dy] = this.worldToScreen(w.x, w.y);
+      const d = Math.hypot(px - dx, py - dy);
+      if (d < bestD) { bestD = d; best = c; }
+    }
+    if (best) return best;
+    for (const c of this._calloutData) {                      // else inside a boundary polygon
+      if (this._pointInBoundary(px, py, c.boundary)) return c;
+    }
+    return null;
+  }
+
+  // Even-odd ray-cast point-in-polygon; pts are world coords, projected to screen for the test.
+  _pointInBoundary(px, py, b) {
+    if (!b || b.length < 3) return false;
+    let inside = false;
+    let [jx, jy] = this.worldToScreen(b[b.length - 1][0], b[b.length - 1][1]);
+    for (let i = 0; i < b.length; i++) {
+      const [ix, iy] = this.worldToScreen(b[i][0], b[i][1]);
+      if (((iy > py) !== (jy > py)) && (px < (jx - ix) * (py - iy) / (jy - iy) + ix)) inside = !inside;
+      jx = ix; jy = iy;
+    }
+    return inside;
   }
 
   _drawSearchNade(ctx, g, hot) {

@@ -27,6 +27,8 @@ import urllib.parse
 
 from flask import Flask, Response, jsonify, redirect, request, send_from_directory, session
 
+import callouts                                         # callout seed loader + geometry (stdlib only)
+import callout_store                                    # effective callouts: seed+overrides+learned (stdlib only)
 import goals                                            # persistent match-aware Practice Goals (stdlib only)
 import library                                          # saved-demo library (stdlib only)
 import mapstatus                                        # 3D-asset status (stdlib only)
@@ -2107,18 +2109,86 @@ def api_admin_retry_job(job_id):
 # ---- callouts / location knowledge ------------------------------------------
 @app.route("/api/callouts/<map_name>")
 def api_callouts_map(map_name):
-    """Serve callout data for a map (used by the 2D radar overlay)."""
-    from callouts import load_callouts
-    callouts = load_callouts(map_name)
-    return jsonify({"map": map_name, "callouts": callouts})
+    """Effective callouts for a map (JSON seed + admin overrides + demo-learned fill). Powers the 2D
+    overlay, utility-by-callout matching, analytics handoffs, and location labeling."""
+    return _nostore({"map": map_name, "callouts": callout_store.effective_callouts(map_name)})
 
 
 @app.route("/api/callouts")
 def api_callouts_list():
-    """List maps that have callout data (used by admin panel)."""
-    from callouts import available_maps, callout_info
-    maps = available_maps()
-    return jsonify({"maps": maps, "info": [callout_info(m) for m in maps]})
+    """Per-map callout coverage (count / world-coords / boundaries / admin-managed / learned samples)."""
+    return _nostore({"coverage": callout_store.coverage()})
+
+
+@app.route("/api/label/<map_name>")
+def api_label(map_name):
+    """Label a world position with the nearest/inside callout. Query: ?x=..&y=..[&t=threshold]."""
+    try:
+        x = float(request.args.get("x")); y = float(request.args.get("y"))
+    except (TypeError, ValueError):
+        return _nostore({"error": "x and y query params required"}), 400
+    t = request.args.get("t", type=float) or 500
+    return _nostore(callout_store.label(map_name, x, y, threshold=t))
+
+
+# ---- admin: callout editor --------------------------------------------------
+@app.route("/api/admin/callouts/<map_name>")
+def api_admin_callouts_get(map_name):
+    """Editor payload: effective callouts + learned suggestions + unmapped learned zones + calibration."""
+    if not _admin_or_none():
+        return _nostore({"error": "admin only"}), 403
+    return _nostore(callout_store.editor_data(map_name))
+
+
+@app.route("/api/admin/callouts/<map_name>", methods=["POST"])
+def api_admin_callouts_save(map_name):
+    """Save the editor's full callout list as this map's override set (admin owns the map thereafter)."""
+    admin = _admin_or_none()
+    if not admin:
+        return _nostore({"error": "admin only"}), 403
+    body = request.get_json(silent=True) or {}
+    cos = body.get("callouts")
+    if not isinstance(cos, list):
+        return _nostore({"error": "callouts (list) required"}), 400
+    n = callout_store.save_map(map_name, cos, admin_uid=admin.get("id"))
+    db.log_admin_action(admin.get("id"), "save_callouts", "map", map_name, {"count": n})
+    return _nostore({"ok": True, "saved": n})
+
+
+@app.route("/api/admin/callouts/<map_name>/revert", methods=["POST"])
+def api_admin_callouts_revert(map_name):
+    """Drop admin overrides -> revert this map to its JSON seed (+ learned fill)."""
+    admin = _admin_or_none()
+    if not admin:
+        return _nostore({"error": "admin only"}), 403
+    n = callout_store.revert_map(map_name)
+    db.log_admin_action(admin.get("id"), "revert_callouts", "map", map_name, {"removed": n})
+    return _nostore({"ok": True, "removed": n})
+
+
+@app.route("/api/admin/callouts/<map_name>/ingest", methods=["POST"])
+def api_admin_callouts_ingest(map_name):
+    """Backfill demo-learned position samples for this map from parsed caches. New uploads fold
+    automatically at index time; this re-folds caches that carry analytics.position_samples but
+    predate that wiring. Only loads caches for THIS map (via the index), so it stays bounded."""
+    admin = _admin_or_none()
+    if not admin:
+        return _nostore({"error": "admin only"}), 403
+    scanned = had = folded = 0
+    for sha, key in db.demo_keys_for_map(map_name):
+        data = load_cache(os.path.join(CACHE, (key or sha) + ".json"))
+        if not data:
+            continue
+        scanned += 1
+        samples = (data.get("analytics") or {}).get("position_samples")
+        if isinstance(samples, dict) and samples:
+            had += 1
+            if db.fold_position_samples(data.get("source_sha1") or sha, map_name, samples):
+                folded += 1
+    db.log_admin_action(admin.get("id"), "ingest_callouts", "map", map_name,
+                        {"scanned": scanned, "folded": folded})
+    return _nostore({"ok": True, "scanned": scanned, "with_samples": had, "folded": folded,
+                     "learned_zones": len(db.callout_learned(map_name))})
 
 
 # ---- teams / workspaces (Stage 5) -------------------------------------------

@@ -138,6 +138,37 @@ CREATE TABLE IF NOT EXISTS admin_audit (
   detail TEXT,
   ts TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
 );
+-- Admin-authored callout edits/boundaries, layered over the static JSON seed. Once a map has ANY
+-- override rows the admin fully owns its callout set (seed becomes fallback for un-edited maps only).
+CREATE TABLE IF NOT EXISTS callout_overrides (
+  map TEXT NOT NULL,
+  callout_id TEXT NOT NULL,
+  name TEXT,
+  aliases TEXT,            -- JSON array of alias strings
+  side TEXT,               -- 't' | 'ct' | 'both'
+  world_x REAL, world_y REAL,
+  boundary TEXT,           -- JSON array of [x,y] world points (polygon), or NULL
+  notes TEXT,
+  sort_order INTEGER DEFAULT 0,
+  updated_at TEXT,
+  updated_by INTEGER,
+  PRIMARY KEY (map, callout_id)
+);
+-- Per-(map, zone) position samples learned from real demo deaths -> centroid/boundary suggestions.
+CREATE TABLE IF NOT EXISTS callout_samples (
+  map TEXT NOT NULL,
+  zone TEXT NOT NULL,      -- raw last_place_name token
+  n INTEGER DEFAULT 0,
+  sum_x REAL DEFAULT 0, sum_y REAL DEFAULT 0,
+  min_x REAL, min_y REAL, max_x REAL, max_y REAL,
+  updated_at TEXT,
+  PRIMARY KEY (map, zone)
+);
+-- Guard so each demo's samples fold into callout_samples at most once (reparse/re-index safe).
+CREATE TABLE IF NOT EXISTS callout_sample_sources (
+  sha1 TEXT PRIMARY KEY,
+  ts TEXT
+);
 """
 
 
@@ -249,6 +280,11 @@ def index_demo(data, key, created_at=None, owner_user_id=None, con=None, team_id
                       "ON CONFLICT(user_id, sha1) DO UPDATE SET archived=0, "
                       "team_id=COALESCE(excluded.team_id, team_id)",
                       (owner_user_id, sha, team_id, datetime.datetime.now().isoformat(timespec="seconds")))
+        # learn callout positions: fold this demo's per-zone death-coordinate aggregate (computed at
+        # parse time as analytics.position_samples) into the rolling callout_samples table, once per sha.
+        samples = a.get("position_samples")
+        if isinstance(samples, dict) and samples and data.get("map"):
+            fold_position_samples(sha, data.get("map"), samples, con=c)
         c.commit()
         return sha
     finally:
@@ -1303,6 +1339,189 @@ def set_roster_entry(uid, steamid, status, name=None, con=None):
                       (uid, sid, status, (str(name)[:64] if name else None)))
         c.commit()
         return True
+    finally:
+        if con is None:
+            c.close()
+
+
+# ---- callouts: admin overrides + demo-learned samples -----------------------
+_CO_COLS = ("map", "callout_id", "name", "aliases", "side", "world_x", "world_y",
+            "boundary", "notes", "sort_order", "updated_at", "updated_by")
+
+
+def _co_from_row(r):
+    """A callout_overrides row -> the same dict shape as a seed callout."""
+    def _jload(s, default):
+        try:
+            return json.loads(s) if s else default
+        except (ValueError, TypeError):
+            return default
+    wx, wy = r["world_x"], r["world_y"]
+    return {
+        "id": r["callout_id"], "name": r["name"] or r["callout_id"],
+        "aliases": _jload(r["aliases"], []),
+        "side": r["side"] or "both",
+        "world": {"x": wx, "y": wy},
+        "boundary": _jload(r["boundary"], None),
+        "notes": r["notes"] or "",
+        "sort_order": r["sort_order"] if r["sort_order"] is not None else 0,
+        "source": "admin",
+    }
+
+
+def callout_overrides_for(map_name, con=None):
+    """All admin override callouts for a map (effective set once a map is admin-managed), sorted."""
+    c = con or connect()
+    try:
+        rows = c.execute("SELECT * FROM callout_overrides WHERE map=? ORDER BY sort_order, callout_id",
+                         (map_name,)).fetchall()
+        return [_co_from_row(r) for r in rows]
+    finally:
+        if con is None:
+            c.close()
+
+
+def callout_map_is_managed(map_name, con=None):
+    """True if an admin has saved a custom callout set for this map (overrides exist)."""
+    c = con or connect()
+    try:
+        return c.execute("SELECT 1 FROM callout_overrides WHERE map=? LIMIT 1",
+                         (map_name,)).fetchone() is not None
+    finally:
+        if con is None:
+            c.close()
+
+
+def callout_overrides_replace(map_name, callouts, admin_uid=None, con=None):
+    """Replace the ENTIRE override set for a map with `callouts` (the editor's full desired list).
+    Each callout: {id, name, aliases[], side, world:{x,y}, boundary[[x,y]..]|None, notes, sort_order}.
+    Deleting a callout in the editor = omitting it here. Returns count saved."""
+    now = datetime.datetime.now().isoformat(timespec="seconds")
+    c = con or connect()
+    try:
+        c.execute("DELETE FROM callout_overrides WHERE map=?", (map_name,))
+        rows = []
+        for i, co in enumerate(callouts or []):
+            cid = str(co.get("id") or "").strip()
+            if not cid:
+                continue
+            w = co.get("world") or {}
+            wx, wy = w.get("x"), w.get("y")
+            bnd = co.get("boundary")
+            rows.append((
+                map_name, cid, (co.get("name") or cid),
+                json.dumps([str(a) for a in (co.get("aliases") or []) if str(a).strip()]),
+                (co.get("side") or "both"),
+                (float(wx) if wx is not None else None), (float(wy) if wy is not None else None),
+                (json.dumps(bnd) if bnd else None),
+                (co.get("notes") or ""),
+                int(co.get("sort_order", i)),
+                now, admin_uid))
+        if rows:
+            c.executemany(
+                "INSERT INTO callout_overrides(map,callout_id,name,aliases,side,world_x,world_y,"
+                "boundary,notes,sort_order,updated_at,updated_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+        c.commit()
+        return len(rows)
+    finally:
+        if con is None:
+            c.close()
+
+
+def callout_overrides_clear(map_name, con=None):
+    """Drop all admin overrides for a map -> revert it to the static JSON seed. Returns rows removed."""
+    c = con or connect()
+    try:
+        n = c.execute("DELETE FROM callout_overrides WHERE map=?", (map_name,)).rowcount
+        c.commit()
+        return n
+    finally:
+        if con is None:
+            c.close()
+
+
+def maps_with_overrides(con=None):
+    """Set of map names that have admin overrides (for the coverage readout)."""
+    c = con or connect()
+    try:
+        return {r["map"] for r in c.execute("SELECT DISTINCT map FROM callout_overrides")}
+    finally:
+        if con is None:
+            c.close()
+
+
+def fold_position_samples(sha1, map_name, samples, con=None):
+    """Accumulate one demo's per-zone aggregate into callout_samples (idempotent per sha1).
+    `samples` = {zone: {n, sum_x, sum_y, min_x, min_y, max_x, max_y}}. Returns zones folded (0 if
+    already folded or nothing to fold)."""
+    if not map_name or not samples:
+        return 0
+    c = con or connect()
+    try:
+        if sha1 and c.execute("SELECT 1 FROM callout_sample_sources WHERE sha1=?", (sha1,)).fetchone():
+            return 0                                   # already contributed -> no double-count
+        now = datetime.datetime.now().isoformat(timespec="seconds")
+        folded = 0
+        for zone, s in samples.items():
+            if not zone or not s.get("n"):
+                continue
+            c.execute(
+                """INSERT INTO callout_samples(map,zone,n,sum_x,sum_y,min_x,min_y,max_x,max_y,updated_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?)
+                   ON CONFLICT(map,zone) DO UPDATE SET
+                     n=n+excluded.n, sum_x=sum_x+excluded.sum_x, sum_y=sum_y+excluded.sum_y,
+                     min_x=MIN(min_x,excluded.min_x), min_y=MIN(min_y,excluded.min_y),
+                     max_x=MAX(max_x,excluded.max_x), max_y=MAX(max_y,excluded.max_y),
+                     updated_at=excluded.updated_at""",
+                (map_name, str(zone), int(s["n"]), float(s["sum_x"]), float(s["sum_y"]),
+                 float(s.get("min_x", s["sum_x"] / s["n"])), float(s.get("min_y", s["sum_y"] / s["n"])),
+                 float(s.get("max_x", s["sum_x"] / s["n"])), float(s.get("max_y", s["sum_y"] / s["n"])),
+                 now))
+            folded += 1
+        if sha1:
+            c.execute("INSERT OR IGNORE INTO callout_sample_sources(sha1, ts) VALUES(?, ?)", (sha1, now))
+        c.commit()
+        return folded
+    finally:
+        if con is None:
+            c.close()
+
+
+def callout_learned(map_name, con=None):
+    """Learned zone centroids for a map: {zone: {x, y, n, bbox:[minx,miny,maxx,maxy]}} (centroid =
+    sample mean). Empty if no samples yet."""
+    c = con or connect()
+    try:
+        out = {}
+        for r in c.execute("SELECT * FROM callout_samples WHERE map=? AND n>0", (map_name,)):
+            n = r["n"]
+            out[r["zone"]] = {
+                "x": round(r["sum_x"] / n, 1), "y": round(r["sum_y"] / n, 1), "n": n,
+                "bbox": [r["min_x"], r["min_y"], r["max_x"], r["max_y"]],
+            }
+        return out
+    finally:
+        if con is None:
+            c.close()
+
+
+def callout_sample_maps(con=None):
+    """{map: total_sample_count} across all learned zones (for the coverage readout)."""
+    c = con or connect()
+    try:
+        return {r["map"]: r["t"] for r in
+                c.execute("SELECT map, SUM(n) t FROM callout_samples GROUP BY map")}
+    finally:
+        if con is None:
+            c.close()
+
+
+def demo_keys_for_map(map_name, con=None):
+    """(sha1, key) for every indexed demo on a map -- lets sample ingest load only that map's caches."""
+    c = con or connect()
+    try:
+        return [(r["sha1"], r["key"]) for r in
+                c.execute("SELECT sha1, key FROM demos WHERE map=?", (map_name,))]
     finally:
         if con is None:
             c.close()

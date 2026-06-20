@@ -246,10 +246,17 @@ function render() {
       APP.showPositionsOnMap(idx, el.dataset.pname);
     };
   });
-  $("analyticsBody").querySelectorAll("[data-callout-util]").forEach(b => b.onclick = (e) => {
+  // per-callout action hub -> hand off to review / utility / goals / notes
+  $("analyticsBody").querySelectorAll("[data-callout-act]").forEach(b => b.onclick = (e) => {
     e.stopPropagation();
-    const zone = b.dataset.calloutUtil;
-    if (typeof APP !== "undefined" && APP.openLibraryAtCallout) APP.openLibraryAtCallout(zone);
+    const zone = b.dataset.zone;
+    const act = b.dataset.calloutAct;
+    if (typeof APP === "undefined") return;
+    const map = { deaths: "reviewDeathsAtCallout", utility: "showUtilityToCallout",
+      throws: "findThrowsAtCallout", goal: "createGoalForCallout", note: "addNoteAtCallout" };
+    const fn = map[act];
+    if (fn && typeof APP[fn] === "function") APP[fn](zone);
+    else if (act === "utility" && APP.openLibraryAtCallout) APP.openLibraryAtCallout(zone); // fallback
   });
 }
 
@@ -1050,11 +1057,11 @@ function positionsCard(p) {
       <td class="pz-kd ${cls}">${r.k}-${r.d}</td>
       <td class="pz-side">${side.join(" ")}</td>
       <td class="pz-open-c">${open}</td>
-      <td class="pz-acts"><button class="pz-act" data-callout-util="${esc(r.zone)}" title="Show saved utility to ${esc(r.zone)}">Utility</button></td></tr>`;
+      <td class="pz-acts"><button class="pz-act" data-callout-act="deaths" data-zone="${esc(r.zone)}" title="Review deaths at ${esc(r.zone)}">Deaths</button><button class="pz-act" data-callout-act="utility" data-zone="${esc(r.zone)}" title="Show saved utility to ${esc(r.zone)}">Utility</button><button class="pz-act" data-callout-act="throws" data-zone="${esc(r.zone)}" title="Find team throws landing at ${esc(r.zone)}">Throws</button><button class="pz-act" data-callout-act="goal" data-zone="${esc(r.zone)}" title="Create a practice goal for ${esc(r.zone)}">Goal</button><button class="pz-act" data-callout-act="note" data-zone="${esc(r.zone)}" title="Add a review note at ${esc(r.zone)}">Note</button></td></tr>`;
   }).join("");
   if (!rows) return `<div class="card"><div class="card-h">Positions</div><div class="empty">Not enough data.</div></div>`;
   return `<div class="card"><div class="card-h">Positions <em>K-D by callout &middot; side &middot; opening</em></div>
-    <table class="pz-table"><thead><tr><th>Callout</th><th>K-D</th><th>By side</th><th title="opening duels won-lost">Open</th><th></th></tr></thead>
+    <table class="pz-table"><thead><tr><th>Callout</th><th>K-D</th><th>By side</th><th title="opening duels won-lost">Open</th><th>Actions</th></tr></thead>
     <tbody>${rows}</tbody></table>${posMapBtn(p)}</div>`;
 }
 

@@ -1,0 +1,171 @@
+/* callouts.css -- Admin Callout Editor (AdminCallouts).
+   Self-contained styles, all prefixed `cae-` to avoid collisions with the app.
+   Reuses the app's theme variables: --bg --panel --panel2 --line --txt --mut --ct --t --accent --good --bad
+   (with safe fallbacks so it still renders if mounted somewhere those aren't defined). */
+
+.cae-root{
+  --cae-acc:var(--accent,var(--acc,#e8743b));
+  --cae-ct:var(--ct,#5b9bd5);
+  --cae-t:var(--t,#d8a13a);
+  --cae-good:var(--good,#5fbf5f);
+  --cae-bad:var(--bad,#e25555);
+  --cae-panel:var(--panel,#151a21);
+  --cae-panel2:var(--panel2,#1b222c);
+  --cae-line:var(--line,#252e3a);
+  --cae-txt:var(--txt,#e6ebf2);
+  --cae-mut:var(--mut,#8a97a8);
+  color:var(--cae-txt);
+  font-family:Inter,system-ui,Segoe UI,sans-serif;
+  font-size:13px;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  min-height:0;
+}
+.cae-root *{box-sizing:border-box}
+
+/* ---- top toolbar (map picker + global actions) ---- */
+.cae-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.cae-toolbar .cae-grow{flex:1 1 auto;min-width:0}
+.cae-tb-group{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cae-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--cae-mut)}
+
+.cae-select{
+  -webkit-appearance:none;appearance:none;
+  background-color:var(--cae-panel2);color:var(--cae-txt);
+  border:1px solid var(--cae-line);border-radius:8px;
+  padding:7px 28px 7px 10px;font-size:13px;font-family:inherit;cursor:pointer;min-width:170px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 4.75L6 8.25l3.5-3.5' fill='none' stroke='%238a97a8' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 9px center;background-size:12px;
+}
+.cae-select:hover{background-color:#212a36}
+.cae-select:focus-visible{outline:none;border-color:var(--cae-acc);box-shadow:0 0 0 3px rgba(232,116,59,.18)}
+
+.cae-btn{
+  background:var(--cae-panel2);color:var(--cae-txt);border:1px solid var(--cae-line);
+  padding:7px 12px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;
+  transition:.15s;font-family:inherit;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;
+}
+.cae-btn:hover{border-color:#3a4757;background:#222b37}
+.cae-btn:active{transform:translateY(1px)}
+.cae-btn:focus-visible{outline:2px solid var(--cae-acc);outline-offset:2px}
+.cae-btn.cae-primary{background:var(--cae-acc);border-color:var(--cae-acc);color:#1a0e07;font-weight:600}
+.cae-btn.cae-primary:hover{background:#f3854c}
+.cae-btn.cae-danger{border-color:var(--cae-bad);color:var(--cae-bad)}
+.cae-btn.cae-danger:hover{background:var(--cae-bad);color:#fff}
+.cae-btn.cae-sm{padding:5px 9px;font-size:12px}
+.cae-btn.cae-on{border-color:var(--cae-acc);color:var(--cae-acc)}
+.cae-btn[disabled]{opacity:.45;cursor:not-allowed}
+.cae-btn[disabled]:hover{background:var(--cae-panel2);border-color:var(--cae-line)}
+
+.cae-status{font-size:12px;color:var(--cae-mut);min-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.cae-status.cae-ok{color:var(--cae-good)}
+.cae-status.cae-err{color:var(--cae-bad)}
+
+.cae-badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;
+  border:1px solid var(--cae-line);border-radius:9px;padding:1px 7px;color:var(--cae-mut)}
+.cae-badge.cae-managed{color:var(--cae-acc);border-color:var(--cae-acc)}
+.cae-badge.cae-seed{color:var(--cae-ct);border-color:var(--cae-ct)}
+
+/* ---- coverage table (shown before a map is picked / collapsible) ---- */
+.cae-coverage{border:1px solid var(--cae-line);border-radius:10px;background:var(--cae-panel);overflow:hidden}
+.cae-cov-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 12px;
+  cursor:pointer;user-select:none}
+.cae-cov-head b{font-size:13px}
+.cae-cov-body{max-height:260px;overflow:auto;border-top:1px solid var(--cae-line)}
+.cae-cov-table{width:100%;border-collapse:collapse;font-size:12px}
+.cae-cov-table th{position:sticky;top:0;background:var(--cae-panel2);color:var(--cae-mut);
+  text-align:left;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:.4px;padding:7px 10px;
+  border-bottom:1px solid var(--cae-line)}
+.cae-cov-table td{padding:6px 10px;border-bottom:1px solid var(--cae-line);font-variant-numeric:tabular-nums}
+.cae-cov-table tr{cursor:pointer}
+.cae-cov-table tbody tr:hover{background:rgba(255,255,255,.035)}
+.cae-cov-table tr.cae-cur{background:rgba(232,116,59,.10)}
+.cae-cov-map{font-weight:600;color:var(--cae-txt);text-transform:capitalize}
+
+/* ---- main editor split: canvas | sidebar ---- */
+.cae-main{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:14px;align-items:start;min-height:0}
+@media(max-width:980px){.cae-main{grid-template-columns:1fr}}
+
+.cae-canvas-wrap{display:flex;flex-direction:column;gap:8px;min-width:0}
+.cae-canvas-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cae-canvas-box{position:relative;width:100%;max-width:720px;aspect-ratio:1/1;
+  border:1px solid var(--cae-line);border-radius:10px;overflow:hidden;background:#05080c;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.02)}
+.cae-canvas{display:block;width:100%;height:100%;touch-action:none;cursor:crosshair}
+.cae-canvas.cae-mode-move{cursor:default}
+.cae-canvas-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  text-align:center;color:var(--cae-mut);font-size:13px;padding:24px;line-height:1.5}
+.cae-hint{font-size:11px;color:var(--cae-mut);line-height:1.5}
+.cae-hint b{color:var(--cae-txt)}
+
+/* reference image (separate, NOT aligned to canvas) */
+.cae-ref{margin-top:6px;border:1px solid var(--cae-line);border-radius:10px;overflow:hidden;background:var(--cae-panel)}
+.cae-ref[hidden]{display:none}
+.cae-ref-head{font-size:11px;color:var(--cae-mut);padding:6px 10px;border-bottom:1px solid var(--cae-line)}
+.cae-ref img{display:block;width:100%;height:auto;background:#05080c}
+
+/* ---- sidebar (callout list + per-callout editor) ---- */
+.cae-side{display:flex;flex-direction:column;gap:10px;min-width:0;
+  border:1px solid var(--cae-line);border-radius:10px;background:var(--cae-panel);padding:12px}
+.cae-side-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.cae-side-head b{font-size:13px}
+.cae-side-sub{font-size:11px;color:var(--cae-mut)}
+
+.cae-list{display:flex;flex-direction:column;gap:5px;max-height:320px;overflow:auto;
+  margin:0 -4px;padding:0 4px}
+.cae-item{display:flex;align-items:center;gap:8px;background:var(--cae-panel2);
+  border:1px solid var(--cae-line);border-radius:8px;padding:7px 9px;cursor:pointer;transition:.12s}
+.cae-item:hover{border-color:#3a4757}
+.cae-item.cae-sel{border-color:var(--cae-acc);box-shadow:0 0 0 1px var(--cae-acc) inset}
+.cae-item-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;font-size:13px}
+.cae-item-side{flex:0 0 auto;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;
+  border-radius:5px;padding:1px 5px;border:1px solid var(--cae-line);color:var(--cae-mut)}
+.cae-item-side.cae-s-ct{color:var(--cae-ct);border-color:var(--cae-ct)}
+.cae-item-side.cae-s-t{color:var(--cae-t);border-color:var(--cae-t)}
+.cae-item-flag{flex:0 0 auto;font-size:9px;color:var(--cae-acc);font-weight:800}
+.cae-item-del{flex:0 0 auto;background:none;border:0;color:var(--cae-mut);cursor:pointer;
+  font-size:15px;line-height:1;padding:2px 4px;border-radius:6px}
+.cae-item-del:hover{color:var(--cae-bad);background:rgba(226,85,85,.12)}
+.cae-empty{color:var(--cae-mut);font-size:12px;padding:14px 4px;text-align:center}
+
+/* per-callout edit form */
+.cae-edit{display:flex;flex-direction:column;gap:9px;border-top:1px solid var(--cae-line);padding-top:10px}
+.cae-edit[hidden]{display:none}
+.cae-field{display:flex;flex-direction:column;gap:4px}
+.cae-field > span{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--cae-mut)}
+.cae-input,.cae-textarea{
+  background-color:var(--cae-panel2);color:var(--cae-txt);border:1px solid var(--cae-line);
+  border-radius:7px;padding:7px 9px;font-size:13px;font-family:inherit;width:100%;min-width:0;
+}
+.cae-textarea{resize:vertical;min-height:40px;line-height:1.4}
+.cae-input:focus,.cae-textarea:focus,.cae-select:focus{outline:none;border-color:var(--cae-acc);
+  box-shadow:0 0 0 3px rgba(232,116,59,.18)}
+.cae-row2{display:flex;gap:8px}
+.cae-row2 > *{flex:1;min-width:0}
+.cae-coords{font-size:11px;color:var(--cae-mut);font-variant-numeric:tabular-nums}
+.cae-edit-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* learned / unmapped panels */
+.cae-learn{border:1px solid var(--cae-line);border-radius:10px;background:var(--cae-panel);padding:10px 12px}
+.cae-learn[hidden]{display:none}
+.cae-learn-h{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--cae-mut);margin-bottom:8px}
+.cae-ghosts{display:flex;flex-direction:column;gap:5px;max-height:200px;overflow:auto}
+.cae-ghost{display:flex;align-items:center;gap:8px;background:var(--cae-panel2);
+  border:1px solid var(--cae-line);border-left:3px solid var(--cae-acc);border-radius:7px;padding:6px 9px;font-size:12px}
+.cae-ghost-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.cae-ghost-n{flex:0 0 auto;color:var(--cae-mut);font-variant-numeric:tabular-nums}
+
+/* lightbox for the reference image */
+.cae-lightbox{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;
+  background:rgba(4,8,12,.78);padding:24px;cursor:zoom-out}
+.cae-lightbox.cae-show{display:flex;animation:cae-fade .15s ease}
+.cae-lightbox img{max-width:92vw;max-height:90vh;border:1px solid var(--cae-line);border-radius:10px;
+  box-shadow:0 18px 60px rgba(0,0,0,.6);background:#05080c}
+.cae-lightbox-cap{position:absolute;top:18px;left:0;right:0;text-align:center;color:var(--cae-mut);font-size:12px}
+
+@keyframes cae-fade{from{opacity:0}to{opacity:1}}
+
+.cae-403{border:1px solid var(--cae-bad);border-radius:10px;background:rgba(226,85,85,.08);
+  padding:16px 18px;color:var(--cae-txt);font-size:13px;line-height:1.5}
+.cae-403 b{color:var(--cae-bad)}

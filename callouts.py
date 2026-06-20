@@ -67,6 +67,67 @@ def nearest_callout(map_name: str, wx: float, wy: float, threshold: float = 500)
     return None, None
 
 
+def point_in_polygon(px: float, py: float, poly: list) -> bool:
+    """Ray-casting point-in-polygon test. `poly` = [[x,y], ...] (world coords). Robust to the point
+    lying on horizontal edges; good enough for callout zones."""
+    if not poly or len(poly) < 3:
+        return False
+    inside = False
+    n = len(poly)
+    j = n - 1
+    for i in range(n):
+        xi, yi = poly[i][0], poly[i][1]
+        xj, yj = poly[j][0], poly[j][1]
+        if ((yi > py) != (yj > py)) and (px < (xj - xi) * (py - yi) / ((yj - yi) or 1e-9) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
+def label_position(callouts: list, wx: float, wy: float, threshold: float = 500) -> dict:
+    """Label a world position with the best callout. Boundary polygons win (exact containment); else
+    nearest center within `threshold`. Returns:
+      {"callout": <dict|None>, "confidence": "inside"|"nearest"|"nearby"|"ambiguous"|"none",
+       "distance": float|None, "between": <other callout name|None>}
+
+    confidence:
+      inside    -> point is within a callout's drawn boundary polygon
+      nearest   -> closest center, comfortably (<= threshold/2)
+      nearby    -> closest center, but loosely (<= threshold)
+      ambiguous -> two centers nearly tied -> 'between A / B'
+      none      -> nothing within threshold
+    """
+    if wx is None or wy is None:
+        return {"callout": None, "confidence": "none", "distance": None, "between": None}
+    # 1) boundary containment wins
+    for c in callouts:
+        b = c.get("boundary")
+        if b and point_in_polygon(wx, wy, b):
+            return {"callout": c, "confidence": "inside", "distance": 0.0, "between": None}
+    # 2) nearest center
+    ranked = []
+    for c in callouts:
+        w = c.get("world") or {}
+        cx, cy = w.get("x"), w.get("y")
+        if cx is None or cy is None:
+            continue
+        ranked.append((math.hypot(wx - cx, wy - cy), c))
+    if not ranked:
+        return {"callout": None, "confidence": "none", "distance": None, "between": None}
+    ranked.sort(key=lambda t: t[0])
+    best_d, best = ranked[0]
+    if best_d > threshold:
+        return {"callout": None, "confidence": "none", "distance": round(best_d, 1), "between": None}
+    # two centers nearly tied -> ambiguous ("between A / B")
+    if len(ranked) > 1:
+        second_d, second = ranked[1]
+        if second_d - best_d < 0.25 * threshold:
+            return {"callout": best, "confidence": "ambiguous",
+                    "distance": round(best_d, 1), "between": second.get("name") or second.get("id")}
+    conf = "nearest" if best_d <= threshold * 0.5 else "nearby"
+    return {"callout": best, "confidence": conf, "distance": round(best_d, 1), "between": None}
+
+
 def zone_to_callout(map_name: str, zone_str: str):
     """Resolve a raw engine last_place_name token to a callout dict via alias matching.
 

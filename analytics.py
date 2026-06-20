@@ -1318,6 +1318,14 @@ def analyze(parser, tickrate=TICKRATE, replay=None):
         positions.attach(out_players, D, deaths_by_round, team_by_round)
     except Exception as e:
         print("  position stats failed:", e)
+    # learn callout centers: per-zone aggregate of victim death positions (place <-> vx,vy). Folded
+    # into the global callout_samples table at index time so callouts sharpen as more demos arrive.
+    try:
+        import callout_learn
+        position_samples = callout_learn.from_deaths(D)
+    except Exception as e:
+        print("  position samples failed:", e)
+        position_samples = {}
     round_cards = build_round_cards(rounds, round_story, deaths_by_round, team_by_round,
                                     plant_by_round, round_buy, defuse_rounds, names, tickrate)
     team = build_team_review(out_players, round_buy, round_winner, n_rounds)
@@ -1336,6 +1344,7 @@ def analyze(parser, tickrate=TICKRATE, replay=None):
         "tickrate": tickrate, "n_rounds": n_rounds,
         "have_econ": have_econ,
         "players": out_players,
+        "position_samples": position_samples,
         "rounds": [{"num": r["num"], "winner": r["winner"], "reason": r["reason"],
                     "start_t": round(r["start"] / tickrate, 2),
                     "end_t": round(r["end"] / tickrate, 2),

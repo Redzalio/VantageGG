@@ -1241,6 +1241,10 @@ const App = {
       + `<div class="dash-sec-head adm-uhead"><h2>Audit log</h2>
            <button id="admLoadAudit" class="btn ghost sm">Load audit log</button></div>
          <div id="admAudit" class="adm-audit-wrap"></div>`
+      + (this.isAdmin ? `<div class="dash-sec-head adm-uhead"><h2>Callouts</h2>
+           <button id="admOpenCallouts" class="btn ghost sm">Open callout editor</button></div>
+         <div class="round adm-callout-hint">Add, rename, move, and draw boundaries for each map's callouts. Demo-learned centroids show as ghosts you can snap to. Changes apply to analytics, the 2D overlay, utility matching, and labeling.</div>
+         <div id="calloutEditorRoot" class="adm-callout-wrap"></div>` : "")
       + (this.isAdmin ? `<div class="dash-sec-head adm-uhead"><h2>Pricing</h2></div><div id="admPricing" class="adm-pricing"></div>` : "")
       + (() => {
           const warns = [];
@@ -1301,6 +1305,13 @@ const App = {
           <span class="adm-audit-target">${esc(e.target_type||"")} ${esc(e.target_id||"")}</span>
           ${e.detail ? `<span class="adm-audit-detail">${esc(JSON.stringify(e.detail))}</span>` : ""}
         </div>`).join("")}</div>`;
+    };
+    const coBtn = $("admOpenCallouts");                 // lazy-mount the canvas callout editor (admin only)
+    if (coBtn) coBtn.onclick = () => {
+      const root = $("calloutEditorRoot");
+      if (window.AdminCallouts && root) window.AdminCallouts.open(root);
+      else if (root) root.innerHTML = "<div class='round'>Callout editor failed to load.</div>";
+      coBtn.disabled = true; coBtn.textContent = "Editor loaded ↓";
     };
   },
   // Admin "Storage & parsing" section: where the bytes go + upload/parse timing (from the jobs table).
@@ -1767,6 +1778,10 @@ const App = {
       if (this.nadeCapture) {                       // capturing a lineup throw/landing position
         this.captureNadePos(e.clientX - r.left, e.clientY - r.top);
         return;
+      }
+      if (this.radar.showCallouts) {                // callout overlay on: click a callout -> focus/zoom it
+        const cc = this.radar.pickCallout(e.clientX - r.left, e.clientY - r.top);
+        if (cc) { this.radar.focusCallout(cc.id != null ? cc.id : cc.name); return; }
       }
       const g = this.radar.pickNade(e.clientX - r.left, e.clientY - r.top);   // util trajectory?
       if (g) { this.confirmJumpUtil(g, true); return; }   // -> confirm -> jump to throw + thrower POV
@@ -3331,6 +3346,7 @@ const App = {
     if (caps.includes("side") && $("glSide").value) scope.side = $("glSide").value;
     if (caps.includes("buy") && $("glBuy").value) scope.buy = $("glBuy").value;
     if (pl && pl.indexOf("__") !== 0 && $("glRole").value) scope.role = $("glRole").value;   // role = filter on a player
+    if (prefill.scope && prefill.scope.callout) scope.callout = prefill.scope.callout;        // location-scoped goal (from analytics handoff)
     const body = {
       metric, target, scope, team_id: shareTeamId,     // team_id set => shared team goal; null => personal
       title: $("glTitle").value.trim(),
@@ -4367,10 +4383,111 @@ const App = {
   },
   openLibraryAtCallout(callout) {
     this.libCalloutSearch = callout || "";
+    this._libCallout = this._resolveCallout(callout);   // enable land_pos geometric matching too
     this.setUtilMode("library");
     this.buildLibrary();
     const up = $("utilPanel");
     if (up && !up.classList.contains("show")) this.toggleUtil(true);
+  },
+
+  // ---- callout location helpers + analytics->action handoffs ----------------
+  // Resolve a raw zone token / callout name to the effective callout object (from radar._calloutData).
+  _resolveCallout(zoneOrName) {
+    const norm = s => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const want = norm(zoneOrName);
+    if (!want) return null;
+    for (const c of (this.radar._calloutData || [])) {
+      const toks = [c.id, c.name, ...(c.aliases || [])].map(norm);
+      if (toks.includes(want)) return c;
+    }
+    return null;
+  },
+  // Human display name for a raw engine zone token (honors admin renames via the effective set).
+  calloutName(zone) {
+    const c = this._resolveCallout(zone);
+    if (c) return c.name;
+    return String(zone || "").replace(/([A-Z])/g, " $1").replace(/_/g, " ").replace(/\s+/g, " ").trim() || zone;
+  },
+  // Label a world position with the nearest/inside effective callout (boundary-first), mirroring the
+  // server's callouts.label_position so client-side filtering matches backend labeling.
+  _calloutAt(wx, wy, threshold = 500) {
+    if (wx == null || wy == null) return null;
+    const data = this.radar._calloutData || [];
+    for (const c of data) {
+      const b = c.boundary;
+      if (b && b.length >= 3 && this._pointInPoly(wx, wy, b)) return c;
+    }
+    let best = null, bd = Infinity;
+    for (const c of data) {
+      const w = c.world || {};
+      if (w.x == null || w.y == null) continue;
+      const d = Math.hypot(wx - w.x, wy - w.y);
+      if (d < bd) { bd = d; best = c; }
+    }
+    return (best && bd <= threshold) ? best : null;
+  },
+  _pointInPoly(px, py, poly) {
+    let inside = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+      if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / ((yj - yi) || 1e-9) + xi)) inside = !inside;
+    }
+    return inside;
+  },
+
+  // Analytics Positions table -> direct next actions (called by analytics.js buttons).
+  showUtilityToCallout(zone) {
+    this.openLibraryAtCallout(this.calloutName(zone));
+    if (this.radar.focusCallout) this.radar.focusCallout(zone);
+  },
+  // Demo-mined throws that LAND at this callout (geometric), drawn on the 2D map in throws mode.
+  async findThrowsAtCallout(zone) {
+    const c = this._resolveCallout(zone);
+    await this.setUtilMode("throws");
+    if (this.radar.focusCallout) this.radar.focusCallout(zone);
+    if (!c || !this.demo) { this._toast && this._toast(`Showing utility near ${this.calloutName(zone)}`); return; }
+    const hits = (this.demo.grenades || []).filter(g => {
+      if (!g.pts || !g.pts.length) return false;
+      const l = g.pts[g.pts.length - 1];
+      const cc = this._calloutAt(l[1], l[2], 450);
+      return cc && cc.id === c.id;
+    });
+    this.radar.searchOverlay = hits.map(g => ({ type: g.type, pts: g.pts }));
+    this._toast && this._toast(`${hits.length} throw${hits.length === 1 ? "" : "s"} landed at ${c.name}`);
+  },
+  // Watch the deaths that happened at this callout (review session + 2D focus). If a player is
+  // spectated, limit to their deaths; otherwise everyone's deaths at the location.
+  reviewDeathsAtCallout(zone) {
+    if (!this.demo) { this._toast && this._toast("Open a match first"); return; }
+    const c = this._resolveCallout(zone);
+    const onlyIdx = this.radar.followIdx >= 0 ? this.radar.followIdx : null;
+    const name = this.calloutName(zone);
+    const items = [];
+    for (const k of (this.demo.kills || [])) {
+      if (k.vx == null) continue;
+      if (onlyIdx != null && k.victim !== onlyIdx) continue;
+      const cc = this._calloutAt(k.vx, k.vy, 450);
+      const match = c ? (cc && cc.id === c.id) : (cc && this.calloutName(cc.id) === name);
+      if (!match) continue;
+      const r = this.demo.roundAt ? this.demo.roundAt(k.t) : null;
+      const vic = this.demo.players[k.victim] ? this.demo.players[k.victim].name : "player";
+      items.push({ t: Math.max(0, k.t - 2.0), eventT: k.t, player: k.victim,
+                   round: r ? r.number : null, text: `${vic} died at ${name}` });
+    }
+    items.sort((a, b) => a.t - b.t);
+    if (this.radar.focusCallout) this.radar.focusCallout(zone);
+    if (!items.length) { this._toast && this._toast(`No located deaths at ${name}`); return; }
+    this.startSession(items, `Deaths at ${name} (${items.length})`);
+  },
+  createGoalForCallout(zone) {
+    const name = this.calloutName(zone);
+    const prefill = { title: `Improve at ${name}`, scope: { callout: zone } };
+    if (this.demo && this.demo.map) prefill.map = this.demo.map;
+    this.openGoalForm(prefill);
+  },
+  addNoteAtCallout(zone) {
+    const name = this.calloutName(zone);
+    this.addEntityNote({ entity: "location", ref: name, tag: "location", promptText: `Note for ${name}:` });
   },
   async _ensureLibrary() {
     if (!this.library) this.library = await fetch("api/nades?t=" + Date.now()).then(r => r.json()).catch(() => []);
@@ -4422,17 +4539,26 @@ const App = {
       if ($("libSuggestions").dataset.open === "1") this._paintSuggestions();   // keep suggestions in sync
     });
     const inp = $("libCalloutInp");
-    if (inp) inp.oninput = (e) => { this.libCalloutSearch = e.target.value; this.applyLibrary(); };
+    if (inp) inp.oninput = (e) => { this.libCalloutSearch = e.target.value; this._libCallout = null; this.applyLibrary(); };
     this.applyLibrary();
   },
   applyLibrary() {
     const map = this.demo ? this.demo.map : null;
     const cq = (this.libCalloutSearch || "").trim().toLowerCase();
-    const res = (this.library || []).filter(n =>
-      (!map || n.map === map)
-      && (this.libFilter === "all" || n.type === this.libFilter)
-      && (!cq || (n.target_callout || "").toLowerCase().includes(cq)
-                || (n.throw_callout || "").toLowerCase().includes(cq)));
+    const lc = this._libCallout;   // resolved callout obj -> also match nades whose land_pos is AT it
+    const res = (this.library || []).filter(n => {
+      if (map && n.map !== map) return false;
+      if (this.libFilter !== "all" && n.type !== this.libFilter) return false;
+      if (!cq && !lc) return true;
+      const textHit = cq && ((n.target_callout || "").toLowerCase().includes(cq)
+                            || (n.throw_callout || "").toLowerCase().includes(cq));
+      let geoHit = false;
+      if (lc && n.land_pos && n.land_pos.length >= 2) {
+        const cc = this._calloutAt(n.land_pos[0], n.land_pos[1], 450);
+        geoHit = cc && cc.id === lc.id;
+      }
+      return textHit || geoHit;
+    });
     $("libCount").textContent = `${res.length} lineup${res.length === 1 ? "" : "s"} | ${map || "--"} | pick where it lands`;
     // group by WHERE it lands (target callout) -- pick a target, then a throw spot
     const groups = {};
