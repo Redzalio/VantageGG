@@ -2438,9 +2438,30 @@ const App = {
     const data = this._daData;
     if (!data) return;
     const el = $("daBody"), view = this._daView || "overview";
+    if (view === "match-detail") {
+      el.innerHTML = this._daMatchDetailHtml(this._daMatchData);
+      el.querySelector(".da-back-btn")?.addEventListener("click", () => {
+        this._daView = "demos"; this._renderDaView();
+        const modal = $("dashAnalyticsModal");
+        modal.querySelectorAll(".da-tab").forEach(b => b.classList.toggle("on", b.dataset.da === "demos"));
+      });
+      el.querySelector(".da-replay-btn")?.addEventListener("click", () => {
+        $("dashAnalyticsModal").classList.remove("show");
+        this._openMatchAnalytics(this._daMatchData?.key);
+      });
+      return;
+    }
     if (view === "overview") el.innerHTML = this._daOverviewHtml(data);
-    else if (view === "players") el.innerHTML = this._daPlayersHtml(data);
-    else if (view === "issues") {
+    else if (view === "players") {
+      el.innerHTML = this._daPlayersHtml(data);
+      el.querySelectorAll(".da-player-row").forEach(row => {
+        row.addEventListener("click", () => {
+          const sid = row.dataset.sid;
+          const detail = el.querySelector(`.da-player-detail[data-sid="${sid}"]`);
+          if (detail) detail.classList.toggle("show");
+        });
+      });
+    } else if (view === "issues") {
       el.innerHTML = this._daIssuesHtml(data);
       el.querySelectorAll(".gl-rc-goal").forEach(b => b.onclick = () => {
         $("dashAnalyticsModal").classList.remove("show");
@@ -2450,39 +2471,134 @@ const App = {
       });
     } else {
       el.innerHTML = this._daDemosHtml(data);
-      el.querySelectorAll(".da-open-analytics").forEach(b => b.onclick = () => {
+      el.querySelectorAll(".da-open-analytics").forEach(b => b.onclick = () => this._openDaMatchDetail(b.dataset.key));
+      el.querySelectorAll(".da-open-replay").forEach(b => b.onclick = () => {
         $("dashAnalyticsModal").classList.remove("show");
         this._openMatchAnalytics(b.dataset.key);
       });
     }
   },
   _daOverviewHtml(data) {
-    const ov = data.overview || {}, avg = ov.averages || {};
+    const ov = data.overview || {}, form = ov.form || {}, avg = form.all || ov.averages || {};
+    const l3 = form.last3 || {}, d3 = form.delta3 || {};
     const f = (v, unit = "") => v != null ? `${v}${unit}` : "—";
-    const mapRow = (ov.top_maps || []).map(m =>
-      `<span class="da-map-chip">${esc(m.map)} <b>${m.count}</b></span>`).join("");
-    return `<div class="da-section">
-      <div class="da-kpis">
-        <div class="da-kpi"><span class="da-kv">${data.match_count}</span><span class="da-kl">Matches</span></div>
-        <div class="da-kpi"><span class="da-kv">${f(avg.hltv)}</span><span class="da-kl">Avg Rating</span></div>
-        <div class="da-kpi"><span class="da-kv">${f(avg.adr)}</span><span class="da-kl">Avg ADR</span></div>
-        <div class="da-kpi"><span class="da-kv">${f(avg.kast, "%")}</span><span class="da-kl">Avg KAST</span></div>
-        <div class="da-kpi"><span class="da-kv">${f(avg.open_wr, "%")}</span><span class="da-kl">Open win%</span></div>
-        <div class="da-kpi"><span class="da-kv">${f(avg.traded_pct, "%")}</span><span class="da-kl">Trade%</span></div>
-      </div>
-      ${mapRow ? `<div class="da-maps-row"><b>Maps:</b> ${mapRow}</div>` : ""}
+    const delta = (v) => {
+      if (v == null) return "";
+      const cls = v > 0 ? "da-delta-up" : v < 0 ? "da-delta-dn" : "da-delta-eq";
+      const arrow = v > 0 ? "+" : "";
+      return `<span class="${cls}">${arrow}${v}</span>`;
+    };
+
+    // Form table
+    const formFields = ["hltv","adr","kast","open_wr","traded_pct"];
+    const formLabels = ["Rating","ADR","KAST","Open%","Trade%"];
+    const formUnits = ["","","% ","% ","% "];
+    const formRows = [
+      ["Last 3", form.last3 || {}, d3],
+      ["Last 5", form.last5 || {}, null],
+      ["All", avg, null],
+    ].map(([label, row, deltas]) =>
+      `<tr><td class="da-fl">${label}</td>${formFields.map((f2, i) => {
+        const v = row[f2]; const d = deltas?.[f2];
+        return `<td>${f(v, formUnits[i])}${d != null ? delta(d) : ""}</td>`;
+      }).join("")}</tr>`).join("");
+    const formTable = `
+      <div class="da-section-head">Recent form</div>
+      <div class="da-scroll"><table class="da-form-table">
+        <thead><tr><th></th>${formLabels.map(l => `<th>${l}</th>`).join("")}</tr></thead>
+        <tbody>${formRows}</tbody>
+      </table></div>`;
+
+    // Map stats table
+    const mapStats = (ov.map_stats || []).slice(0, 6);
+    const mapTable = mapStats.length ? `
+      <div class="da-section-head">Maps</div>
+      <div class="da-scroll"><table class="da-form-table">
+        <thead><tr><th>Map</th><th>Demos</th><th>Rating</th><th>ADR</th><th>KAST</th><th>Open%</th></tr></thead>
+        <tbody>${mapStats.map(m =>
+          `<tr><td class="da-fl">${esc(m.map)}</td><td>${m.count}</td>
+           <td>${f(m.hltv)}</td><td>${f(m.adr)}</td><td>${f(m.kast, "%")}</td><td>${f(m.open_wr, "%")}</td></tr>`
+        ).join("")}</tbody>
+      </table></div>` : "";
+
+    // Next focus
+    const focusItems = (ov.next_focus || []);
+    const focusHtml = focusItems.length ? `
+      <div class="da-section-head">Next review focus</div>
+      <div class="da-focus-list">${focusItems.map(item => {
+        const goalBtn = item.suggest_metric
+          ? `<button class="da-focus-goal gl-rc-goal" data-player="" data-metric="${esc(item.suggest_metric)}"
+               data-target="${item.suggested_target != null ? item.suggested_target : ""}"
+               data-title="${esc(item.label)}" data-area="${esc(item.type)}">+ Goal</button>` : "";
+        return `<div class="da-focus-item da-focus-${esc(item.type)}">
+          <span class="da-focus-label">${esc(item.label)}</span>
+          <span class="da-focus-detail">${esc(item.detail)}</span>
+          ${goalBtn}
+        </div>`;
+      }).join("")}</div>` : "";
+
+    // KPI bar
+    const kpis = `<div class="da-kpis">
+      <div class="da-kpi"><span class="da-kv">${data.match_count}</span><span class="da-kl">Matches</span></div>
+      <div class="da-kpi"><span class="da-kv">${f(avg.hltv)}</span><span class="da-kl">Rating</span></div>
+      <div class="da-kpi"><span class="da-kv">${f(avg.adr)}</span><span class="da-kl">ADR</span></div>
+      <div class="da-kpi"><span class="da-kv">${f(avg.kast, "%")}</span><span class="da-kl">KAST</span></div>
+      <div class="da-kpi"><span class="da-kv">${f(avg.open_wr, "%")}</span><span class="da-kl">Open%</span></div>
+      <div class="da-kpi"><span class="da-kv">${f(avg.traded_pct, "%")}</span><span class="da-kl">Trade%</span></div>
     </div>`;
+
+    // Wire goal buttons after render
+    setTimeout(() => {
+      $("daBody")?.querySelectorAll(".da-focus-goal").forEach(b => b.onclick = () => {
+        $("dashAnalyticsModal").classList.remove("show");
+        const t = b.dataset.target !== "" && b.dataset.target != null ? parseFloat(b.dataset.target) : undefined;
+        this.makeGoalFromInsight({ player: b.dataset.player || "", metric: b.dataset.metric || "",
+          title: b.dataset.title, area: b.dataset.area, ...(t != null && !isNaN(t) ? { target: t } : {}) });
+      });
+    }, 0);
+
+    return `<div class="da-section">${kpis}${formTable}${mapTable}${focusHtml}</div>`;
   },
   _daPlayersHtml(data) {
     const players = data.players || [];
-    if (!players.length) return `<div class="da-empty">No player data yet — upload demos to see aggregate stats.</div>`;
-    const rows = players.map(p =>
-      `<tr><td class="da-pname">${esc(p.name || p.steamid)}</td><td>${p.n_matches}</td>
-       <td>${(p.hltv || 0).toFixed(2)}</td><td>${Math.round(p.adr || 0)}</td>
-       <td>${Math.round(p.kast || 0)}%</td><td>${(p.kd || 0).toFixed(2)}</td>
-       <td>${Math.round(p.open_wr || 0)}%</td><td>${Math.round(p.traded_pct || 0)}%</td>
-       <td>${(p.udr || 0).toFixed(1)}</td></tr>`).join("");
-    return `<div class="da-scroll"><table class="da-table">
+    if (!players.length) return `<div class="da-empty">No squad or team player data yet. Upload demos or configure your team.</div>`;
+    const rosterNote = data.roster_mode === "personal_squad"
+      ? `<div class="da-roster-note">Showing your squad only — ${data.roster_members?.length || 0} players</div>`
+      : data.roster_mode === "team"
+      ? `<div class="da-roster-note">Showing team members only — ${data.roster_members?.length || 0} players</div>`
+      : "";
+    const matches = data.matches || [];
+    const rows = players.map(p => {
+      const perMatch = matches.filter(m => m.players?.some(mp => String(mp.steamid) === String(p.steamid)));
+      const matchRows = perMatch.slice(0, 8).map(m => {
+        const mp = m.players?.find(mp2 => String(mp2.steamid) === String(p.steamid));
+        if (!mp) return "";
+        return `<tr class="da-detail-match-row">
+          <td>${esc((m.created_at || "").slice(0,10))}</td>
+          <td>${esc(m.map || "?")}</td>
+          <td>${(mp.hltv || 0).toFixed(2)}</td>
+          <td>${Math.round(mp.adr || 0)}</td>
+          <td>${Math.round(mp.kast || 0)}%</td>
+          <td>${(mp.kd || 0).toFixed(2)}</td>
+        </tr>`;
+      }).join("");
+      const detail = perMatch.length ? `
+        <tr class="da-player-detail" data-sid="${esc(String(p.steamid))}">
+          <td colspan="9"><table class="da-detail-table">
+            <thead><tr><th>Date</th><th>Map</th><th>Rating</th><th>ADR</th><th>KAST</th><th>K/D</th></tr></thead>
+            <tbody>${matchRows}</tbody>
+          </table></td>
+        </tr>` : "";
+      return `<tr class="da-player-row" data-sid="${esc(String(p.steamid))}">
+        <td class="da-pname">${esc(p.name || p.steamid)} <span class="da-expand-hint">▸</span></td>
+        <td>${p.n_matches}</td>
+        <td>${(p.hltv || 0).toFixed(2)}</td><td>${Math.round(p.adr || 0)}</td>
+        <td>${Math.round(p.kast || 0)}%</td><td>${(p.kd || 0).toFixed(2)}</td>
+        <td>${Math.round(p.open_wr || 0)}%</td><td>${Math.round(p.traded_pct || 0)}%</td>
+        <td>${(p.udr || 0).toFixed(1)}</td>
+      </tr>${detail}`;
+    }).join("");
+    return `${rosterNote}<div class="da-scroll"><table class="da-table">
       <thead><tr><th>Player</th><th>Demos</th><th>Rating</th><th>ADR</th><th>KAST</th>
         <th>K/D</th><th>Open%</th><th>Trade%</th><th>UDR</th></tr></thead>
       <tbody>${rows}</tbody></table></div>`;
@@ -2509,18 +2625,87 @@ const App = {
   _daDemosHtml(data) {
     const matches = data.matches || [];
     if (!matches.length) return `<div class="da-empty">No demos yet — upload a .dem to get started.</div>`;
+    const rosterSids = new Set((data.roster_members || []).map(m => String(m.steamid)));
     return `<div class="da-demos">` + matches.map(m => {
       const date = (m.created_at || "").slice(0, 10);
-      const players = (m.players || []).slice(0, 5).map(p => esc(p.name || "?")).join(", ");
+      const allPlayers = m.players || [];
+      const squadPlayers = rosterSids.size
+        ? allPlayers.filter(p => rosterSids.has(String(p.steamid)))
+        : allPlayers.slice(0, 5);
+      const playerNames = (squadPlayers.length ? squadPlayers : allPlayers.slice(0, 3))
+        .map(p => esc(p.name || "?")).join(", ");
+      const key = esc(m.key || m.id);
       return `<div class="da-demo-row">
         <div class="da-demo-info">
           <b>${esc(m.map || "?")}</b>
           <span class="round">${m.rounds || 0}r${m.score ? " · " + esc(m.score) : ""} · ${esc(date)}</span>
-          <span class="da-demo-players">${esc(players)}</span>
+          <span class="da-demo-players">${esc(playerNames)}</span>
         </div>
-        <button class="btn ghost sm da-open-analytics" data-key="${esc(m.key || m.id)}">Analytics →</button>
+        <div class="da-demo-btns">
+          <button class="btn ghost sm da-open-analytics" data-key="${key}">Analytics</button>
+          <button class="btn ghost sm da-open-replay" data-key="${key}">Replay</button>
+        </div>
       </div>`;
     }).join("") + `</div>`;
+  },
+  async _openDaMatchDetail(key) {
+    const el = $("daBody");
+    el.innerHTML = `<div class="da-loading">Loading match analytics…</div>`;
+    const md = await fetch(`/api/dashboard/analytics/match/${encodeURIComponent(key)}`)
+      .then(r => r.json()).catch(() => null);
+    if (!md || md.error) {
+      el.innerHTML = `<div class="da-empty">${md?.error || "Could not load match analytics."}</div>`;
+      return;
+    }
+    this._daMatchData = md;
+    this._daView = "match-detail";
+    this._renderDaView();
+  },
+  _daMatchDetailHtml(md) {
+    if (!md) return `<div class="da-empty">No match data.</div>`;
+    const analytics = md.analytics || {};
+    const players = analytics.players || [];
+    const insights = analytics.insights || {};
+    // Flatten issues/coaching across players
+    const issues = [];
+    const positives = [];
+    for (const [sid, items] of Object.entries(insights)) {
+      for (const it of (items || [])) {
+        if (it.polarity === "issue" && it.label) issues.push(it.label);
+        else if (it.polarity === "good" && it.label) positives.push(it.label);
+      }
+    }
+    // Dedupe
+    const topIssues = [...new Set(issues)].slice(0, 5);
+    const topGood = [...new Set(positives)].slice(0, 3);
+
+    const playerRows = players.slice(0, 10).map(p =>
+      `<tr><td class="da-pname">${esc(p.name || p.steamid || "?")}</td>
+       <td>${(p.hltv || 0).toFixed(2)}</td><td>${Math.round(p.adr || 0)}</td>
+       <td>${Math.round(p.kast || 0)}%</td><td>${(p.kd || 0).toFixed(2)}</td>
+       <td>${Math.round(p.open_wr || 0)}%</td></tr>`).join("");
+
+    const issueHtml = topIssues.length
+      ? `<div class="da-section-head">Key fixes</div><ul class="da-detail-issues">${topIssues.map(l => `<li>${esc(l)}</li>`).join("")}</ul>` : "";
+    const goodHtml = topGood.length
+      ? `<div class="da-section-head">What went well</div><ul class="da-detail-good">${topGood.map(l => `<li>${esc(l)}</li>`).join("")}</ul>` : "";
+    const playerHtml = playerRows
+      ? `<div class="da-section-head">Players</div>
+         <div class="da-scroll"><table class="da-table">
+           <thead><tr><th>Player</th><th>Rating</th><th>ADR</th><th>KAST</th><th>K/D</th><th>Open%</th></tr></thead>
+           <tbody>${playerRows}</tbody>
+         </table></div>` : "";
+
+    return `<div class="da-match-header">
+      <button class="btn ghost sm da-back-btn">← Back</button>
+      <span class="da-match-title"><b>${esc(md.map || "?")}</b>
+        ${md.score ? `<span class="round">${esc(md.score)}</span>` : ""}
+        ${md.rounds ? `<span class="da-mutl">${md.rounds}r</span>` : ""}
+        <span class="da-mutl">${(md.created_at || "").slice(0,10)}</span>
+      </span>
+      <button class="btn ghost sm da-replay-btn">Open replay</button>
+    </div>
+    <div class="da-match-body">${issueHtml}${goodHtml}${playerHtml}</div>`;
   },
 
   // --- multi-demo trends + team config (cross-match "am I getting better?") -

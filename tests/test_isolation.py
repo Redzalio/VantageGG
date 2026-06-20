@@ -266,3 +266,95 @@ def test_index_dashboard_when_logged_in(tmp_path, monkeypatch):
         s["uid"] = uid
     html = c.get("/").get_data(as_text=True)
     assert 'class="on-dashboard"' in html               # signed in -> dashboard, not the marketing page
+
+
+# ---- dashboard analytics: roster scoping + match endpoint -------------------
+def test_dashboard_analytics_local_mode_all_players(tmp_path, monkeypatch):
+    """Local/no-auth: roster_mode=local_all, all players visible."""
+    monkeypatch.delenv("AUTH_REQUIRED", raising=False)
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    import app
+    _tmpdb(tmp_path)
+    db.index_demo(_match("a" * 40, "de_a", [_p("S1", "Alice"), _p("OPP", "Opp")]),
+                  "a" * 16, owner_user_id=None, created_at="2026-06-01T00:00:00")
+    d = app.app.test_client().get("/api/dashboard/analytics").get_json()
+    assert d["roster_mode"] == "local_all"
+    sids = {p["steamid"] for p in d["players"]}
+    assert "S1" in sids and "OPP" in sids
+    assert "form" in d["overview"] and "map_stats" in d["overview"] and "next_focus" in d["overview"]
+
+
+def test_dashboard_analytics_personal_squad_filters_opponents(tmp_path, monkeypatch):
+    """Personal workspace: auto-squad (shared>=2) included; one-off opponents excluded."""
+    monkeypatch.delenv("AUTH_REQUIRED", raising=False)
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    import app
+    _tmpdb(tmp_path)
+    uid = db.upsert_user("MYSID", "Me")
+    # Two demos: MYSID + TEAMMATE → shared=2 (auto-squad); RAND1/RAND2 appear once each
+    db.index_demo(_match("a" * 40, "de_a", [_p("MYSID", "Me"), _p("TEAMMATE", "T"), _p("RAND1", "R1")]),
+                  "a" * 16, owner_user_id=uid, created_at="2026-06-01T00:00:00")
+    db.index_demo(_match("b" * 40, "de_b", [_p("MYSID", "Me"), _p("TEAMMATE", "T"), _p("RAND2", "R2")]),
+                  "b" * 16, owner_user_id=uid, created_at="2026-06-02T00:00:00")
+    c = app.app.test_client()
+    with c.session_transaction() as s:
+        s["uid"] = uid
+    d = c.get("/api/dashboard/analytics").get_json()
+    assert d["roster_mode"] == "personal_squad"
+    sids = {p["steamid"] for p in d["players"]}
+    assert "MYSID" in sids      # you
+    assert "TEAMMATE" in sids   # shared=2 → auto-squad
+    assert "RAND1" not in sids  # shared=1 → not in squad
+    assert "RAND2" not in sids  # shared=1 → not in squad
+
+
+def test_dashboard_analytics_team_workspace_mode(tmp_path, monkeypatch):
+    """Team workspace: roster_mode=team; endpoint returns 403 for non-member team."""
+    monkeypatch.delenv("AUTH_REQUIRED", raising=False)
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    import app
+    _tmpdb(tmp_path)
+    u1, u2 = _seed(tmp_path)
+    team = db.create_team("Squad", u1)
+    c = app.app.test_client()
+    with c.session_transaction() as s:
+        s["uid"] = u1
+    d = c.get(f"/api/dashboard/analytics?workspace=team:{team['id']}").get_json()
+    assert d["roster_mode"] == "team"
+    # u2 cannot access u1's team workspace
+    with c.session_transaction() as s:
+        s["uid"] = u2
+    r = c.get(f"/api/dashboard/analytics?workspace=team:{team['id']}")
+    assert r.status_code == 403
+
+
+def test_dashboard_analytics_match_endpoint_auth(tmp_path, monkeypatch):
+    """analytics/match/<id>: 401 when blocked, 404 for unknown demo."""
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    import app
+    _tmpdb(tmp_path)
+    c = app.app.test_client()
+    assert c.get("/api/dashboard/analytics/match/nope").status_code == 401
+    # Logged in but demo doesn't exist
+    u1, _ = _seed(tmp_path)
+    with c.session_transaction() as s:
+        s["uid"] = u1
+    assert c.get("/api/dashboard/analytics/match/nonexistent").status_code == 404
+
+
+def test_dashboard_analytics_form_windows(tmp_path, monkeypatch):
+    """Overview form windows present with correct structure."""
+    monkeypatch.delenv("AUTH_REQUIRED", raising=False)
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    import app
+    _tmpdb(tmp_path)
+    for i, (sha, mp) in enumerate([("a" * 40, "de_a"), ("b" * 40, "de_b"), ("c" * 40, "de_a")]):
+        db.index_demo(_match(sha, mp, [_p("S1", "A")]), sha[:16], owner_user_id=None,
+                      created_at=f"2026-06-0{i + 1}T00:00:00")
+    d = app.app.test_client().get("/api/dashboard/analytics").get_json()
+    ov = d["overview"]
+    assert set(ov["form"].keys()) >= {"last3", "last5", "all", "delta3"}
+    assert len(ov["map_stats"]) == 2   # de_a x2, de_b x1
+    maps = {r["map"] for r in ov["map_stats"]}
+    assert "de_a" in maps and "de_b" in maps

@@ -966,6 +966,43 @@ textarea.lf-in{height:46px;resize:vertical;font-family:inherit}
 .da-demo-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .da-demo-info b{font-size:13px}
 .da-demo-players{font-size:11px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.da-section-head{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);margin:12px 0 5px;padding-bottom:4px;border-bottom:1px solid var(--line2)}
+.da-form-table{width:100%;border-collapse:collapse;font-size:12px;min-width:360px}
+.da-form-table th{color:var(--mut);font-weight:600;text-align:right;padding:4px 8px;border-bottom:1px solid var(--line)}
+.da-form-table th:first-child,.da-form-table td:first-child{text-align:left}
+.da-form-table td{padding:4px 8px;border-bottom:1px solid var(--line2);text-align:right}
+.da-fl{color:var(--mut);white-space:nowrap}
+.da-delta-up{color:#5fcf80;font-size:10px;margin-left:3px}
+.da-delta-dn{color:#ff6f8b;font-size:10px;margin-left:3px}
+.da-delta-eq{color:var(--mut);font-size:10px;margin-left:3px}
+.da-focus-list{display:flex;flex-direction:column;gap:6px}
+.da-focus-item{display:flex;align-items:center;gap:8px;background:#0c1116;border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+.da-focus-item.da-focus-recurring_issue{border-left:3px solid #ff6f8b}
+.da-focus-item.da-focus-weak_map{border-left:3px solid #f0a040}
+.da-focus-item.da-focus-form_drop{border-left:3px solid #6fb0ff}
+.da-focus-label{font-size:13px;font-weight:600;color:var(--txt)}
+.da-focus-detail{font-size:11px;color:var(--mut);flex:1}
+.da-focus-goal{margin-left:auto;flex-shrink:0}
+.da-roster-note{font-size:11px;color:var(--mut);margin-bottom:6px;padding:4px 0}
+.da-player-row{cursor:pointer}
+.da-player-row:hover td{background:var(--panel2)}
+.da-expand-hint{font-size:10px;color:var(--mut);margin-left:4px}
+.da-player-detail{display:none}
+.da-player-detail.show{display:table-row}
+.da-detail-table{width:100%;font-size:11px;border-collapse:collapse;margin:6px 0}
+.da-detail-table th{color:var(--mut);font-weight:600;padding:3px 6px;text-align:right}
+.da-detail-table th:first-child,.da-detail-table td:first-child{text-align:left}
+.da-detail-table td{padding:3px 6px;border-bottom:1px solid var(--line2);text-align:right}
+.da-detail-match-row td{font-size:11px}
+.da-demo-btns{display:flex;gap:6px;flex-shrink:0}
+.da-match-header{display:flex;align-items:center;gap:10px;padding:0 0 10px;border-bottom:1px solid var(--line);margin-bottom:10px;flex-wrap:wrap}
+.da-match-title{flex:1;font-size:14px;display:flex;align-items:center;gap:8px}
+.da-match-body{display:flex;flex-direction:column;gap:6px}
+.da-mutl{color:var(--mut);font-size:12px}
+.da-detail-issues li,.da-detail-good li{font-size:12px;color:var(--txt);margin:3px 0;list-style:none;padding-left:0}
+.da-detail-issues li::before{content:"✗ ";color:#ff6f8b}
+.da-detail-good li::before{content:"✓ ";color:#5fcf80}
+.da-detail-issues,.da-detail-good{padding:0;margin:4px 0 0}
 /* in-app confirm modal (used by Utility demo-throw jump) */
 #confirmModal{z-index:70}          /* above the library modal (60) + util panel */
 #teamsModal{z-index:65}            /* the Share dialog opens FROM the library (60), so it must sit above it */

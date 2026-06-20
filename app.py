@@ -1224,10 +1224,40 @@ def api_dashboard():
     })
 
 
+def _build_roster(uid, ws_team, ws_scope, mode):
+    """Return (roster_mode, roster_sids, roster_members).
+    roster_sids: set of steamid strings to keep; empty set = keep all (local_all).
+    """
+    if mode == "open" or uid is None:
+        return "local_all", set(), []
+    if ws_team is not None:
+        teams = db.teams_for_user(uid)
+        team = next((t for t in teams if t["id"] == ws_team), None)
+        if team:
+            members = [{"steamid": m["steamid"], "name": m["name"]}
+                       for m in (team.get("members") or []) if m.get("steamid")]
+            return "team", {m["steamid"] for m in members}, members
+        return "team", set(), []
+    you, co = db.squad_for(uid, scope=ws_scope)
+    overrides = db.roster_overrides(uid)
+    members, sids = [], set()
+    if you:
+        members.append({"steamid": you["steamid"], "name": you["name"]})
+        sids.add(you["steamid"])
+    for p in co:
+        status = overrides.get(p["steamid"])
+        if status == "out":
+            continue
+        if status == "in" or p["shared"] >= 2:
+            members.append({"steamid": p["steamid"], "name": p["name"]})
+            sids.add(p["steamid"])
+    return "personal_squad", sids, members
+
+
 @app.route("/api/dashboard/analytics")
 def api_dashboard_analytics():
-    """Cross-demo analytics surface: aggregate player stats + recurring issues + demo list.
-    Scoped to the current user's active workspace, same logic as /api/dashboard."""
+    """Cross-demo analytics: roster-scoped player stats, form windows, map breakdown,
+    next-focus recommendations. Scoped to the active dashboard workspace."""
     mode, sc = _scope_or_block()
     if mode == "blocked":
         return _nostore({"error": "login required"}), 401
@@ -1247,15 +1277,21 @@ def api_dashboard_analytics():
         ws_scope = dict(sc)
         ws_scope["workspace"] = ("team", ws_team) if ws_team is not None else "personal"
 
-    matches = db.list_matches(scope=ws_scope)   # newest-first; each has players[] w/ stats
+    roster_mode, roster_sids, roster_members = _build_roster(g_uid, ws_team, ws_scope, mode)
+    matches = db.list_matches(scope=ws_scope)   # newest-first
 
-    # Aggregate per-player stats across all visible matches
     STAT_FIELDS = ["kills", "deaths", "kd", "adr", "kast", "hltv", "open_wr", "traded_pct", "udr"]
+    AVG_FIELDS = ["adr", "kast", "hltv", "open_wr", "traded_pct", "udr"]
+
+    def _in_roster(sid):
+        return not roster_sids or str(sid or "") in roster_sids
+
+    # Per-player aggregate stats (roster-filtered)
     player_agg = {}
     for m in matches:
         for p in (m.get("players") or []):
             sid = str(p.get("steamid") or "")
-            if not sid:
+            if not sid or not _in_roster(sid):
                 continue
             if sid not in player_agg:
                 player_agg[sid] = {"steamid": sid, "name": p.get("name"), "n": 0,
@@ -1278,32 +1314,132 @@ def api_dashboard_analytics():
         players_out.append(row)
     players_out.sort(key=lambda r: (-r["n_matches"], -(r.get("hltv") or 0)))
 
-    # Overview: map distribution + team-wide averages
-    map_counts = {}
+    # Form windows: average each stat across roster players per-match, then average per window
+    def _match_avg(m, field):
+        vals = [p.get(field) for p in (m.get("players") or [])
+                if _in_roster(str(p.get("steamid") or ""))
+                and isinstance(p.get(field), (int, float)) and p[field] > 0]
+        return sum(vals) / len(vals) if vals else None
+
+    def _window(match_list):
+        result = {}
+        for f in AVG_FIELDS:
+            per_match = [_match_avg(m, f) for m in match_list]
+            vals = [v for v in per_match if v is not None]
+            result[f] = round(sum(vals) / len(vals), 1) if vals else None
+        return result
+
+    all_avg = _window(matches)
+    last5 = _window(matches[:5])
+    last3 = _window(matches[:3])
+
+    def _delta(recent, base):
+        if recent is None or base is None:
+            return None
+        return round(recent - base, 1)
+
+    delta3 = {f: _delta(last3.get(f), all_avg.get(f)) for f in AVG_FIELDS}
+
+    # Per-map stats (roster-filtered)
+    map_agg = {}
     for m in matches:
         mp = m.get("map") or "unknown"
-        map_counts[mp] = map_counts.get(mp, 0) + 1
-    top_maps = sorted(map_counts.items(), key=lambda x: -x[1])[:6]
-    avg_fields = ["adr", "kast", "hltv", "open_wr", "traded_pct", "udr"]
-    overall_avg = {}
-    for f in avg_fields:
-        vals = [p.get(f) for m in matches for p in (m.get("players") or [])
-                if isinstance(p.get(f), (int, float)) and p[f] > 0]
-        overall_avg[f] = round(sum(vals) / len(vals), 1) if vals else None
+        if mp not in map_agg:
+            map_agg[mp] = {"map": mp, "count": 0, **{f: [] for f in AVG_FIELDS}}
+        map_agg[mp]["count"] += 1
+        for p in (m.get("players") or []):
+            if not _in_roster(str(p.get("steamid") or "")):
+                continue
+            for f in AVG_FIELDS:
+                v = p.get(f)
+                if isinstance(v, (int, float)) and v > 0:
+                    map_agg[mp][f].append(v)
 
-    # Recurring issues (cache-scan; same data source as /api/recurring)
+    map_stats = []
+    for mp, d in sorted(map_agg.items(), key=lambda x: -x[1]["count"]):
+        row = {"map": mp, "count": d["count"]}
+        for f in AVG_FIELDS:
+            vals = d[f]
+            row[f] = round(sum(vals) / len(vals), 1) if vals else None
+        map_stats.append(row)
+
+    # Recurring issues
     try:
         recurring = goals.recurring_mistakes(CACHE).get("recurring", [])[:8]
     except Exception:
         recurring = []
 
+    # Next review focus: top issue + weak map + form drop (up to 3 items)
+    next_focus = []
+    if recurring:
+        top = recurring[0]
+        next_focus.append({
+            "type": "recurring_issue",
+            "label": top["label"],
+            "detail": f"recurs in {top['matches_present']} of {top['matches_total']} matches",
+            "suggest_metric": top.get("suggest_metric"),
+            "suggested_target": top.get("suggested_target"),
+        })
+    weak = sorted([r for r in map_stats if r["count"] >= 2 and r.get("hltv") is not None],
+                  key=lambda x: x["hltv"])
+    if weak:
+        wm = weak[0]
+        next_focus.append({
+            "type": "weak_map",
+            "label": wm["map"],
+            "detail": f"avg rating {wm['hltv']} over {wm['count']} matches",
+        })
+    for f, label in [("hltv", "Rating"), ("adr", "ADR"), ("kast", "KAST")]:
+        d3 = delta3.get(f)
+        if d3 is not None and d3 <= -2.0 and last3.get(f) is not None:
+            next_focus.append({
+                "type": "form_drop",
+                "label": f"{label} dropped",
+                "detail": f"{all_avg.get(f)} → {last3.get(f)} over last 3",
+            })
+            break
+
     return _nostore({
         "match_count": len(matches),
         "matches": matches,
         "players": players_out,
-        "overview": {"top_maps": [{"map": m, "count": c} for m, c in top_maps],
-                     "averages": overall_avg},
+        "overview": {
+            "top_maps": [{"map": r["map"], "count": r["count"]} for r in map_stats[:6]],
+            "averages": all_avg,
+            "form": {
+                "last3": last3, "last5": last5, "all": all_avg, "delta3": delta3,
+            },
+            "map_stats": map_stats,
+            "next_focus": next_focus[:3],
+        },
         "recurring": recurring,
+        "roster_mode": roster_mode,
+        "roster_members": roster_members,
+    })
+
+
+@app.route("/api/dashboard/analytics/match/<demo_id>")
+def api_dashboard_analytics_match(demo_id):
+    """Analytics-only view of one demo — no frames, no replay state. Cheaper than /api/demo/<id>."""
+    mode, sc = _scope_or_block()
+    if mode == "blocked":
+        return _nostore({"error": "login required"}), 401
+    if sc is not None and not db.accessible(demo_id, sc):
+        return jsonify({"error": "no demo with that id"}), 404
+    data = library.load_demo(CACHE, demo_id)
+    if data is None:
+        return jsonify({"error": "no demo with that id"}), 404
+    analytics = data.get("analytics") or {}
+    rounds_list = data.get("rounds") or []
+    total_rounds = data.get("total_rounds") or len(rounds_list)
+    return _nostore({
+        "id": data.get("source_sha1") or demo_id,
+        "key": demo_id,
+        "map": data.get("map"),
+        "score": data.get("score"),
+        "rounds": total_rounds,
+        "created_at": data.get("parsed_at") or "",
+        "analytics": analytics,
     })
 
 
