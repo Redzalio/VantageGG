@@ -851,26 +851,31 @@ const App = {
     const target = step.el && document.querySelector(step.el);
     if (target) {
       target.scrollIntoView({ block: "nearest", inline: "nearest" });
-      const r = target.getBoundingClientRect(), pad = 6, cardW = 320, cardH = 230;
+      const r = target.getBoundingClientRect(), pad = 6;
+      const cardH = Math.max(card.offsetHeight, 200);   // measure real height; fall back to 200
+      const cardW = Math.max(card.offsetWidth, 320);
       el.style.background = "transparent";              // the spot's ring does the dimming
       spot.style.display = "";
       spot.style.left = (r.left - pad) + "px"; spot.style.top = (r.top - pad) + "px";
       spot.style.width = (r.width + pad * 2) + "px"; spot.style.height = (r.height + pad * 2) + "px";
-      card.classList.remove("tour-center");
+      card.classList.remove("tour-center"); card.style.transform = ""; card.style.bottom = "";
       const left = Math.min(Math.max(8, r.left + r.width / 2 - cardW / 2), window.innerWidth - cardW - 8);
-      card.style.left = left + "px"; card.style.bottom = "";
-      if (window.innerHeight - r.bottom > cardH) {
-        card.style.top = (r.bottom + 12) + "px";           // space below: put card below
-      } else if (r.top > cardH) {
-        card.style.top = (r.top - cardH - 12) + "px";     // space above: put card above
+      card.style.left = left + "px";
+      const spaceBelow = window.innerHeight - r.bottom, spaceAbove = r.top;
+      if (spaceBelow >= cardH + 12) {
+        card.style.top = (r.bottom + 12) + "px";           // fits below
+      } else if (spaceAbove >= cardH + 12) {
+        card.style.top = Math.max(8, r.top - cardH - 12) + "px"; // fits above
       } else {
-        card.style.top = Math.min(r.bottom + 12, window.innerHeight - cardH - 8) + "px"; // cramped: below, clamped
+        card.style.top = Math.max(8, Math.min(r.bottom + 12, window.innerHeight - cardH - 8)) + "px"; // cramped, clamped
       }
     } else {
       spot.style.display = "none";
       el.style.background = "rgba(4,8,12,.72)";          // full dim for centered steps
-      card.classList.add("tour-center");
-      card.style.left = ""; card.style.top = ""; card.style.bottom = "";
+      card.classList.remove("tour-center"); card.style.transform = "";
+      // Explicitly center via inline style so a stale top/left from a prior step never leaks through
+      card.style.left = "50%"; card.style.top = "50%"; card.style.bottom = "";
+      card.style.transform = "translate(-50%,-50%)";
     }
   },
   _tourClearWait() {
