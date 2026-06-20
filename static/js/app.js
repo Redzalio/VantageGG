@@ -4367,12 +4367,12 @@ const App = {
     });
     el.querySelectorAll(".sg-add").forEach(b => b.onclick = (e) => { e.stopPropagation(); this.addSuggestion(+b.dataset.sg, b); });
   },
-  async addSuggestion(i, btn) {
+  addSuggestion(i) {
     const s = (this._suggestions || [])[i];
     if (!s || !s.nade) return;
-    const saved = await fetch("api/nades", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(s.nade) }).then(r => r.json()).catch(() => null);
-    if (saved && saved.id) { btn.textContent = "✓ added"; btn.disabled = true; this.library = null; this._ensureLibrary(); }
+    this.buildAddForm(s.nade);
+    $("libAddForm").style.display = "block";
+    $("libAddForm").scrollIntoView({ block: "nearest" });
   },
   async _fetchCallouts(mapName) {
     if (!mapName) return;
@@ -4654,7 +4654,7 @@ const App = {
       <textarea id="naAim" class="lf-in" placeholder="Aim point / notes"></textarea>
       <div class="lf-row"><button id="naSave" class="up-btn primary">Save lineup</button><button id="naCancel" class="up-btn">Cancel</button></div>
       <div id="naMsg" class="lf-msg"></div>`;
-    if (edit) {   // prefill for editing an existing lineup
+    if (edit) {   // prefill for editing an existing lineup or from a suggestion
       $("naName").value = edit.name || "";
       $("naType").value = edit.type || "smoke";
       $("naSide").value = edit.side || "T";
@@ -4665,7 +4665,16 @@ const App = {
       $("naAim").value = edit.aim || "";
       if (edit.throw_pos) $("naThrowPos").textContent = `${edit.throw_pos[0]}, ${edit.throw_pos[1]}`;
       if (edit.land_pos) $("naLandPos").textContent = `${edit.land_pos[0]}, ${edit.land_pos[1]}`;
-      $("naSave").textContent = "Update lineup";
+      if (edit.id) $("naSave").textContent = "Update lineup";
+      // auto-resolve callout names from world positions when the text fields are still blank
+      if (!$("naThrowCo").value && this._na.throw_pos) {
+        const c = this._calloutAt(this._na.throw_pos[0], this._na.throw_pos[1]);
+        if (c) $("naThrowCo").value = c.name;
+      }
+      if (!$("naTargetCo").value && this._na.land_pos) {
+        const c = this._calloutAt(this._na.land_pos[0], this._na.land_pos[1]);
+        if (c) $("naTargetCo").value = c.name;
+      }
     }
     $("naSetThrow").onclick = () => this.startCapture("throw_pos", "naThrowPos");
     $("naSetLand").onclick = () => this.startCapture("land_pos", "naLandPos");

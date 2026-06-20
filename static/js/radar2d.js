@@ -209,8 +209,6 @@ export class Radar2D {
   _drawCallouts(ctx) {
     if (!this._calloutData) return;
     ctx.save();
-    // boundaries first so the dots/labels stay readable on top
-    for (const c of this._calloutData) this._drawCalloutBoundary(ctx, c);
     ctx.textAlign = "center";
     ctx.textBaseline = "alphabetic";
     // transient focus highlight (set by focusCallout) -- brighter ring for ~1.5s
