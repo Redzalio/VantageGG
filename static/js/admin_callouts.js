@@ -1003,11 +1003,28 @@
       return;
     }
     if (this.drag) {
+      var wasVertex = this.drag.kind === "vertex";
       this.drag = null;
+      // reshaping a boundary vertex → keep the dot at the polygon centroid
+      if (wasVertex) {
+        var c = this.cur();
+        if (c && c.boundary && c.boundary.length >= 3) {
+          var cen = this._boundaryCentroid(c.boundary);
+          if (cen) { c.world = cen; }
+        }
+      }
       this.renderEdit();
       try { this.canvas.releasePointerCapture(e.pointerId); } catch (_) {}
       this.canvas.style.cursor = "grab";
     }
+  };
+
+  // Average of all boundary vertices — used to auto-place the callout dot.
+  Editor.prototype._boundaryCentroid = function (boundary) {
+    if (!boundary || boundary.length < 3) return null;
+    var x = 0, y = 0;
+    for (var i = 0; i < boundary.length; i++) { x += boundary[i][0]; y += boundary[i][1]; }
+    return { x: x / boundary.length, y: y / boundary.length };
   };
 
   Editor.prototype.setMode = function (mode) {
@@ -1018,6 +1035,11 @@
     this.canvas.classList.toggle("cae-mode-move", !draw);
     this.canvas.style.cursor = draw ? "crosshair" : "default";
     var c = this.cur();
+    // finishing a boundary draw → auto-place the dot at the polygon centroid
+    if (!draw && c && c.boundary && c.boundary.length >= 3) {
+      var cen = this._boundaryCentroid(c.boundary);
+      if (cen) { c.world = cen; this.markDirty(); this.renderEdit(); }
+    }
     this.btnClearB.disabled = !c || !c.boundary || !this.cal;
     this.draw();
   };
