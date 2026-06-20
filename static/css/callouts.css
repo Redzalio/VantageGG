@@ -98,6 +98,15 @@
   text-align:center;color:var(--cae-mut);font-size:13px;padding:24px;line-height:1.5}
 .cae-hint{font-size:11px;color:var(--cae-mut);line-height:1.5}
 .cae-hint b{color:var(--cae-txt)}
+/* zoom controls overlay (top-right of the canvas) */
+.cae-zoom-ctrl{position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:4px;z-index:2}
+.cae-zoom-btn{width:30px;height:30px;display:flex;align-items:center;justify-content:center;
+  font-size:18px;line-height:1;font-weight:700;cursor:pointer;
+  background:rgba(10,14,20,.82);color:var(--cae-txt);border:1px solid var(--cae-line);
+  border-radius:7px;backdrop-filter:blur(3px);transition:background .12s,border-color .12s}
+.cae-zoom-btn:hover{background:rgba(20,28,40,.95);border-color:var(--cae-acc,#e8743b)}
+.cae-zoom-btn:active{transform:translateY(1px)}
+.cae-zoom-reset{font-size:15px}
 
 /* reference image (separate, NOT aligned to canvas) */
 .cae-ref{margin-top:6px;border:1px solid var(--cae-line);border-radius:10px;overflow:hidden;background:var(--cae-panel)}

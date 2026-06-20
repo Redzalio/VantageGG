@@ -96,6 +96,8 @@
     this.dpr = Math.min(2, window.devicePixelRatio || 1);
     this.mode = "move";          // "move" | "drawBoundary"
     this.drag = null;            // {kind:'center'|'vertex', id, idx}
+    this.view = { zoom: 1, panX: 0, panY: 0 };  // canvas zoom/pan in CSS px (1 = full-map fit)
+    this.panning = null;         // {x0,y0,panX0,panY0} while dragging the view
     this.unmapped = [];          // unmapped_learned ghosts
     this.refImage = null;        // ref image path
     this.dirty = false;
@@ -171,13 +173,26 @@
     this.canvasBox = el("div", "cae-canvas-box");
     this.canvas = el("canvas", "cae-canvas cae-mode-move");
     this.canvasEmpty = el("div", "cae-canvas-empty", "Pick a map to start editing callouts.");
+    // zoom controls (overlay, top-right of the canvas)
+    this.zoomCtrl = el("div", "cae-zoom-ctrl");
+    this.btnZoomIn = el("button", "cae-zoom-btn", "+");
+    this.btnZoomOut = el("button", "cae-zoom-btn", "−");
+    this.btnZoomReset = el("button", "cae-zoom-btn cae-zoom-reset", "↺");
+    this.btnZoomIn.title = "Zoom in (scroll up)";
+    this.btnZoomOut.title = "Zoom out (scroll down)";
+    this.btnZoomReset.title = "Reset view";
+    this.zoomCtrl.appendChild(this.btnZoomIn);
+    this.zoomCtrl.appendChild(this.btnZoomOut);
+    this.zoomCtrl.appendChild(this.btnZoomReset);
     this.canvasBox.appendChild(this.canvas);
+    this.canvasBox.appendChild(this.zoomCtrl);
     this.canvasBox.appendChild(this.canvasEmpty);
     left.appendChild(this.canvasBox);
 
     this.hint = el("div", "cae-hint",
       "<b>Move mode:</b> drag a dot to set its world position; drag a boundary vertex to reshape. " +
-      "Click a learned ghost to snap. &nbsp;<b>Draw mode:</b> click to add polygon points, double-click or Finish to end.");
+      "Click a learned ghost to snap. &nbsp;<b>Draw mode:</b> click to add polygon points, double-click or Finish to end. " +
+      "&nbsp;<b>View:</b> scroll to zoom, drag empty space (or right/middle-drag) to pan, ↺ to reset.");
     left.appendChild(this.hint);
 
     // reference image holder (separate, not aligned)
@@ -254,20 +269,52 @@
     this.S = s;
     this.canvas.width = Math.round(s * this.dpr);
     this.canvas.height = Math.round(s * this.dpr);
+    this._clampPan();
     this.draw();
   };
 
   // ---- coordinate transforms (CSS px <-> world) ---------------------------
+  // CSS px <-> world, through the current zoom/pan view. All drawing + hit-testing go through these,
+  // so zoom/pan apply everywhere automatically.
   Editor.prototype.worldToCanvas = function (wx, wy) {
-    var c = this.cal, k = this.S / c.size;
+    var c = this.cal, k = this.S / c.size, v = this.view;
     var rx = (wx - c.pos_x) / c.scale;
     var ry = (c.pos_y - wy) / c.scale;
-    return [rx * k, ry * k];
+    return [rx * k * v.zoom + v.panX, ry * k * v.zoom + v.panY];
   };
   Editor.prototype.canvasToWorld = function (cx, cy) {
-    var c = this.cal, k = c.size / this.S;
-    var rx = cx * k, ry = cy * k;
+    var c = this.cal, k = c.size / this.S, v = this.view;
+    var bx = (cx - v.panX) / v.zoom, by = (cy - v.panY) / v.zoom;
+    var rx = bx * k, ry = by * k;
     return [c.pos_x + rx * c.scale, c.pos_y - ry * c.scale];
+  };
+
+  // keep the zoomed map covering the canvas (no blank gutters); locks pan to 0 at full fit
+  Editor.prototype._clampPan = function () {
+    var v = this.view, span = this.S * v.zoom, min = this.S - span;
+    v.panX = span <= this.S ? 0 : clamp(v.panX, min, 0);
+    v.panY = span <= this.S ? 0 : clamp(v.panY, min, 0);
+  };
+  // zoom by `factor` keeping the world point under (cx,cy) fixed
+  Editor.prototype._zoomAt = function (cx, cy, factor) {
+    var v = this.view, nz = clamp(v.zoom * factor, 1, 12);
+    if (nz === v.zoom) return;
+    var bx = (cx - v.panX) / v.zoom, by = (cy - v.panY) / v.zoom;
+    v.zoom = nz; v.panX = cx - bx * nz; v.panY = cy - by * nz;
+    this._clampPan(); this.draw();
+  };
+  Editor.prototype._zoomAtCenter = function (factor) { this._zoomAt(this.S / 2, this.S / 2, factor); };
+  Editor.prototype._resetView = function () { this.view = { zoom: 1, panX: 0, panY: 0 }; this.draw(); };
+  Editor.prototype._onWheel = function (e) {
+    if (!this.cal) return;
+    e.preventDefault();
+    var pos = this._evtPos(e);
+    this._zoomAt(pos[0], pos[1], e.deltaY < 0 ? 1.15 : 1 / 1.15);
+  };
+  Editor.prototype._startPan = function (e, cx, cy) {
+    this.panning = { x0: cx, y0: cy, panX0: this.view.panX, panY0: this.view.panY };
+    this.canvas.style.cursor = "grabbing";
+    try { this.canvas.setPointerCapture(e.pointerId); } catch (_) {}
   };
 
   // ---- bindings -----------------------------------------------------------
@@ -323,6 +370,12 @@
       e.preventDefault();
       if (self.mode === "drawBoundary") self.setMode("move");
     });
+    this.canvas.addEventListener("wheel", function (e) { self._onWheel(e); }, { passive: false });
+    this.canvas.addEventListener("contextmenu", function (e) { e.preventDefault(); });  // allow right-drag pan
+
+    this.btnZoomIn.addEventListener("click", function () { self._zoomAtCenter(1.3); });
+    this.btnZoomOut.addEventListener("click", function () { self._zoomAtCenter(1 / 1.3); });
+    this.btnZoomReset.addEventListener("click", function () { self._resetView(); });
 
     // resize -> re-fit canvas
     this._onResize = function () {
@@ -433,6 +486,7 @@
     this.curMap = map;
     this.selId = null;
     this.mode = "move";
+    this.view = { zoom: 1, panX: 0, panY: 0 };   // start each map at full-fit
     this.dirty = false;
     this.setStatus("Loading " + map + "…");
     try {
@@ -717,13 +771,14 @@
     if (!this.cal) return;
     ctx.scale(this.dpr, this.dpr);     // draw in CSS px from here on
 
-    // radar image
+    // dark backdrop so panning past the image edge isn't transparent
+    ctx.fillStyle = "#05080c";
+    ctx.fillRect(0, 0, this.S, this.S);
+    // radar image (positioned + scaled by the zoom/pan view)
     if (this.imgReady && this.img) {
+      var v = this.view;
       ctx.imageSmoothingEnabled = true;
-      ctx.drawImage(this.img, 0, 0, this.S, this.S);
-    } else {
-      ctx.fillStyle = "#05080c";
-      ctx.fillRect(0, 0, this.S, this.S);
+      ctx.drawImage(this.img, v.panX, v.panY, this.S * v.zoom, this.S * v.zoom);
     }
 
     var self = this;
@@ -878,6 +933,9 @@
     e.preventDefault();
     var pos = this._evtPos(e), cx = pos[0], cy = pos[1];
 
+    // middle / right button -> pan the view (any mode)
+    if (e.button === 1 || e.button === 2) { this._startPan(e, cx, cy); return; }
+
     if (this.mode === "drawBoundary") {
       var c = this.cur();
       if (!c) { this.setMode("move"); return; }
@@ -892,7 +950,7 @@
     }
 
     var hit = this._hit(cx, cy);
-    if (!hit) return;
+    if (!hit) { this._startPan(e, cx, cy); return; }   // drag empty space to pan
     if (hit.kind === "unmapped") { this.createFromUnmapped(hit.zone); return; }
     if (hit.kind === "learnedGhost") { this.selectCallout(hit.id); this.snapToLearned(hit.id); return; }
 
@@ -904,7 +962,16 @@
 
   Editor.prototype._onMove = function (e) {
     if (!this.cal) return;
-    var pos = this._evtPos(e), cx = clamp(pos[0], 0, this.S), cy = clamp(pos[1], 0, this.S);
+    var pos = this._evtPos(e);
+
+    if (this.panning) {
+      this.view.panX = this.panning.panX0 + (pos[0] - this.panning.x0);
+      this.view.panY = this.panning.panY0 + (pos[1] - this.panning.y0);
+      this._clampPan();
+      this.draw();
+      return;
+    }
+    var cx = clamp(pos[0], 0, this.S), cy = clamp(pos[1], 0, this.S);
 
     if (!this.drag) {
       // cursor affordance in move mode
@@ -929,6 +996,12 @@
   };
 
   Editor.prototype._onUp = function (e) {
+    if (this.panning) {
+      this.panning = null;
+      try { this.canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+      this.canvas.style.cursor = "";
+      return;
+    }
     if (this.drag) {
       this.drag = null;
       this.renderEdit();
