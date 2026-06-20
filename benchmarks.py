@@ -795,9 +795,26 @@ def ct_t_benchmark(map_name, bucket, *, region="all", datasets=None):
     neither win rate. ``datasets`` may be a pre-loaded list to avoid disk reads.
     Never fabricates a value -- a missing metric stays None, and if BOTH win rates
     are absent the whole lookup is considered unavailable (returns None).
+
+    The all-maps aggregate (``map_name == "all"``) is matched EXPLICITLY against
+    records whose ``map_filter`` is literally "all" -- :func:`get_dataset` treats a
+    requested map_filter of "all" as "any map", which (now that per-map rows can
+    coexist with the aggregate) could otherwise return a single map's row.
     """
-    rec = get_dataset("premier_ct_t_side_winrates", bucket, region=region,
-                      map_filter=map_name, datasets=datasets)
+    if str(map_name).lower() == "all":
+        recs = datasets if datasets is not None else load_datasets()
+        cands = [r for r in recs
+                 if r.get("bucket_type") == "premier_ct_t_side_winrates"
+                 and str(r.get("bucket")) == str(bucket)
+                 and str(r.get("map_filter", "all")).lower() == "all"
+                 and (region == "all" or str(r.get("region", "all")).lower() in ("all", str(region).lower()))]
+        # prefer an exact region match over a generic "all"-region aggregate
+        cands.sort(key=lambda r: 1 if (region != "all"
+                   and str(r.get("region", "all")).lower() == str(region).lower()) else 0, reverse=True)
+        rec = cands[0] if cands else None
+    else:
+        rec = get_dataset("premier_ct_t_side_winrates", bucket, region=region,
+                          map_filter=map_name, datasets=datasets)
     if rec is None:
         return None
     metrics = rec.get("metrics") or {}

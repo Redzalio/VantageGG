@@ -1835,6 +1835,88 @@ def api_admin_benchmarks():
     return _nostore({"datasets": list(summary.values()), "total_records": len(ds)})
 
 
+@app.route("/api/admin/benchmarks/manual", methods=["GET", "POST"])
+def api_admin_benchmarks_manual():
+    """Admin: hand-enter Premier CT/T side win rates for one rating bucket across maps — no provider
+    fetch needed (CT/T data barely moves, so typing it once is fine). GET ?bucket=&region= returns the
+    values already stored for that bucket so the form can prefill for editing. POST
+    {source_name, source_date, region, bucket, rows:[{map,ct,t,games}]} builds the SAME records
+    parse_leetify_ct_t emits (map names pass straight through; "all" = all-maps average) and stores them
+    WITH attribution, exactly like an import. Each (bucket,region) is its own file, so re-saving a bucket
+    cleanly replaces it and different buckets coexist. Values are transcribed by the admin from a real,
+    named source and attributed wherever they appear — this is a friendlier import path, not fake data."""
+    u = _admin_or_none()
+    if u is None:
+        return _nostore({"error": "admin only"}), 403
+
+    def _f(v):
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return None
+        return f if (f == f and f not in (float("inf"), float("-inf"))) else None
+
+    if request.method == "GET":
+        bucket = (request.args.get("bucket") or "").strip()
+        region = (request.args.get("region") or "all").strip() or "all"
+        rows = {}
+        if bucket:
+            for r in benchmarks.load_datasets():
+                if (r.get("bucket_type") == "premier_ct_t_side_winrates"
+                        and str(r.get("bucket")) == bucket
+                        and str(r.get("region") or "all").lower() == region.lower()):
+                    m = r.get("metrics") or {}
+                    rows[str(r.get("map_filter"))] = {"ct": m.get("ct_win_rate"), "t": m.get("t_win_rate"),
+                                                      "games": r.get("sample_size")}
+        return _nostore({"bucket": bucket, "region": region, "rows": rows,
+                         "source_name": "Leetify", "source_url": benchmarks.LEETIFY_URL})
+
+    body = request.get_json(silent=True) or {}
+    bucket = str(body.get("bucket") or "").strip()
+    if not bucket:
+        return _nostore({"error": "pick a rating bucket (e.g. 15k-20k)"}), 400
+    region = str(body.get("region") or "all").strip() or "all"
+    rows_in = body.get("rows")
+    if not isinstance(rows_in, list) or not rows_in:
+        return _nostore({"error": "need a non-empty 'rows' array"}), 400
+    # Re-shape the hand-typed rows into the canonical Leetify CT/T row shape, then let the tested parser
+    # normalize/validate them. A row with neither CT nor T entered is skipped (never a fabricated 0).
+    leetify_rows = []
+    for r in rows_in:
+        if not isinstance(r, dict):
+            continue
+        mp = str(r.get("map") or "").strip().lower()
+        if not mp:
+            continue
+        ct, t = _f(r.get("ct")), _f(r.get("t"))
+        if ct is None and t is None:
+            continue
+        row = {"game_map_id": mp, "rating_bucket": bucket, "region": region}
+        if ct is not None:
+            row["avg_ct_win_rate"] = ct
+        if t is not None:
+            row["avg_t_win_rate"] = t
+        g = _f(r.get("games"))
+        if g is not None and g > 0:
+            row["total_games"] = int(g)
+        leetify_rows.append(row)
+    if not leetify_rows:
+        return _nostore({"error": "enter at least one map's CT or T win %"}), 400
+    records = benchmarks.parse_leetify_ct_t(
+        leetify_rows,
+        source_url=(str(body.get("source_url") or "").strip() or benchmarks.LEETIFY_URL),
+        source_date=(str(body.get("source_date") or "").strip() or None),
+        source_name=(str(body.get("source_name") or "").strip() or "Leetify"))
+    if not records:
+        return _nostore({"error": "no usable rows (check map names and values)"}), 400
+    safe = lambda s: (re.sub(r"[^a-z0-9]+", "-", str(s).lower()).strip("-") or "x")
+    fname = "manual_premier_ct_t_%s_%s.json" % (safe(bucket), safe(region))
+    path = benchmarks.save_datasets(records, fname)
+    db.log_admin_action(u.get("id"), "benchmarks_manual", "benchmark",
+                        os.path.basename(path), {"records": len(records), "bucket": bucket, "region": region})
+    return _nostore({"ok": True, "records": len(records), "file": os.path.basename(path)})
+
+
 @app.route("/api/playbook", methods=["GET"])
 def playbook_list():
     """Team plays, optionally filtered to ?map=de_xxx. Adherence is checked client-side."""

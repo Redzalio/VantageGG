@@ -5,6 +5,14 @@ import { View3D } from "./view3d.js";
 import { openAnalytics, closeAnalytics } from "./analytics.js";
 
 const $ = (id) => document.getElementById(id);
+// CS2 Premier rating buckets -- MUST stay identical to benchmarks.py _PREMIER_BUCKETS so manually-entered
+// benchmark data lines up by label with what the Trends CT/T panel queries (a mismatch silently shows no
+// benchmark even when data exists).
+const PREMIER_BUCKETS = ["0-5k", "5k-10k", "10k-15k", "15k-20k", "20k-25k", "25k-30k", "30k+"];
+// Maps offered in the manual CT/T benchmark editor; "all" (all-maps average) is the most important row
+// and is listed first. Real de_* names pass straight through the server-side parser (no id mapping needed).
+const BENCH_MAPS = ["all", "de_mirage", "de_inferno", "de_nuke", "de_ancient", "de_overpass",
+                    "de_vertigo", "de_anubis", "de_dust2", "de_train"];
 let _activeUploads = 0;   // in-flight demo upload requests (beforeunload guard: don't lose them)
 // True while any tracked parse job is still queued/parsing/analyzing (set by _trackJobs' poll).
 function _hasActiveJobs() {
@@ -1257,6 +1265,19 @@ const App = {
            <label class="adm-bm-paste">…or paste sourced rows JSON<textarea id="bmPaste" class="adm-search" rows="3" placeholder="[ { ...provider rows... } ]"></textarea></label>
            <div class="adm-bm-row"><button id="bmImport" class="btn ghost sm">Import pasted rows</button><span id="bmMsg" class="round"></span></div>
            <div id="bmStatus" class="adm-bm-status"></div>
+           <div class="adm-bm-manual">
+             <div class="adm-bm-mhead">Enter CT/T map win rates by hand</div>
+             <div class="round adm-bm-mhint">CT/T win rates barely move, so you can just type them. Transcribe public Premier values (e.g. Leetify Data Library) for one rating bucket — blank maps are skipped, and what you save is shown to players <b>with the source + date below as attribution</b>. <b>All maps (avg)</b> drives the overall comparison; per-map fills the table when present.</div>
+             <div class="adm-bm-row">
+               <label>Bucket <select id="bmmBucket" class="lf-in"></select></label>
+               <label>Region <input id="bmmRegion" class="adm-search adm-bm-date" value="all"></label>
+               <label>Source <input id="bmmSource" class="adm-search adm-bm-date" value="Leetify"></label>
+               <label>Date <input id="bmmDate" class="adm-search adm-bm-date" placeholder="2026-03-01" value="2026-03-01"></label>
+             </div>
+             <table class="adm-bm-mtable"><thead><tr><th>Map</th><th>CT win %</th><th>T win %</th><th>Games <span class="round">(opt)</span></th></tr></thead>
+               <tbody id="bmmRows"></tbody></table>
+             <div class="adm-bm-row"><button id="bmmSave" class="btn ghost sm">Save CT/T benchmark</button><span id="bmmMsg" class="round"></span></div>
+           </div>
          </div>` : "")
       + (this.isAdmin ? `<div class="dash-sec-head adm-uhead"><h2>Pricing</h2></div><div id="admPricing" class="adm-pricing"></div>` : "")
       + (() => {
@@ -1361,6 +1382,51 @@ const App = {
       if (msg) msg.textContent = r && r.ok ? `Imported ${r.records} records.` : ((r && r.error) || "Import failed.");
       if (r && r.ok) load();
     };
+    // --- manual CT/T entry: type win rates per map for one bucket, prefilled from what's stored ---
+    const bsel = $("bmmBucket");
+    if (bsel) {
+      const mm = $("bmmMsg");
+      const prettyMap = (m) => m === "all" ? "All maps (avg)" : (this._prettyMap ? this._prettyMap(m) : m);
+      bsel.innerHTML = PREMIER_BUCKETS.map(b => `<option value="${b}">${b}</option>`).join("");
+      const fillRows = (data) => {
+        const have = (data && data.rows) || {};
+        const v = (x) => (x == null ? "" : x);
+        $("bmmRows").innerHTML = BENCH_MAPS.map(m => {
+          const d = have[m] || {};
+          return `<tr data-map="${m}"${m === "all" ? ' class="bmm-all"' : ""}>
+            <td class="bmm-map">${esc(prettyMap(m))}</td>
+            <td><input class="bmm-ct adm-bm-num" inputmode="decimal" value="${v(d.ct)}"></td>
+            <td><input class="bmm-t adm-bm-num" inputmode="decimal" value="${v(d.t)}"></td>
+            <td><input class="bmm-g adm-bm-num" inputmode="numeric" value="${v(d.games)}"></td></tr>`;
+        }).join("");
+      };
+      const loadManual = async () => {
+        const rg = ($("bmmRegion").value || "all").trim() || "all";
+        const r = await fetch(`/api/admin/benchmarks/manual?bucket=${encodeURIComponent(bsel.value)}&region=${encodeURIComponent(rg)}`)
+          .then(x => x.json()).catch(() => null);
+        fillRows(r);
+      };
+      bsel.onchange = loadManual;
+      $("bmmRegion").onchange = loadManual;
+      await loadManual();
+      const sv = $("bmmSave");
+      if (sv) sv.onclick = async () => {
+        const num = (el) => { const x = parseFloat(el.value); return isFinite(x) ? x : null; };
+        const rows = Array.from(document.querySelectorAll("#bmmRows tr")).map(tr => ({
+          map: tr.getAttribute("data-map"),
+          ct: num(tr.querySelector(".bmm-ct")), t: num(tr.querySelector(".bmm-t")), games: num(tr.querySelector(".bmm-g")),
+        })).filter(x => x.ct != null || x.t != null);
+        if (!rows.length) { if (mm) mm.textContent = "Enter at least one map's CT or T %."; return; }
+        sv.disabled = true; if (mm) mm.textContent = "Saving…";
+        const body = { bucket: bsel.value, region: ($("bmmRegion").value || "all").trim() || "all",
+          source_name: ($("bmmSource").value || "Leetify").trim(), source_date: ($("bmmDate").value || "").trim(), rows };
+        const r = await fetch("/api/admin/benchmarks/manual", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body) }).then(x => x.json()).catch(() => null);
+        sv.disabled = false;
+        if (mm) mm.textContent = r && r.ok ? `Saved ${r.records} map${r.records === 1 ? "" : "s"} for ${esc(body.bucket)}.` : ((r && r.error) || "Save failed.");
+        if (r && r.ok) load();   // refresh the loaded-datasets status list above
+      };
+    }
   },
   // Admin "Storage & parsing" section: where the bytes go + upload/parse timing (from the jobs table).
   _renderOps(ops) {
@@ -2996,8 +3062,9 @@ const App = {
     const maps = (r && r.maps) || {};
     const bm = (r && r.benchmark) || null;                   // public CT/T overlay (only present when sourced)
     const keys = Object.keys(maps).sort();
-    // "vs Premier" bucket selector — shown ONLY when a public CT/T dataset is imported (hide-until-data)
-    const BUCKETS = ["1k-5k", "5k-10k", "10k-15k", "15k-20k", "20k-25k", ">25k"];
+    // "vs Premier" bucket selector — shown ONLY when a public CT/T dataset is imported (hide-until-data).
+    // Labels MUST match what's stored (PREMIER_BUCKETS / benchmarks.py) or the lookup silently misses.
+    const BUCKETS = PREMIER_BUCKETS;
     const selHtml = (r && r.benchmark_available)
       ? `<div class="ss-bucket">vs Premier <select id="ssBucket"><option value="">— off —</option>${
           BUCKETS.map(b => `<option value="${b}"${b === bucket ? " selected" : ""}>${b}</option>`).join("")}</select></div>`
