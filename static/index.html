@@ -46,8 +46,7 @@
     </div>
     <div class="actions">
       <!-- mobile-only hamburger: opens the .mob-menu dropdown (all non-Upload actions, stacked) -->
-      <button id="mobMenuToggle" class="btn mob-menu-btn" title="Menu" aria-label="Menu"
-        onclick="this.closest('.actions').classList.toggle('mob-open')">&#9776;</button>
+      <button id="mobMenuToggle" class="btn mob-menu-btn" title="Menu" aria-label="Menu">&#9776;</button>
       <button id="toggleAnalytics" class="btn demo-only">Analytics</button>
       <button id="toggleUtil" class="btn demo-only">Utility</button>
       <button id="toggleReview" class="btn demo-only">Review</button>
@@ -55,8 +54,7 @@
       <button id="uploadBtn" class="btn primary">Upload</button>
       <!-- overflow menu: actions that don't fit collapse in here as the topbar narrows -->
       <div class="more-wrap">
-        <button class="btn more-toggle" id="moreToggle" aria-haspopup="true"
-          onclick="this.closest('.more-wrap').classList.toggle('open')">More &#9662;</button>
+        <button class="btn more-toggle" id="moreToggle" aria-haspopup="true">More &#9662;</button>
         <div class="more-drop">
           <button id="goalsBtn" class="btn">Goals</button>
           <button id="toggleTrends" class="btn">Trends</button>
@@ -84,8 +82,7 @@
 
   <main id="stage">
     <!-- mobile-only: toggles the scoreboard as a left overlay (hidden by default on phones) -->
-    <button id="mobScoreBtn" class="mob-score-btn" title="Toggle scoreboard"
-      onclick="this.closest('#stage').classList.toggle('mob-score-open')">Score</button>
+    <button id="mobScoreBtn" class="mob-score-btn" title="Toggle scoreboard">Score</button>
     <aside class="side left">
       <div class="sbteam ct"><span>Counter-Terrorists</span></div>
       <div id="sbCT" class="sblist"></div>
@@ -363,7 +360,7 @@
               <li>Team workspaces &amp; playbook</li>
             </ul>
             <a class="btn primary land-signin" href="/login/steam">Sign in to start</a>
-            <div class="lp-soon">Early access &mdash; billing is coming soon. Approved testers get Pro free while we finish checkout.</div>
+            <div class="lp-soon">Start free with up to 10 demos &mdash; upgrade to Pro anytime for 3D replay, utility tools &amp; advanced analytics.</div>
           </div>
         </div>
       </div>
@@ -501,7 +498,7 @@
         <li>Unlimited demo uploads</li>
       </ul>
       <button id="upCta" class="btn primary up-cta">Get Pro — Monthly</button>
-      <div class="up-soon">Early access &mdash; billing isn&rsquo;t wired yet. You have been approved for Pro while we finish checkout.</div>
+      <div class="up-soon">Billing isn&rsquo;t enabled on this server &mdash; contact support to upgrade.</div>
     </div>
   </div>
 
@@ -577,9 +574,9 @@
       <div id="overlayText" class="otext">Upload CS2 <b>.dem</b> files (or a <b>.zip</b> of them), open your <b>library</b>, or load the sample.</div>
       <div class="obar"><i id="overlayBar"></i></div>
       <div class="orow">
-        <button class="btn" onclick="document.getElementById('sampleBtn').click()">Load sample</button>
-        <button class="btn" onclick="document.getElementById('libraryBtn').click()">Library</button>
-        <button class="btn primary" onclick="document.getElementById('uploadBtn').click()">Upload</button>
+        <button class="btn" id="ovSampleBtn">Load sample</button>
+        <button class="btn" id="ovLibraryBtn">Library</button>
+        <button class="btn primary" id="ovUploadBtn">Upload</button>
       </div>
     </div>
   </div>

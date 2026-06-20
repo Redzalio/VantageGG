@@ -142,11 +142,15 @@ def _sha_matches(sha, want):
 
 
 def find_consistent(cache_dir="cache", steamid=None, min_throws=MIN_THROWS,
-                    min_matches=MIN_MATCHES, cell=CELL, map_filter=None, only_sha=None):
+                    min_matches=MIN_MATCHES, cell=CELL, map_filter=None, only_sha=None,
+                    allow_shas=None):
     """Scan the cached library (de-duped by source_sha1) for repeatable lineups. Uses per-demo
     throw sidecars so it's cheap after the first build. `map_filter` (e.g. "de_dust2") limits the
     suggestions to one map; `only_sha` limits them to a SINGLE demo (its source_sha1) so you only
-    ever see lineups from the demo you're watching -- not other demos on the same map."""
+    ever see lineups from the demo you're watching -- not other demos on the same map.
+    `allow_shas` (a set of source_sha1) RESTRICTS the scan to demos the caller may see -- on a
+    multi-user host this stops one user's grenade positions leaking into another's suggestions.
+    None = no restriction (local/open mode)."""
     throws, demo_of, seen = [], [], set()
     for path in sorted(glob.glob(os.path.join(cache_dir, "*.json"))):
         if path.endswith(".meta.json"):
@@ -154,6 +158,8 @@ def find_consistent(cache_dir="cache", steamid=None, min_throws=MIN_THROWS,
         sha, ths = _throws_cached(cache_dir, path)
         if only_sha and not _sha_matches(sha, only_sha):
             continue
+        if allow_shas is not None and sha not in allow_shas:
+            continue                                    # demo not visible to this user/team
         if not ths or (sha or path) in seen:
             continue
         seen.add(sha or path)

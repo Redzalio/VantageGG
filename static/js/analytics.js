@@ -204,6 +204,20 @@ function render() {
   $("analyticsBody").querySelectorAll("[data-selsid]").forEach(el => {
     el.onclick = () => { SEL = A.players.findIndex(p => p.steamid === el.dataset.selsid); rememberPlayer(A); render(); };
   });
+  // clickable player name -> open that player's detail (Player view). Free can only open their own
+  // (others -> upsell), mirroring the per-match player picker's Pro gate.
+  $("analyticsBody").querySelectorAll("[data-pview]").forEach(el => {
+    el.onclick = (e) => {
+      e.stopPropagation();
+      const sid = el.dataset.pview;
+      const i = A.players.findIndex(p => String(p.steamid) === String(sid));
+      if (i < 0) return;
+      const proAA = !!(window.App && App.entitled && App.entitled("advancedAnalytics"));
+      const myStid = (window.App && App.me && App.me.user && App.me.user.steam_id_64) || null;
+      if (!proAA && String(sid) !== String(myStid)) { window.App && App._upsell && App._upsell("advancedAnalytics"); return; }
+      SEL = i; rememberPlayer(A); VIEW = "player"; render();
+    };
+  });
   // "+ Goal" on a coaching fix -> open the Practice Goals modal prefilled
   $("analyticsBody").querySelectorAll("[data-gsid]").forEach(el => {
     el.onclick = () => APP.makeGoalFromInsight({
@@ -495,7 +509,7 @@ function reportView(A) {
     const goal = (f && canGoal) ? `<button class="rp-goal sm" data-gsid="${esc(String(p.steamid))}" data-garea="${esc(f.area || "")}" data-gtitle="${esc(f.detail || f.area || "")}" data-gdrill="${esc(f.fix || "")}">+ Goal</button>` : "";
     const reviewCell = canDeaths ? `<td><button class="rp-watchd" data-watchd="${esc(String(p.steamid))}" data-wname="${esc(p.name)}"
         title="Watch all of ${esc(p.name)}'s deaths in 3D">&#9654; deaths</button></td>` : "";
-    return `<tr><td class="rp-pn">${esc(p.name)}</td><td title="CT: ${roleLabels(p.ct_roles) || esc(p.ct_role || "--")}  |  T: ${roleLabels(p.t_roles) || esc(p.t_role || "--")}">${esc(p.ct_role || p.t_role || "--")}</td>
+    return `<tr><td class="rp-pn"><span class="an-name-lnk" data-pview="${esc(String(p.steamid))}" title="View ${esc(p.name)}'s detail">${esc(p.name)}</span></td><td title="CT: ${roleLabels(p.ct_roles) || esc(p.ct_role || "--")}  |  T: ${roleLabels(p.t_roles) || esc(p.t_role || "--")}">${esc(p.ct_role || p.t_role || "--")}</td>
       <td>${(p.hltv || 0).toFixed(2)}</td><td>${Math.round(p.adr || 0)}</td><td>${Math.round(p.kast || 0)}%</td>
       <td>${(p.kd || 0).toFixed(2)}</td><td>${Math.round(p.open_wr || 0)}%</td>
       <td>${p.counter_strafe != null ? p.counter_strafe + "%" : "--"}</td>

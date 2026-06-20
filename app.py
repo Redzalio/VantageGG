@@ -1591,15 +1591,30 @@ def nades_delete(nid):
 def nades_suggest():
     """#61: repeatedly-thrown utility -> promote candidates. A spot thrown 3+ times (min_matches=1,
     so a SINGLE demo qualifies) is enough to surface -- the user just wants to SEE what was thrown on
-    this map and one-click add it, not wait for the same lineup to recur across multiple demos."""
+    this map and one-click add it, not wait for the same lineup to recur across multiple demos.
+    SECURITY: scoped to the caller's own/team demos so one user's grenade positions never leak into
+    another's suggestions (the global cache scan used to ignore ownership)."""
+    blocked = require_auth_when_locked()
+    if blocked:
+        return blocked
+    mode, sc = _scope_or_block()
+    if mode == "blocked":
+        return _nostore({"error": "login required"}), 401
     player = request.args.get("player") or None
     mp = request.args.get("map") or None
     sha = request.args.get("sha") or None      # restrict to the demo being watched (not other demos on the map)
+    allow = None
+    if mode == "scoped":                        # logged-in user: never scan beyond what they can see
+        if sha:
+            if not db.accessible(sha, sc):      # asked for a demo they don't own/share -> nothing
+                return _nostore({"total": 0, "map": mp, "sha": sha, "suggestions": []})
+        else:
+            allow = set(db.library_membership(sc).keys())   # only this user's/team's demos
     # min_throws=2 for the single-demo view: a spot thrown TWICE in one match is already a repeatable
     # setup worth one-click-adding. (3+ across a single demo almost never happens, so suggestions used
     # to come back empty on real demos -- the sample only filled up because it's a synthetic match.)
     cl = nadeclusters.find_consistent(CACHE, steamid=player, map_filter=mp,
-                                      min_throws=2, min_matches=1, only_sha=sha)
+                                      min_throws=2, min_matches=1, only_sha=sha, allow_shas=allow)
     return _nostore({"total": len(cl), "map": mp, "sha": sha,
                      "suggestions": [dict(c, nade=nadeclusters.to_nade(c)) for c in cl[:40]]})
 

@@ -1050,7 +1050,7 @@ const App = {
         if (manage) { this._openPortal(); return; }
         if (isProNow) { this._toast && this._toast("You already have full Pro access."); return; }
         if (billingOn) { this._startCheckout(this._upPeriod); return; }
-        this._toast && this._toast("Billing isn't live yet — approved testers get Pro free during early access.");
+        this._toast && this._toast("Billing isn't enabled on this server — contact support to upgrade.");
       };
     }
     const soon = document.querySelector("#upgradeModal .up-soon");
@@ -1083,7 +1083,7 @@ const App = {
     } else if (me.tier === "pro") {
       const ps = this._proStatus(u);
       planHtml = `<div class="acct-plan-card"><div class="acct-plan-main"><span class="acct-badge pro">PRO</span><div><b>${esc(ps.active ? ps.label : "expired")}</b><small>3D replay, utility tools, advanced trends, goals, teams, and playbook.</small></div></div>${quotaHtml}</div>`
-        + `<div class="acct-mut">Billing isn't live yet — your Pro was granted while we're in early access. To change or cancel it, contact support.</div>`;
+        + `<div class="acct-mut">To change or cancel your plan, use the upgrade panel or contact support.</div>`;
     } else {
       planHtml = `<div class="acct-plan-card"><div class="acct-plan-main"><span class="acct-badge free">FREE</span><div><b>Basic review</b><small>2D replay, match summary, basic analytics, and sample access.</small></div></div>${quotaHtml}</div>`
         + `<button class="btn primary sm acct-gopro">&#10022; Go Pro</button>`;
@@ -1429,7 +1429,7 @@ const App = {
     }).join("");
     host.innerHTML =
       `<div class="adm-price-top"><label>Currency <input id="apCur" class="adm-search adm-cur-in" value="${esc(cur)}" maxlength="3"></label>`
-      + `<span class="round">Set the total charged per term — per-month &amp; savings update automatically. Billing isn't live yet, so this only changes what visitors see.</span></div>`
+      + `<span class="round">Set the total charged per term — per-month &amp; savings update automatically. This updates the displayed pricing only; actual charges use your configured Stripe prices.</span></div>`
       + `<div class="adm-price-rows">${rows}</div>`
       + `<button id="apSave" class="btn primary sm">Save prices</button>`;
     const recompute = () => {
@@ -1725,6 +1725,14 @@ const App = {
       e.target.value = "";                              // allow re-picking the same file(s)
     };
     $("libraryBtn").onclick = () => this.openLibrary();
+    // CSP prep: handlers migrated off inline onclick= in index.html (so a strict script-src can drop
+    // 'unsafe-inline'). Behavior is identical to the old inline toggles.
+    { const b = $("mobMenuToggle"); if (b) b.onclick = () => { const a = b.closest(".actions"); if (a) a.classList.toggle("mob-open"); }; }
+    { const b = $("moreToggle"); if (b) b.onclick = () => { const w = b.closest(".more-wrap"); if (w) w.classList.toggle("open"); }; }
+    { const b = $("mobScoreBtn"); if (b) b.onclick = () => { const s = $("stage"); if (s) s.classList.toggle("mob-score-open"); }; }
+    { const b = $("ovSampleBtn"); if (b) b.onclick = () => $("sampleBtn").click(); }
+    { const b = $("ovLibraryBtn"); if (b) b.onclick = () => $("libraryBtn").click(); }
+    { const b = $("ovUploadBtn"); if (b) b.onclick = () => $("uploadBtn").click(); }
     { const th = $("tourHelp"); if (th) th.onclick = () => this.startTour(true); }
     $("sideCollapse").onclick = () => this.setRightPanel(false);
     $("sideRestore").onclick = () => this.setRightPanel(true);
@@ -4348,18 +4356,28 @@ const App = {
     if (el.dataset.open !== "1") return;
     const mapn = ((this.demo && this.demo.map) || "").replace(/^de_/, "");
     const tf = this.libFilter || "all";
+    const raw = this._suggRaw || [];
     const head = (body) => `<div class="sg-head"><b>Suggested lineups</b> `
-      + `<span class="round">this demo${tf !== "all" ? " &middot; " + esc(tf) : ""}</span>`
+      + `<span class="round">this demo${tf !== "all" ? " &middot; " + esc(tf) + " only" : ""}</span>`
       + `<button class="sg-close" title="Back to library">&times;</button></div>${body}`;
-    const sugg = (this._suggRaw || []).filter(s => tf === "all" || s.type === tf);
+    const sugg = raw.filter(s => tf === "all" || s.type === tf);
     this._suggestions = sugg;          // addSuggestion()/row-click index into this filtered list
-    const rows = sugg.length ? sugg.map((s, i) => `<div class="lib-sg" data-sg="${i}" title="Click to see this throw on the map">
+    const hidden = raw.length - sugg.length;   // other-type suggestions hidden by the active chip
+    // when a type chip is active, always say so + offer a one-click "show all types" escape hatch
+    const showAll = (tf !== "all" && hidden > 0)
+      ? `<div class="sg-note">Showing <b>${esc(tf)}</b> only — ${hidden} other lineup${hidden === 1 ? "" : "s"} hidden by the type filter. <button class="lnk sg-showall">Show all types</button></div>`
+      : "";
+    const rows = sugg.length ? showAll + sugg.map((s, i) => `<div class="lib-sg" data-sg="${i}" title="Click to see this throw on the map">
       <span class="side-${s.side}">${s.side.toUpperCase()}</span> <b>${esc(s.type)}</b>
       <span class="round">${esc(s.name || "")} &middot; ${s.count}&times; thrown</span>
       <button class="up-btn sg-add" data-sg="${i}">+ add</button></div>`).join("")
-      : `<div class="rv-empty">No repeated ${tf === "all" ? "utility" : esc(tf)} in this ${esc(mapn)} demo yet — a lineup shows up here once it's thrown 2+ times from the same spot.${tf !== "all" ? " (Type filter: " + esc(tf) + ".)" : ""}</div>`;
+      : `<div class="rv-empty">No repeated ${tf === "all" ? "utility" : esc(tf)} in this ${esc(mapn)} demo yet — a lineup shows up here once it's thrown 2+ times from the same spot.${tf !== "all" && hidden > 0 ? ` <button class="lnk sg-showall">Show all ${hidden} of any type</button>` : ""}</div>`;
     el.innerHTML = head(rows);
     el.querySelector(".sg-close").onclick = () => this.closeSuggest();
+    el.querySelectorAll(".sg-showall").forEach(b => b.onclick = () => {   // reset chip to "all" + repaint
+      this.libFilter = "all"; this.buildLibrary();
+      if ($("libSuggestions").dataset.open === "1") this._paintSuggestions();
+    });
     el.querySelectorAll(".lib-sg").forEach(row => row.onclick = (e) => {
       if (e.target.closest(".sg-add")) return;                  // the + add button has its own handler
       const s = this._suggestions[+row.dataset.sg];
@@ -4979,10 +4997,10 @@ const App = {
       const acol = a ? this.demo.colorFor(k.attacker, this.demo.teamAtTime(k.attacker, k.t)) : "#888";
       const vcol = this.demo.colorFor(k.victim, this.demo.teamAtTime(k.victim, k.t));
       const hs = k.headshot ? " *" : "";
-      const an = a ? `<b style="color:${acol}">${esc(a.name)}</b>` : `<i>world</i>`;
+      const an = a ? `<b class="kf-lnk" data-spec="${k.attacker}" style="color:${acol}">${esc(a.name)}</b>` : `<i>world</i>`;
       return `<div class="krow">${an}
         <span class="kw">${WEAP(k.weapon)}${hs}</span>
-        <b style="color:${vcol}">${esc(v.name)}</b></div>`;
+        <b class="kf-lnk" data-spec="${k.victim}" style="color:${vcol}">${esc(v.name)}</b></div>`;
     };
     const compact = feed.slice(-6).reverse().map(row).join("");    // newest at top, last 6
     // on-map kill feed, top-right of the radar (2D); the 3D feed sits below the minimap.
@@ -4992,6 +5010,16 @@ const App = {
     const k3 = $("killfeed3d");
     if (this.view3d.active && feed.length) { k3.innerHTML = compact; k3.classList.add("show"); }
     else k3.classList.remove("show");
+    // click a name in the killfeed -> spectate that player (delegated once; innerHTML changes each frame)
+    if (!this._kfBound) {
+      this._kfBound = true;
+      const spec = (e) => {
+        const t = e.target.closest("[data-spec]"); if (!t) return;
+        const idx = +t.dataset.spec; if (idx >= 0) this.setSpectate(idx);
+      };
+      kf.addEventListener("click", spec);
+      if (k3) k3.addEventListener("click", spec);
+    }
   },
   // minimap on-screen size (settings "Map size"). 208px base * multiplier; re-fit if it's live.
   _applyMiniSize() {

@@ -270,6 +270,13 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:none;bor
 .adm-limit input{width:88px}
 .sqd-n.lnk{cursor:pointer}                              /* #24 click a teammate -> their trend */
 .sqd-n.lnk:hover{color:var(--accent);text-decoration:underline}
+.an-name-lnk{cursor:pointer}                            /* clickable player name -> Player detail */
+.an-name-lnk:hover{color:var(--accent);text-decoration:underline}
+.kf-lnk{cursor:pointer}                                 /* killfeed name -> spectate that player */
+.kf-lnk:hover{text-decoration:underline;filter:brightness(1.25)}
+.sg-note{font-size:11px;color:var(--mut);padding:3px 2px 6px}   /* "N hidden by type filter" */
+button.lnk{background:none;border:0;padding:0;font:inherit;cursor:pointer;color:var(--accent)}
+button.lnk:hover{text-decoration:underline}
 /* site footer with policy links -- shown on the landing + dashboard, not the full-screen replay */
 .site-footer{display:none;align-items:center;gap:16px;flex-wrap:wrap;padding:18px 20px 26px;
   border-top:1px solid var(--line);color:var(--mut);font-size:12px;margin-top:24px}

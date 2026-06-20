@@ -135,6 +135,16 @@ _QUEUE_LABELS = {
     "clutch_won": "Clutches won",
 }
 
+# Team loss-reason strings (from analytics._team_loss_reason) that we surface as dedicated,
+# nicely-named cross-team playlists instead of the generic per-team "{team}: {reason}" queue.
+# Mapping: reason string -> (queue key, queue label). Reasons NOT listed here still flow through
+# the generic per-team loop unchanged, so no loss reason is ever dropped.
+_PROMOTED_LOSS_REASONS = {
+    "Lost an even full-buy": ("lost_full_buys", "Lost full-buy rounds"),
+    "Lost the post-plant": ("post_plant_losses", "Post-plant losses"),
+    "Failed the retake": ("failed_retakes", "Failed retakes"),
+}
+
 
 def _humanize(t):
     return _QUEUE_LABELS.get(t) or str(t).replace("_", " ").capitalize()
@@ -197,22 +207,95 @@ def auto_queues(data):
         queues.append({"key": "ins_" + ty, "label": _humanize(ty),
                        "polarity": b["polarity"], "items": items})
 
-    # 2) team loss-reason queues (failed retakes / thrown advantages / ...), from team_coaching
+    def _round_item(rn, player=-1, text=None):
+        """A queue item anchored to a round, using the round card's watch time + summary."""
+        card = rc.get(rn) or {}
+        return {"round": rn, "t": float(card.get("watch_t") or 0), "player": player,
+                "text": text or card.get("summary") or f"Round {rn}"}
+
+    # 2) team loss-reason queues (thrown advantages / lost ecos / ...), from team_coaching.
+    #    A few high-value reasons are PROMOTED to their own cross-team named playlists below
+    #    (Lost full-buy / Post-plant losses / Failed retakes); everything else stays here.
+    promoted = {}   # promoted queue key -> {label, items} aggregated across both teams
     for team in (a.get("team_coaching") or {}).get("teams") or []:
+        if not isinstance(team, dict):
+            continue
         tname = team.get("name") or team.get("id") or "Team"
         for lr in (team.get("loss_reasons") or []):
+            if not isinstance(lr, dict):
+                continue
             rounds = lr.get("rounds") or []
             if not rounds:
                 continue
-            items = []
-            for rn in rounds:
-                card = rc.get(rn) or {}
-                items.append({"round": rn, "t": float(card.get("watch_t") or 0),
-                              "player": -1, "text": card.get("summary") or f"Round {rn}"})
+            reason = lr.get("reason") or "lost rounds"
+            prom = _PROMOTED_LOSS_REASONS.get(reason)
+            if prom:
+                pkey, plabel = prom
+                bucket = promoted.setdefault(pkey, {"label": plabel, "items": []})
+                for rn in rounds:
+                    bucket["items"].append(_round_item(rn, text=f"{tname}: {(rc.get(rn) or {}).get('summary') or 'Round %d' % rn}"))
+                continue
+            items = [_round_item(rn) for rn in rounds]
             queues.append({
-                "key": f"team_{team.get('id','')}_{lr.get('reason','')}",
-                "label": f"{tname}: {_humanize(lr.get('reason') or 'lost rounds')}",
+                "key": f"team_{team.get('id','')}_{reason}",
+                "label": f"{tname}: {_humanize(reason)}",
                 "polarity": "issue", "items": sorted(items, key=lambda x: x["round"])})
+
+    # 2b) promoted named loss-reason playlists (issues first). Built only when the underlying
+    #     loss reason actually occurred -> empty ones are simply never created.
+    for pkey, b in promoted.items():
+        items = sorted(b["items"], key=lambda x: (x.get("round") or 0))
+        queues.append({"key": pkey, "label": b["label"], "polarity": "issue", "items": items})
+
+    # 2c) worst-swing rounds -- rank rounds by the per-round impact (total win-prob swing magnitude
+    #     the engine already computed; analytics.rounds[].impact). This is a REAL per-round value,
+    #     not a fabricated metric. Top 8 most decisive rounds. Skipped if no impact data exists.
+    swing_rows = [r for r in (a.get("rounds") or [])
+                  if isinstance(r, dict)
+                  and (r.get("num") if r.get("num") is not None else r.get("round")) is not None
+                  and (r.get("impact") or 0) > 0]
+    if swing_rows:
+        swing_rows.sort(key=lambda r: -(r.get("impact") or 0))
+        items = []
+        for r in swing_rows[:8]:
+            rn = r.get("num") if r.get("num") is not None else r.get("round")
+            card = rc.get(rn) or {}
+            items.append({"round": rn, "t": float(card.get("watch_t") or 0), "player": -1,
+                          "text": f"Swing {r.get('impact')} -- {card.get('summary') or 'Round %d' % rn}"})
+        queues.append({"key": "worst_swing", "label": "Worst-swing rounds",
+                       "polarity": "issue", "items": items})
+
+    # 2d) best rounds -- biggest positive momentum swings. The good-polarity insights
+    #     (multikills/high_impact) are AGGREGATES with no round/tick, so they aren't jumpable;
+    #     instead we surface each round's single largest kill-swing moment (round_cards[].moments,
+    #     a real engine-computed per-kill win-prob swing), keep the top 8, deduped by round.
+    best = []
+    for r in (a.get("round_cards") or []):
+        if not isinstance(r, dict):
+            continue
+        rn = r.get("round")
+        if rn is None:
+            continue
+        kills = [m for m in (r.get("moments") or [])
+                 if isinstance(m, dict) and m.get("type") == "kill" and m.get("swing")]
+        if not kills:
+            continue
+        top = max(kills, key=lambda m: m.get("swing") or 0)
+        atk = top.get("atk")
+        best.append((top.get("swing") or 0, {
+            "round": rn, "t": float(r.get("watch_t") or 0),
+            "player": sid2idx.get(str(atk), -1),
+            "text": f"Top play +{top.get('swing')}% swing -- {r.get('summary') or 'Round %d' % rn}"}))
+    if best:
+        best.sort(key=lambda x: -x[0])
+        seen, items = set(), []
+        for _, it in best:
+            if it["round"] in seen:
+                continue
+            seen.add(it["round"])
+            items.append(it)
+        queues.append({"key": "best_rounds", "label": "Best rounds",
+                       "polarity": "good", "items": items[:8]})
 
     # 3) round-by-round queue (always available) from round_cards
     rounds_q = []
