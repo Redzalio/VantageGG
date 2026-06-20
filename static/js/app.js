@@ -713,10 +713,22 @@ const App = {
       { el: "#toggle3d", title: "Back to 2D", body: "Click <b>2D</b> to drop back to the radar view whenever you want.",
         action: { label: "Back to 2D", fn: () => { if (this.exit3D) this.exit3D(); else this.toggle3d(); } },
         waitUntil: () => !(this.view3d && this.view3d.active) },
-      { el: "#toggleAnalytics", title: "Analytics", body: "Analytics turns the replay into patterns: K/D, ADR, KAST, openings, trades, and the mistakes you keep repeating.",
-        action: { label: "Open Analytics", fn: () => $("toggleAnalytics") && $("toggleAnalytics").click() } },
+      { el: "#toggleAnalytics", title: "Analytics", body: "Analytics turns the replay into patterns: K/D, ADR, KAST, openings, trades, and the mistakes you keep repeating. Let's open it and walk the tabs.",
+        action: { label: "Open Analytics", fn: () => { const b = $("toggleAnalytics"); if (b) b.click(); } },
+        // require the tab to be VISIBLE (panel actually open) -- closeAnalytics leaves the tab HTML in
+        // the DOM, so a mere querySelector would be true from an earlier open and skip the walkthrough.
+        waitUntil: () => { const t = document.querySelector('.antab[data-view="report"]'); return !!(t && t.offsetParent !== null); } },
+      { el: '.antab[data-view="report"]', title: "Report — start here", body: "The <b>Report</b> is your match summary: the scoreline, the biggest round swings, who carried, and the headline takeaways. Read this first every match.",
+        onEnter: () => this._tourAnalyticsView("report") },
+      { el: '.antab[data-view="player"]', title: "Player — one player at a time", body: "The <b>Player</b> view breaks a single player down: <b>Aim</b>, <b>Utility</b> and <b>Positioning</b> sub-ratings, opening duels, and the exact rounds where they cost the team. Use the dropdown to switch players.",
+        onEnter: () => this._tourAnalyticsView("player") },
+      { el: '.antab[data-view="team"]', title: "Team — your five as a unit", body: "The <b>Team</b> view is spacing, trade efficiency, who's entrying, and repeated tendencies the enemy can read off you.",
+        onEnter: () => this._tourAnalyticsView("team") },
+      { el: '.antab[data-view="data"]', title: "Data — trust the numbers", body: "The <b>Data</b> view shows parse health: what the demo captured and how confident each stat is, so you know the analysis is solid.",
+        onEnter: () => this._tourAnalyticsView("data") },
       { el: "#toggleUtil", title: "Utility", body: "Utility shows every smoke, flash, and molly thrown in the match &mdash; and lets you save lineups to your nade library.",
-        action: { label: "Open Utility", fn: () => $("toggleUtil") && $("toggleUtil").click() } },
+        onEnter: () => closeAnalytics(this),               // clear the analytics overlay before showing the viewport spotlight
+        action: { label: "Open Utility", fn: () => { const b = $("toggleUtil"); if (b) b.click(); } } },
       { el: "#toggleReview", title: "Review", body: "Review is where you bookmark rounds, add notes, and queue practice sessions &mdash; perfect for fixing what Analytics finds.",
         action: { label: "Open Review", fn: () => $("toggleReview") && $("toggleReview").click() } },
       { title: "That's VantageGG", body: "The loop: <b>Watch</b> (2D/3D) &rarr; <b>Find patterns</b> (Analytics) &rarr; <b>Mark moments</b> (Review) &rarr; <b>Practice</b> (Utility). Replay this tour anytime from the <b>Tour</b> button up top." },
@@ -880,6 +892,20 @@ const App = {
   },
   _tourClearWait() {
     if (this._tourWait) { clearInterval(this._tourWait); this._tourWait = null; }
+  },
+  // Tour helper: make sure the Analytics panel is open, then switch to a given tab. Re-opening is
+  // async (openAnalytics fetches + renders), so when we have to open it we click the tab after a
+  // short delay; when it's already open the tab is there and we click immediately. Pro-locked tabs
+  // (Team/Data for a non-entitled user) are left alone so we never trip the upsell mid-tour -- the
+  // spotlight + copy still teach what the tab does. The sample previews Pro, so on the tour they work.
+  _tourAnalyticsView(view) {
+    const open = $("analyticsPanel").classList.contains("show");
+    if (!open) { this.pausePlayback(); openAnalytics(this); }
+    const clickTab = () => {
+      const t = document.querySelector(`.antab[data-view="${view}"]`);
+      if (t && (view === "report" || view === "player" || !t.classList.contains("antab-pro"))) t.click();
+    };
+    if (open) clickTab(); else setTimeout(clickTab, 350);
   },
   _tourEnd() {
     this._tourClearWait();
@@ -1463,7 +1489,7 @@ const App = {
     $("toggleAnalytics").onclick = () => {
       if (!this.demo) return;
       if ($("analyticsPanel").classList.contains("show")) closeAnalytics(this);
-      else { this.pausePlayback(); openAnalytics(this); }   // pause the replay while the panel is open
+      else { this.toggleUtil(false); this.toggleReview(false); this.pausePlayback(); openAnalytics(this); }   // only one panel open; pause while open
     };
     $("closeAnalytics").onclick = () => closeAnalytics(this);
     $("settingsBtn").onclick = () => $("settingsPop").classList.toggle("show");
@@ -3386,7 +3412,7 @@ const App = {
   toggleUtil(force) {
     if (!this.demo) return;
     const show = force === undefined ? !$("utilPanel").classList.contains("show") : force;
-    if (show) this.toggleReview(false);               // panels share the slot
+    if (show) { this.toggleReview(false); closeAnalytics(this); }   // only one panel open at a time
     $("utilPanel").classList.toggle("show", show);
     $("toggleUtil").classList.toggle("on", show);
     if (show) this.setUtilMode(this.utilMode || "throws");
@@ -3398,7 +3424,7 @@ const App = {
   toggleReview(force) {
     if (!this.demo) return;
     const show = force === undefined ? !$("reviewPanel").classList.contains("show") : force;
-    if (show) this.toggleUtil(false);                 // panels share the slot
+    if (show) { this.toggleUtil(false); closeAnalytics(this); }   // only one panel open at a time
     $("reviewPanel").classList.toggle("show", show);
     $("toggleReview").classList.toggle("on", show);
     if (show) this.loadReview();
