@@ -617,6 +617,31 @@ def _record(source_name, source_url, source_date, region, map_filter,
     return rec
 
 
+def manual_perf_record(bucket_type, bucket, metrics, *, region="all", source_name="Leetify",
+                       source_date=None, source_url=None, sample_size=None):
+    """Build ONE Performance-Metric benchmark record from hand-entered values (admin manual entry).
+
+    Mirrors what :func:`parse_leetify_pdl` emits, but takes a metrics dict directly instead of a raw
+    provider row -- the friendly fallback for when the Leetify fetch isn't working. Only keys in
+    :data:`LEETIFY_METRIC_FIELDS` are kept, each coerced to a finite float; a blank/garbage value is
+    DROPPED (-> "unavailable" downstream, never a fabricated 0). ``bucket_type`` must be
+    "premier_rating" or "faceit_level". Returns the record dict, or None when nothing usable was
+    entered / the bucket_type is invalid (the caller treats None as "nothing to save").
+    """
+    if bucket_type not in ("premier_rating", "faceit_level"):
+        return None
+    clean = {}
+    for k, v in (metrics or {}).items():
+        if k in LEETIFY_METRIC_FIELDS:
+            fv = _as_float(v)
+            if fv is not None:
+                clean[k] = fv
+    if not clean:
+        return None
+    return _record(source_name, source_url, source_date, region, "all",
+                   bucket_type, bucket, clean, sample_size=_as_int(sample_size))
+
+
 def save_datasets(records, filename, *, directory=None):
     """Atomically write a list of records to ``<benchmarks_dir>/<filename>`` (admin import).
 

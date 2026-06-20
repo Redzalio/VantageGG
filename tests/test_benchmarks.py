@@ -19,6 +19,27 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import benchmarks  # noqa: E402
 
 
+# ---- manual_perf_record: hand-entered Performance-Metric values (fetch fallback) ----
+def test_manual_perf_record_keeps_known_drops_unknown_and_blanks():
+    rec = benchmarks.manual_perf_record(
+        "premier_rating", "15k-20k",
+        {"avg_reaction_time": 0.6, "avg_preaim": "", "bogus_key": 5, "avg_accuracy_head": "30"},
+        source_name="Leetify", source_date="2026-03-01", sample_size=500)
+    assert rec["bucket_type"] == "premier_rating" and rec["bucket"] == "15k-20k"
+    assert rec["map_filter"] == "all" and rec["sample_size"] == 500 and rec["attribution"]
+    # only documented keys with finite numbers survive; unknown key + blank are dropped (no fake 0)
+    assert rec["metrics"] == {"avg_reaction_time": 0.6, "avg_accuracy_head": 30.0}
+
+
+def test_manual_perf_record_faceit_and_none_paths():
+    f = benchmarks.manual_perf_record("faceit_level", 8, {"avg_spray_accuracy": 22.5})
+    assert f["bucket_type"] == "faceit_level" and f["bucket"] == 8
+    assert benchmarks.manual_perf_record("bad_type", "15k-20k", {"avg_reaction_time": 0.6}) is None  # bad bucket_type
+    assert benchmarks.manual_perf_record("premier_rating", "15k-20k", {}) is None                    # no metrics
+    assert benchmarks.manual_perf_record("premier_rating", "15k-20k",
+                                         {"avg_preaim": None, "x": "y"}) is None                      # nothing usable
+
+
 # ---- a fixture shaped like the documented Leetify PDL response --------------
 # Each row carries ONLY the documented Performance Metric Tool fields plus the
 # bucket/region/map/player_count metadata. Crucially there is NO kd/adr/kast/

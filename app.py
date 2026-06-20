@@ -1917,6 +1917,64 @@ def api_admin_benchmarks_manual():
     return _nostore({"ok": True, "records": len(records), "file": os.path.basename(path)})
 
 
+@app.route("/api/admin/benchmarks/perf-manual", methods=["GET", "POST"])
+def api_admin_benchmarks_perf_manual():
+    """Admin: hand-enter Performance-Metric benchmark values for one skill bucket — the fallback for when
+    the Leetify fetch isn't working. GET ?platform=&bucket=&region= returns the values already stored so
+    the form can prefill for editing. POST {platform, bucket, region, source_name, source_date, metrics}
+    keeps ONLY the documented Leetify metric keys (blank/garbage dropped, never a fabricated 0), builds
+    the SAME record parse_leetify_pdl emits, and stores it WITH attribution. ``platform`` premier ->
+    bucket_type premier_rating (bucket like "15k-20k"); faceit -> faceit_level (bucket = level 1-10).
+    One file per (bucket_type,bucket,region) so re-saving replaces cleanly and buckets coexist."""
+    u = _admin_or_none()
+    if u is None:
+        return _nostore({"error": "admin only"}), 403
+
+    def _btype(platform):
+        return "faceit_level" if str(platform or "").lower() == "faceit" else "premier_rating"
+
+    if request.method == "GET":
+        bucket = str(request.args.get("bucket") or "").strip()
+        region = (request.args.get("region") or "all").strip() or "all"
+        btype = _btype(request.args.get("platform"))
+        metrics, sample_size = {}, None
+        if bucket:
+            for r in benchmarks.load_datasets():
+                if (r.get("bucket_type") == btype and str(r.get("bucket")) == bucket
+                        and str(r.get("region") or "all").lower() == region.lower()):
+                    metrics = r.get("metrics") or {}
+                    sample_size = r.get("sample_size")
+                    break
+        return _nostore({"platform": request.args.get("platform") or "premier", "bucket": bucket,
+                         "region": region, "metrics": metrics, "sample_size": sample_size,
+                         "fields": list(benchmarks.LEETIFY_METRIC_FIELDS),
+                         "source_name": "Leetify", "source_url": benchmarks.LEETIFY_URL})
+
+    body = request.get_json(silent=True) or {}
+    bucket = str(body.get("bucket") or "").strip()
+    if not bucket:
+        return _nostore({"error": "pick a bucket (Premier band like 15k-20k, or FACEIT level 1-10)"}), 400
+    region = str(body.get("region") or "all").strip() or "all"
+    btype = _btype(body.get("platform"))
+    metrics_in = body.get("metrics")
+    if not isinstance(metrics_in, dict) or not metrics_in:
+        return _nostore({"error": "need a 'metrics' object"}), 400
+    rec = benchmarks.manual_perf_record(
+        btype, bucket, metrics_in, region=region,
+        source_name=(str(body.get("source_name") or "").strip() or "Leetify"),
+        source_date=(str(body.get("source_date") or "").strip() or None),
+        source_url=(str(body.get("source_url") or "").strip() or benchmarks.LEETIFY_URL),
+        sample_size=body.get("sample_size"))
+    if rec is None:
+        return _nostore({"error": "enter at least one metric value"}), 400
+    safe = lambda s: (re.sub(r"[^a-z0-9]+", "-", str(s).lower()).strip("-") or "x")
+    fname = "manual_perf_%s_%s_%s.json" % (safe(btype), safe(bucket), safe(region))
+    path = benchmarks.save_datasets([rec], fname)
+    db.log_admin_action(u.get("id"), "benchmarks_perf_manual", "benchmark", os.path.basename(path),
+                        {"metrics": len(rec.get("metrics") or {}), "bucket_type": btype, "bucket": bucket})
+    return _nostore({"ok": True, "metrics": len(rec.get("metrics") or {}), "file": os.path.basename(path)})
+
+
 @app.route("/api/playbook", methods=["GET"])
 def playbook_list():
     """Team plays, optionally filtered to ?map=de_xxx. Adherence is checked client-side."""

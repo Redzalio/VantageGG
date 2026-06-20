@@ -13,6 +13,28 @@ const PREMIER_BUCKETS = ["0-5k", "5k-10k", "10k-15k", "15k-20k", "20k-25k", "25k
 // and is listed first. Real de_* names pass straight through the server-side parser (no id mapping needed).
 const BENCH_MAPS = ["all", "de_mirage", "de_inferno", "de_nuke", "de_ancient", "de_overpass",
                     "de_vertigo", "de_anubis", "de_dust2", "de_train"];
+// FACEIT levels for the perf-metric bucket selector (Premier reuses PREMIER_BUCKETS).
+const FACEIT_LEVELS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
+// Performance-metric fields offered in the manual editor. Keys MUST match benchmarks.py
+// LEETIFY_METRIC_FIELDS (the server keeps only those; unknown keys are dropped). Order/labels/units are
+// display-only; the unit hints mirror how Leetify presents each value so transcription lines up.
+const PERF_METRICS = [
+  { key: "avg_reaction_time", label: "Reaction Time", unit: "s" },
+  { key: "avg_preaim", label: "Pre-aim Error", unit: "°" },
+  { key: "avg_accuracy_enemy_spotted", label: "Accuracy (enemy spotted)", unit: "%" },
+  { key: "avg_spray_accuracy", label: "Spray Accuracy", unit: "%" },
+  { key: "avg_accuracy_head", label: "Head Accuracy", unit: "%" },
+  { key: "avg_counter_strafing_good_ratio", label: "Counter-strafing", unit: "%" },
+  { key: "avg_he_foes_damage_avg", label: "HE Damage", unit: "dmg" },
+  { key: "avg_he_thrown", label: "HE Thrown", unit: "per match" },
+  { key: "avg_molotov_thrown", label: "Molotovs Thrown", unit: "per match" },
+  { key: "avg_smoke_thrown", label: "Smokes Thrown", unit: "per match" },
+  { key: "avg_flashbang_thrown", label: "Flashes Thrown", unit: "per match" },
+  { key: "avg_flashbang_hit_foe", label: "Enemies Flashed", unit: "per match" },
+  { key: "avg_flashbang_hit_foe_avg_duration", label: "Flash Foe Duration", unit: "s" },
+  { key: "avg_total_flash_blind_duration", label: "Total Blind Duration", unit: "s" },
+  { key: "avg_flashbang_hit_friend", label: "Teammates Flashed", unit: "per match" },
+];
 let _activeUploads = 0;   // in-flight demo upload requests (beforeunload guard: don't lose them)
 // True while any tracked parse job is still queued/parsing/analyzing (set by _trackJobs' poll).
 function _hasActiveJobs() {
@@ -1278,6 +1300,20 @@ const App = {
                <tbody id="bmmRows"></tbody></table>
              <div class="adm-bm-row"><button id="bmmSave" class="btn ghost sm">Save CT/T benchmark</button><span id="bmmMsg" class="round"></span></div>
            </div>
+           <div class="adm-bm-manual">
+             <div class="adm-bm-mhead">Enter performance metrics by hand</div>
+             <div class="round adm-bm-mhint">Fallback for when the Leetify fetch fails. Transcribe public aim/utility averages for one skill bucket — blank metrics are skipped (never a fake 0), and what you save is shown <b>with the source + date below as attribution</b>. Feeds the per-stat comparison and "biggest gap". Type each value in the unit shown.</div>
+             <div class="adm-bm-row">
+               <label>Platform <select id="bpmPlatform" class="lf-in"><option value="premier">Premier</option><option value="faceit">FACEIT</option></select></label>
+               <label>Bucket <select id="bpmBucket" class="lf-in"></select></label>
+               <label>Region <input id="bpmRegion" class="adm-search adm-bm-date" value="all"></label>
+               <label>Source <input id="bpmSource" class="adm-search adm-bm-date" value="Leetify"></label>
+               <label>Date <input id="bpmDate" class="adm-search adm-bm-date" placeholder="2026-03-01" value="2026-03-01"></label>
+             </div>
+             <label class="adm-bm-mhint">Sample size <input id="bpmGames" class="adm-bm-num" inputmode="numeric"> <span class="round">games (optional — improves "biggest gap" reliability)</span></label>
+             <table class="adm-bm-mtable"><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody id="bpmRows"></tbody></table>
+             <div class="adm-bm-row"><button id="bpmSave" class="btn ghost sm">Save performance metrics</button><span id="bpmMsg" class="round"></span></div>
+           </div>
          </div>` : "")
       + (this.isAdmin ? `<div class="dash-sec-head adm-uhead"><h2>Pricing</h2></div><div id="admPricing" class="adm-pricing"></div>` : "")
       + (() => {
@@ -1424,6 +1460,56 @@ const App = {
           body: JSON.stringify(body) }).then(x => x.json()).catch(() => null);
         sv.disabled = false;
         if (mm) mm.textContent = r && r.ok ? `Saved ${r.records} map${r.records === 1 ? "" : "s"} for ${esc(body.bucket)}.` : ((r && r.error) || "Save failed.");
+        if (r && r.ok) load();   // refresh the loaded-datasets status list above
+      };
+    }
+    // --- manual performance-metric entry: aim/util averages per skill bucket (fetch fallback) ---
+    const psel = $("bpmPlatform");
+    if (psel) {
+      const pm = $("bpmMsg"), bsel2 = $("bpmBucket");
+      const bucketsFor = () => psel.value === "faceit" ? FACEIT_LEVELS : PREMIER_BUCKETS;
+      const fillBuckets = () => {
+        bsel2.innerHTML = bucketsFor().map(b =>
+          `<option value="${b}">${psel.value === "faceit" ? "Level " + b : b}</option>`).join("");
+      };
+      const fillMetrics = (data) => {
+        const have = (data && data.metrics) || {};
+        const v = (x) => (x == null ? "" : x);
+        $("bpmRows").innerHTML = PERF_METRICS.map(m =>
+          `<tr data-key="${m.key}"><td class="bmm-map">${esc(m.label)}${m.unit ? ` <span class="round">(${esc(m.unit)})</span>` : ""}</td>
+            <td><input class="bpm-v adm-bm-num" inputmode="decimal" value="${v(have[m.key])}"></td></tr>`).join("");
+        $("bpmGames").value = (data && data.sample_size != null) ? data.sample_size : "";
+      };
+      const loadPerf = async () => {
+        const rg = ($("bpmRegion").value || "all").trim() || "all";
+        const r = await fetch(`/api/admin/benchmarks/perf-manual?platform=${encodeURIComponent(psel.value)}&bucket=${encodeURIComponent(bsel2.value)}&region=${encodeURIComponent(rg)}`)
+          .then(x => x.json()).catch(() => null);
+        fillMetrics(r);
+      };
+      fillBuckets();
+      psel.onchange = () => { fillBuckets(); loadPerf(); };
+      bsel2.onchange = loadPerf;
+      $("bpmRegion").onchange = loadPerf;
+      await loadPerf();
+      const ps = $("bpmSave");
+      if (ps) ps.onclick = async () => {
+        const num = (el) => { const x = parseFloat(el.value); return isFinite(x) ? x : null; };
+        const metrics = {};
+        document.querySelectorAll("#bpmRows tr").forEach(tr => {
+          const val = num(tr.querySelector(".bpm-v"));
+          if (val != null) metrics[tr.getAttribute("data-key")] = val;
+        });
+        if (!Object.keys(metrics).length) { if (pm) pm.textContent = "Enter at least one metric value."; return; }
+        ps.disabled = true; if (pm) pm.textContent = "Saving…";
+        const games = parseFloat($("bpmGames").value);
+        const body = { platform: psel.value, bucket: bsel2.value, region: ($("bpmRegion").value || "all").trim() || "all",
+          source_name: ($("bpmSource").value || "Leetify").trim(), source_date: ($("bpmDate").value || "").trim(),
+          sample_size: isFinite(games) ? games : null, metrics };
+        const r = await fetch("/api/admin/benchmarks/perf-manual", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body) }).then(x => x.json()).catch(() => null);
+        ps.disabled = false;
+        const where = psel.value === "faceit" ? "level " + body.bucket : body.bucket;
+        if (pm) pm.textContent = r && r.ok ? `Saved ${r.metrics} metric${r.metrics === 1 ? "" : "s"} for ${esc(where)}.` : ((r && r.error) || "Save failed.");
         if (r && r.ok) load();   // refresh the loaded-datasets status list above
       };
     }

@@ -115,3 +115,71 @@ def test_manual_benchmark_rejects_empty(tmp_path, monkeypatch):
                   json={"rows": [{"map": "all", "ct": 50}]}).status_code == 400          # no bucket
     assert c.post("/api/admin/benchmarks/manual",
                   json={"bucket": "15k-20k", "rows": [{"map": "all"}]}).status_code == 400  # all blank -> nothing to save
+
+
+# ---- manual performance-metric entry (hand-typed, attributed, per-bucket file) ----
+def test_perf_manual_blocks_non_admin(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    import app, benchmarks
+    monkeypatch.setattr(benchmarks, "BENCHMARKS_DIR", str(tmp_path / "bm"))
+    u1 = _seed(tmp_path)
+    c = app.app.test_client()
+    with c.session_transaction() as s:
+        s["uid"] = u1
+    assert c.get("/api/admin/benchmarks/perf-manual?platform=premier&bucket=15k-20k").status_code == 403
+    assert c.post("/api/admin/benchmarks/perf-manual",
+                  json={"platform": "premier", "bucket": "15k-20k",
+                        "metrics": {"avg_reaction_time": 0.6}}).status_code == 403
+
+
+def test_perf_manual_save_prefill_and_compare(tmp_path, monkeypatch):
+    monkeypatch.delenv("AUTH_REQUIRED", raising=False)   # local = admin
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    import app, benchmarks
+    monkeypatch.setattr(benchmarks, "BENCHMARKS_DIR", str(tmp_path / "bm"))
+    db.DB_PATH = str(tmp_path / "bench.sqlite"); db.migrate()
+    c = app.app.test_client()
+    body = {"platform": "premier", "bucket": "15k-20k", "region": "all", "source_name": "Leetify",
+            "source_date": "2026-03-01", "sample_size": 500,
+            "metrics": {"avg_reaction_time": 0.6, "avg_preaim": "", "bogus": 9, "avg_accuracy_head": 31}}
+    j = c.post("/api/admin/benchmarks/perf-manual", json=body).get_json()
+    assert j.get("ok") and j.get("metrics") == 2                 # reaction_time + head; blank + bogus dropped
+
+    g = c.get("/api/admin/benchmarks/perf-manual?platform=premier&bucket=15k-20k&region=all").get_json()
+    assert g["metrics"]["avg_reaction_time"] == 0.6 and g["metrics"]["avg_accuracy_head"] == 31.0
+    assert "bogus" not in g["metrics"] and "avg_preaim" not in g["metrics"]
+    assert g["sample_size"] == 500 and "avg_reaction_time" in g["fields"]
+
+    # the stored record drives the no-fake-data compare API (premier_rating bucket)
+    cmp = c.get("/api/benchmarks/compare?type=premier_rating&bucket=15k-20k").get_json()
+    assert cmp.get("available") is True
+    bench = {m["metric"]: m["benchmark_value"] for m in cmp.get("metrics", [])}
+    assert bench.get("avg_reaction_time") == 0.6
+
+
+def test_perf_manual_faceit_and_replace(tmp_path, monkeypatch):
+    monkeypatch.delenv("AUTH_REQUIRED", raising=False)
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    import app, benchmarks
+    monkeypatch.setattr(benchmarks, "BENCHMARKS_DIR", str(tmp_path / "bm"))
+    db.DB_PATH = str(tmp_path / "bench.sqlite"); db.migrate()
+    c = app.app.test_client()
+    c.post("/api/admin/benchmarks/perf-manual",
+           json={"platform": "faceit", "bucket": "8", "metrics": {"avg_spray_accuracy": 20}})
+    c.post("/api/admin/benchmarks/perf-manual",
+           json={"platform": "faceit", "bucket": "8", "metrics": {"avg_spray_accuracy": 25}})
+    ds = [r for r in benchmarks.load_datasets() if r.get("bucket_type") == "faceit_level"]
+    assert len(ds) == 1 and ds[0]["metrics"]["avg_spray_accuracy"] == 25.0   # re-save replaced, not appended
+
+
+def test_perf_manual_rejects_empty(tmp_path, monkeypatch):
+    monkeypatch.delenv("AUTH_REQUIRED", raising=False)
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    import app, benchmarks
+    monkeypatch.setattr(benchmarks, "BENCHMARKS_DIR", str(tmp_path / "bm"))
+    c = app.app.test_client()
+    assert c.post("/api/admin/benchmarks/perf-manual",
+                  json={"platform": "premier", "metrics": {"avg_reaction_time": 0.6}}).status_code == 400  # no bucket
+    assert c.post("/api/admin/benchmarks/perf-manual",
+                  json={"platform": "premier", "bucket": "15k-20k", "metrics": {"x": "y"}}).status_code == 400  # nothing usable
