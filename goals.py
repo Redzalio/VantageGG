@@ -515,6 +515,35 @@ RECURRING_LABELS = {
 }
 
 
+def _suggest_target(series, suggest_metric):
+    """Suggest a reachable improvement target from a recurring-mistake series.
+
+    `series` is the per-match occurrence count (newest-first). For insight-type
+    metrics (better=="low") the target is ~30 % fewer than the recent 3-match
+    average -- achievable but not perfection. For player metrics that are
+    better=="high" (open_wr, traded_pct, udr) the series is occurrence counts,
+    not the metric value, so we return None and let the user fill in the target.
+    """
+    recent = series[:3] if series else []
+    if not recent:
+        return None
+    recent_avg = sum(recent) / len(recent)
+    m = _METRIC_BY_KEY.get(suggest_metric or "")
+    # If the goal metric is "high-better" (open_wr, traded_pct, …) the series
+    # counts insight occurrences, not the metric value — can't derive a target.
+    if m is not None and m["better"] == "high":
+        return None
+    # Low-better / count metric: target = 70 % of recent avg (30 % improvement).
+    if recent_avg <= 0:
+        return None
+    t = round(recent_avg * 0.70)
+    # Never suggest 0 unless the average is already very close (≤ 1.0) — zero
+    # is usually perfection, not a realistic first goal.
+    if t == 0 and recent_avg > 1.0:
+        t = 1
+    return float(t)
+
+
 def _count_trend(series):
     """Direction of an occurrence-count series (newest-first; lower = better). Zeros count --
     a recent match where it didn't happen IS improvement."""
@@ -567,6 +596,7 @@ def recurring_mistakes(cache_dir=CACHE_DIR, player=None, min_matches=2):
         out.append({"type": t, "label": label, "suggest_metric": metric,
                     "matches_present": present, "matches_total": n,
                     "total": sum(series), "recent": series[0] if series else 0,
-                    "series": series[:10], "trend": _count_trend(series)})
+                    "series": series[:10], "trend": _count_trend(series),
+                    "suggested_target": _suggest_target(series, metric)})
     out.sort(key=lambda r: (-r["matches_present"], -r["total"]))
     return {"player": player, "matches": n, "recurring": out}

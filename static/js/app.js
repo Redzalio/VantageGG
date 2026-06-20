@@ -552,7 +552,7 @@ const App = {
     el.querySelectorAll("[data-q]").forEach(b => b.onclick = () => {
       const q = b.dataset.q;
       if (q === "library") this.openLibrary();
-      else if (q === "analytics") this.entitled("advancedAnalytics") ? this.openTrends() : this._upsell("advancedAnalytics");
+      else if (q === "analytics") this.entitled("advancedAnalytics") ? this.openDashAnalytics() : this._upsell("advancedAnalytics");
       else if (q === "goals") this.entitled("goals") ? this.openGoals() : this._upsell("goals");
       else if (q === "teams") this.entitled("teams") ? this.openTeams() : this._upsell("teams");
       else if (q === "admin") this.openAdmin();
@@ -1503,6 +1503,9 @@ const App = {
     $("toggleTrends").onclick = () => this.entitled("advancedAnalytics") ? this.openTrends() : this._upsell("advancedAnalytics");
     $("trClose").onclick = () => $("trendsModal").classList.remove("show");
     $("trendsModal").onclick = (e) => { if (e.target.id === "trendsModal") $("trendsModal").classList.remove("show"); };
+    $("daClose").onclick = () => $("dashAnalyticsModal").classList.remove("show");
+    $("dashAnalyticsModal").onclick = (e) => { if (e.target.id === "dashAnalyticsModal") $("dashAnalyticsModal").classList.remove("show"); };
+    $("daTrendsBtn").onclick = () => { $("dashAnalyticsModal").classList.remove("show"); this.entitled("advancedAnalytics") ? this.openTrends() : this._upsell("advancedAnalytics"); };
     $("teamsClose").onclick = () => $("teamsModal").classList.remove("show");
     $("teamsModal").onclick = (e) => { if (e.target.id === "teamsModal") $("teamsModal").classList.remove("show"); };
     $("adminClose").onclick = () => $("adminModal").classList.remove("show");
@@ -2404,6 +2407,122 @@ const App = {
     }
   },
 
+  // --- cross-demo dashboard analytics (Overview / Players / Issues / Demos) ----
+  async openDashAnalytics() {
+    if (!this.entitled("advancedAnalytics")) { this._upsell("advancedAnalytics"); return; }
+    this.pausePlayback();
+    const ws = this._currentWorkspace();
+    const modal = $("dashAnalyticsModal");
+    modal.classList.add("show");
+    // reset to overview tab
+    modal.querySelectorAll(".da-tab").forEach(b => { b.classList.toggle("on", b.dataset.da === "overview"); });
+    this._daView = "overview";
+    $("daBody").innerHTML = `<div class="da-loading">Loading…</div>`;
+    const data = await fetch(`/api/dashboard/analytics?workspace=${encodeURIComponent(ws)}`)
+      .then(r => r.json()).catch(() => null);
+    if (!data || data.error) {
+      $("daBody").innerHTML = `<div class="da-empty">${data && data.error ? esc(data.error) : "Could not load analytics."}</div>`;
+      return;
+    }
+    $("daMatchCount").textContent = data.match_count ? `${data.match_count} match${data.match_count === 1 ? "" : "es"}` : "";
+    this._daData = data;
+    this._renderDaView();
+    modal.querySelectorAll(".da-tab").forEach(btn => btn.onclick = () => {
+      modal.querySelectorAll(".da-tab").forEach(b => b.classList.remove("on"));
+      btn.classList.add("on");
+      this._daView = btn.dataset.da;
+      this._renderDaView();
+    });
+  },
+  _renderDaView() {
+    const data = this._daData;
+    if (!data) return;
+    const el = $("daBody"), view = this._daView || "overview";
+    if (view === "overview") el.innerHTML = this._daOverviewHtml(data);
+    else if (view === "players") el.innerHTML = this._daPlayersHtml(data);
+    else if (view === "issues") {
+      el.innerHTML = this._daIssuesHtml(data);
+      el.querySelectorAll(".gl-rc-goal").forEach(b => b.onclick = () => {
+        $("dashAnalyticsModal").classList.remove("show");
+        const t = b.dataset.target !== "" && b.dataset.target != null ? parseFloat(b.dataset.target) : undefined;
+        this.makeGoalFromInsight({ player: b.dataset.player || "", metric: b.dataset.metric || "",
+          title: b.dataset.title, area: b.dataset.area, ...(t != null && !isNaN(t) ? { target: t } : {}) });
+      });
+    } else {
+      el.innerHTML = this._daDemosHtml(data);
+      el.querySelectorAll(".da-open-analytics").forEach(b => b.onclick = () => {
+        $("dashAnalyticsModal").classList.remove("show");
+        this._openMatchAnalytics(b.dataset.key);
+      });
+    }
+  },
+  _daOverviewHtml(data) {
+    const ov = data.overview || {}, avg = ov.averages || {};
+    const f = (v, unit = "") => v != null ? `${v}${unit}` : "—";
+    const mapRow = (ov.top_maps || []).map(m =>
+      `<span class="da-map-chip">${esc(m.map)} <b>${m.count}</b></span>`).join("");
+    return `<div class="da-section">
+      <div class="da-kpis">
+        <div class="da-kpi"><span class="da-kv">${data.match_count}</span><span class="da-kl">Matches</span></div>
+        <div class="da-kpi"><span class="da-kv">${f(avg.hltv)}</span><span class="da-kl">Avg Rating</span></div>
+        <div class="da-kpi"><span class="da-kv">${f(avg.adr)}</span><span class="da-kl">Avg ADR</span></div>
+        <div class="da-kpi"><span class="da-kv">${f(avg.kast, "%")}</span><span class="da-kl">Avg KAST</span></div>
+        <div class="da-kpi"><span class="da-kv">${f(avg.open_wr, "%")}</span><span class="da-kl">Open win%</span></div>
+        <div class="da-kpi"><span class="da-kv">${f(avg.traded_pct, "%")}</span><span class="da-kl">Trade%</span></div>
+      </div>
+      ${mapRow ? `<div class="da-maps-row"><b>Maps:</b> ${mapRow}</div>` : ""}
+    </div>`;
+  },
+  _daPlayersHtml(data) {
+    const players = data.players || [];
+    if (!players.length) return `<div class="da-empty">No player data yet — upload demos to see aggregate stats.</div>`;
+    const rows = players.map(p =>
+      `<tr><td class="da-pname">${esc(p.name || p.steamid)}</td><td>${p.n_matches}</td>
+       <td>${(p.hltv || 0).toFixed(2)}</td><td>${Math.round(p.adr || 0)}</td>
+       <td>${Math.round(p.kast || 0)}%</td><td>${(p.kd || 0).toFixed(2)}</td>
+       <td>${Math.round(p.open_wr || 0)}%</td><td>${Math.round(p.traded_pct || 0)}%</td>
+       <td>${(p.udr || 0).toFixed(1)}</td></tr>`).join("");
+    return `<div class="da-scroll"><table class="da-table">
+      <thead><tr><th>Player</th><th>Demos</th><th>Rating</th><th>ADR</th><th>KAST</th>
+        <th>K/D</th><th>Open%</th><th>Trade%</th><th>UDR</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
+  },
+  _daIssuesHtml(data) {
+    const rec = data.recurring || [];
+    if (!rec.length) return `<div class="da-empty">No repeating issues found across your demos yet.</div>`;
+    return `<div class="gl-recur-body">` + rec.map(it => {
+      const goal = it.suggest_metric
+        ? `<button class="gl-rc-goal" data-player="" data-metric="${esc(it.suggest_metric)}"
+            data-target="${it.suggested_target != null ? it.suggested_target : ""}"
+            data-title="${esc(it.label)}" data-area="${esc(it.type)}">+ Goal</button>` : "";
+      return `<div class="gl-rc-row">
+        <div class="gl-rc-info">
+          <span class="gl-rc-label">${esc(it.label)}</span>
+          <span class="gl-rc-meta">in <b>${it.matches_present}</b> of ${it.matches_total} matches &middot; ${it.total} total
+            <span class="gl-rc-trend t-${it.trend}">${esc(it.trend)}</span></span>
+        </div>
+        ${this._recurSpark(it)}
+        ${goal}
+      </div>`;
+    }).join("") + `</div>`;
+  },
+  _daDemosHtml(data) {
+    const matches = data.matches || [];
+    if (!matches.length) return `<div class="da-empty">No demos yet — upload a .dem to get started.</div>`;
+    return `<div class="da-demos">` + matches.map(m => {
+      const date = (m.created_at || "").slice(0, 10);
+      const players = (m.players || []).slice(0, 5).map(p => esc(p.name || "?")).join(", ");
+      return `<div class="da-demo-row">
+        <div class="da-demo-info">
+          <b>${esc(m.map || "?")}</b>
+          <span class="round">${m.rounds || 0}r${m.score ? " · " + esc(m.score) : ""} · ${esc(date)}</span>
+          <span class="da-demo-players">${esc(players)}</span>
+        </div>
+        <button class="btn ghost sm da-open-analytics" data-key="${esc(m.key || m.id)}">Analytics →</button>
+      </div>`;
+    }).join("") + `</div>`;
+  },
+
   // --- multi-demo trends + team config (cross-match "am I getting better?") -
   async openTrends(focusSid) {
     this.pausePlayback();
@@ -2708,9 +2827,11 @@ const App = {
       return;
     }
     body.innerHTML = data.recurring.map(it => this._recurRow(it, data.player)).join("");
-    body.querySelectorAll(".gl-rc-goal").forEach(b => b.onclick = () => this.makeGoalFromInsight({
-      player: b.dataset.player || "", metric: b.dataset.metric || "", title: b.dataset.title, area: b.dataset.area,
-    }));
+    body.querySelectorAll(".gl-rc-goal").forEach(b => b.onclick = () => {
+      const t = b.dataset.target !== "" && b.dataset.target != null ? parseFloat(b.dataset.target) : undefined;
+      this.makeGoalFromInsight({ player: b.dataset.player || "", metric: b.dataset.metric || "",
+        title: b.dataset.title, area: b.dataset.area, ...(t != null && !isNaN(t) ? { target: t } : {}) });
+    });
   },
 
   _recurRow(it, player) {
@@ -2722,6 +2843,7 @@ const App = {
       </div>
       ${this._recurSpark(it)}
       <button class="gl-rc-goal" data-player="${esc(player || "")}" data-metric="${esc(it.suggest_metric || "")}"
+        data-target="${it.suggested_target != null ? it.suggested_target : ""}"
         data-title="${esc(it.label)}" data-area="${esc(it.type)}">+ Goal</button>
     </div>`;
   },

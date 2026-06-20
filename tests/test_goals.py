@@ -316,6 +316,47 @@ def test_count_trend():
     assert goals._count_trend([2, 2, 2, 2]) == "steady"
 
 
+# ---- suggested target logic ------------------------------------------------
+def test_suggest_target_low_metric_30pct_improvement():
+    # avg 5.0 -> target ~3-4 (30% of 5 = 3.5 -> rounds to 4 if round(), but 0.7*5=3.5 -> round=4)
+    # Actually 0.70 * 5 = 3.5, round() in Python rounds to nearest even -> 4
+    t = goals._suggest_target([5, 5, 5], "untraded_opening_death")
+    assert t is not None and t < 5.0 and t >= 1.0
+
+
+def test_suggest_target_not_zero_when_avg_above_one():
+    # avg 1.5 -> 0.70*1.5=1.05 -> round=1 (not 0)
+    t = goals._suggest_target([2, 1, 2], "untraded_opening_death")
+    assert t is not None and t >= 1.0
+
+
+def test_suggest_target_high_metric_returns_none():
+    # open_wr is better=="high" -> should return None
+    assert goals._suggest_target([50, 48, 52], "open_wr") is None
+    # traded_pct is also high-better
+    assert goals._suggest_target([30, 28, 32], "traded_pct") is None
+
+
+def test_suggest_target_empty_series_returns_none():
+    assert goals._suggest_target([], "untraded_opening_death") is None
+
+
+def test_suggest_target_included_in_recurring(tmp_path):
+    cache = tmp_path / "cache"
+    P = [{"steamid": "S1"}, {"steamid": "S2"}]
+    for i in range(3):
+        _write_match(cache, f"m{i}", P, {"S1": [_iss("untraded_opening_death")] * (3 + i)}, sha=f"R{i}")
+    goals._matches_memo["sig"] = None
+    r = goals.recurring_mistakes(str(cache), player="S1", min_matches=2)
+    by = {x["type"]: x for x in r["recurring"]}
+    row = by["untraded_opening_death"]
+    assert "suggested_target" in row
+    assert row["suggested_target"] is not None
+    # target must be strictly less than the recent average
+    avg = sum(row["series"][:3]) / 3
+    assert row["suggested_target"] < avg
+
+
 def test_matches_sidecar_and_memo(tmp_path):
     cache = tmp_path / "cache"
     cache.mkdir()

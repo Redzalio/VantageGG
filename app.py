@@ -1224,6 +1224,89 @@ def api_dashboard():
     })
 
 
+@app.route("/api/dashboard/analytics")
+def api_dashboard_analytics():
+    """Cross-demo analytics surface: aggregate player stats + recurring issues + demo list.
+    Scoped to the current user's active workspace, same logic as /api/dashboard."""
+    mode, sc = _scope_or_block()
+    if mode == "blocked":
+        return _nostore({"error": "login required"}), 401
+    g_uid = current_user_id()
+    g_team_ids = set(db.team_ids_for_user(g_uid)) if g_uid else set()
+    ws_raw = (request.args.get("workspace") or "personal").strip()
+    ws_team = None
+    if ws_raw.startswith("team:"):
+        try:
+            ws_team = int(ws_raw.split(":", 1)[1])
+        except (TypeError, ValueError):
+            ws_team = None
+        if ws_team is None or ws_team not in g_team_ids:
+            return _nostore({"error": "you are not on that team"}), 403
+    ws_scope = sc
+    if sc is not None:
+        ws_scope = dict(sc)
+        ws_scope["workspace"] = ("team", ws_team) if ws_team is not None else "personal"
+
+    matches = db.list_matches(scope=ws_scope)   # newest-first; each has players[] w/ stats
+
+    # Aggregate per-player stats across all visible matches
+    STAT_FIELDS = ["kills", "deaths", "kd", "adr", "kast", "hltv", "open_wr", "traded_pct", "udr"]
+    player_agg = {}
+    for m in matches:
+        for p in (m.get("players") or []):
+            sid = str(p.get("steamid") or "")
+            if not sid:
+                continue
+            if sid not in player_agg:
+                player_agg[sid] = {"steamid": sid, "name": p.get("name"), "n": 0,
+                                   **{f: 0.0 for f in STAT_FIELDS}}
+            rec = player_agg[sid]
+            rec["n"] += 1
+            if p.get("name"):
+                rec["name"] = p["name"]
+            for f in STAT_FIELDS:
+                v = p.get(f)
+                if isinstance(v, (int, float)):
+                    rec[f] += v
+
+    players_out = []
+    for rec in player_agg.values():
+        n = rec["n"]
+        row = {"steamid": rec["steamid"], "name": rec["name"], "n_matches": n}
+        for f in STAT_FIELDS:
+            row[f] = round(rec[f] / n, 2) if n else 0.0
+        players_out.append(row)
+    players_out.sort(key=lambda r: (-r["n_matches"], -(r.get("hltv") or 0)))
+
+    # Overview: map distribution + team-wide averages
+    map_counts = {}
+    for m in matches:
+        mp = m.get("map") or "unknown"
+        map_counts[mp] = map_counts.get(mp, 0) + 1
+    top_maps = sorted(map_counts.items(), key=lambda x: -x[1])[:6]
+    avg_fields = ["adr", "kast", "hltv", "open_wr", "traded_pct", "udr"]
+    overall_avg = {}
+    for f in avg_fields:
+        vals = [p.get(f) for m in matches for p in (m.get("players") or [])
+                if isinstance(p.get(f), (int, float)) and p[f] > 0]
+        overall_avg[f] = round(sum(vals) / len(vals), 1) if vals else None
+
+    # Recurring issues (cache-scan; same data source as /api/recurring)
+    try:
+        recurring = goals.recurring_mistakes(CACHE).get("recurring", [])[:8]
+    except Exception:
+        recurring = []
+
+    return _nostore({
+        "match_count": len(matches),
+        "matches": matches,
+        "players": players_out,
+        "overview": {"top_maps": [{"map": m, "count": c} for m, c in top_maps],
+                     "averages": overall_avg},
+        "recurring": recurring,
+    })
+
+
 @app.route("/api/players")
 def api_players():
     mode, sc = _scope_or_block()
