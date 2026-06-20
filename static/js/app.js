@@ -851,16 +851,21 @@ const App = {
     const target = step.el && document.querySelector(step.el);
     if (target) {
       target.scrollIntoView({ block: "nearest", inline: "nearest" });
-      const r = target.getBoundingClientRect(), pad = 6, cardW = 320;
+      const r = target.getBoundingClientRect(), pad = 6, cardW = 320, cardH = 230;
       el.style.background = "transparent";              // the spot's ring does the dimming
       spot.style.display = "";
       spot.style.left = (r.left - pad) + "px"; spot.style.top = (r.top - pad) + "px";
       spot.style.width = (r.width + pad * 2) + "px"; spot.style.height = (r.height + pad * 2) + "px";
       card.classList.remove("tour-center");
       const left = Math.min(Math.max(8, r.left + r.width / 2 - cardW / 2), window.innerWidth - cardW - 8);
-      card.style.left = left + "px";
-      if (window.innerHeight - r.bottom > 190) { card.style.top = (r.bottom + 12) + "px"; card.style.bottom = ""; }
-      else { card.style.top = ""; card.style.bottom = (window.innerHeight - r.top + 12) + "px"; }
+      card.style.left = left + "px"; card.style.bottom = "";
+      if (window.innerHeight - r.bottom > cardH) {
+        card.style.top = (r.bottom + 12) + "px";           // space below: put card below
+      } else if (r.top > cardH) {
+        card.style.top = (r.top - cardH - 12) + "px";     // space above: put card above
+      } else {
+        card.style.top = Math.min(r.bottom + 12, window.innerHeight - cardH - 8) + "px"; // cramped: below, clamped
+      }
     } else {
       spot.style.display = "none";
       el.style.background = "rgba(4,8,12,.72)";          // full dim for centered steps
