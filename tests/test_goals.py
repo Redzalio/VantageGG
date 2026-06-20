@@ -233,6 +233,155 @@ def test_grade_low_metric_fixed():
     assert goals.grade(g, ms)["verdict"] == "fixed"   # recent [3,4,2] all <= 5
 
 
+# ---- callout-scoped (location) grading (#62 position_stats) -----------------
+def _pmatch(mp="de_x", position_stats=None, steamid="S1", extra_players=None):
+    """A match whose player S1 carries position_stats (per-callout K/D rows)."""
+    p = {"steamid": steamid, "name": "Red", "adr": 80, "position_stats": position_stats or []}
+    return _match(mp, players=[p] + (extra_players or []))
+
+
+def _ps(zone, k=0, d=0, ct_k=0, ct_d=0, t_k=0, t_d=0, open_k=0, open_d=0):
+    return {"zone": zone, "k": k or (ct_k + t_k), "d": d or (ct_d + t_d),
+            "kd": round((k or ct_k + t_k) / (d or ct_d + t_d), 2) if (d or ct_d + t_d) else float(k or ct_k + t_k),
+            "ct_k": ct_k, "ct_d": ct_d, "t_k": t_k, "t_d": t_d, "open_k": open_k, "open_d": open_d}
+
+
+def test_callout_supported_map():
+    assert goals.callout_supported("pos") and goals.callout_supported("open_wr")
+    assert goals.callout_supported("untraded_opening_death") and goals.callout_supported("kd")
+    assert not goals.callout_supported("adr")    # ratio stat -> no per-callout numerator
+    assert not goals.callout_supported("kast") and not goals.callout_supported("team_retake_wr")
+
+
+def test_callout_value_deaths_and_open_and_kd():
+    a = _pmatch(position_stats=[_ps("BombsiteB", ct_k=4, ct_d=1, t_k=1, t_d=3, open_k=1, open_d=2),
+                               _ps("Connector", ct_k=0, ct_d=2, t_k=2, t_d=0)])["analytics"]
+    pos = goals.metric_by_key("pos")              # deaths at the callout
+    assert goals.callout_value(pos, a, {"player": "S1", "callout": "BombsiteB"}) == 4.0   # 1+3 deaths
+    assert goals.callout_value(pos, a, {"player": "S1", "callout": "Connector"}) == 2.0
+    uod = goals.metric_by_key("untraded_opening_death")   # opening deaths at the callout
+    assert goals.callout_value(uod, a, {"player": "S1", "callout": "BombsiteB"}) == 2.0
+    owr = goals.metric_by_key("open_wr")          # opening win% = open_k/(open_k+open_d)*100
+    assert goals.callout_value(owr, a, {"player": "S1", "callout": "BombsiteB"}) == round(1 / 3 * 100, 1)
+    # kd metric isn't in the registry, so build a metric-like dict directly via CALLOUT_METRICS
+    kd_metric = {"key": "kd", "better": "high"}
+    assert goals.callout_value(kd_metric, a, {"player": "S1", "callout": "BombsiteB"}) == 1.25  # 5k/4d
+
+
+def test_callout_value_side_filter():
+    a = _pmatch(position_stats=[_ps("Long", ct_k=3, ct_d=1, t_k=0, t_d=4, open_k=1, open_d=1)])["analytics"]
+    pos = goals.metric_by_key("pos")
+    assert goals.callout_value(pos, a, {"player": "S1", "callout": "Long", "side": "ct"}) == 1.0  # ct deaths
+    assert goals.callout_value(pos, a, {"player": "S1", "callout": "Long", "side": "t"}) == 4.0   # t deaths
+    assert goals.callout_value(pos, a, {"player": "S1", "callout": "Long"}) == 5.0                # both sides
+
+
+def test_callout_value_absent_callout_and_unsupported_metric():
+    a = _pmatch(position_stats=[_ps("Pit", ct_d=2)])["analytics"]
+    pos = goals.metric_by_key("pos")
+    # player played but never at this callout -> count metric reads 0 (not dying there IS progress)
+    assert goals.callout_value(pos, a, {"player": "S1", "callout": "Ramp"}) == 0.0
+    # ratio metric (open_wr) needs a real row at the callout -> None (skip the match)
+    owr = goals.metric_by_key("open_wr")
+    assert goals.callout_value(owr, a, {"player": "S1", "callout": "Ramp"}) is None
+    # player not in the match at all -> None
+    assert goals.callout_value(pos, a, {"player": "GHOST", "callout": "Pit"}) is None
+    # unsupported metric -> None (caller falls back to map-wide)
+    assert goals.callout_value(goals.metric_by_key("adr"), a, {"player": "S1", "callout": "Pit"}) is None
+
+
+def test_grade_callout_series_only_reflects_that_callout():
+    """A callout-scoped goal grades by deaths AT the callout per match -- not map-wide deaths."""
+    ms = [_pmatch(position_stats=[_ps("A", ct_d=1), _ps("Mid", ct_d=5)]),       # newest: 1 death at A
+          _pmatch(position_stats=[_ps("A", ct_d=2), _ps("Mid", ct_d=4)]),       # 2 at A
+          _pmatch(position_stats=[_ps("A", ct_d=3), _ps("Mid", ct_d=9)])]       # oldest: 3 at A
+    g = {"metric": "pos", "target": 2, "scope": {"player": "S1", "callout": "A"}, "baseline": 3}
+    res = goals.grade(g, ms)
+    assert [s["value"] for s in res["series"]] == [1.0, 2.0, 3.0]   # ONLY callout A, not Mid's big counts
+    assert res["callout"] == "A" and res["callout_status"] == "graded"
+    assert "deaths at A" in res["callout_label"]
+    assert res["samples"] == 3 and res["current"] == 1.0
+    # recent avg (1+2+3)/3 = 2.0 == target 2 (low-better) -> meets target -> "fixed"
+    assert res["recent_avg"] == 2.0 and res["verdict"] == "fixed"
+
+
+def test_grade_callout_open_wr_high_metric():
+    ms = [_pmatch(position_stats=[_ps("Site", open_k=4, open_d=1)]),    # 80%
+          _pmatch(position_stats=[_ps("Site", open_k=3, open_d=2)]),    # 60%
+          _pmatch(position_stats=[_ps("Site", open_k=1, open_d=4)])]    # 20%
+    g = {"metric": "open_wr", "target": 55, "scope": {"player": "S1", "callout": "Site"}, "baseline": 20}
+    res = goals.grade(g, ms)
+    assert [s["value"] for s in res["series"]] == [80.0, 60.0, 20.0]
+    assert res["unit"] == "%" and res["callout_status"] == "graded"
+    assert res["recent_avg"] == round((80 + 60 + 20) / 3, 1)   # 53.3
+    assert res["meets_target"] is False            # 53.3 < target 55 (open_wr is high-better)
+    assert res["current"] == 80.0
+
+
+def test_grade_callout_fallback_when_metric_unsupported():
+    """A callout goal on a metric with no per-callout form grades map-wide + says so."""
+    ms = [_match(players=[{"steamid": "S1", "adr": 90}]),
+          _match(players=[{"steamid": "S1", "adr": 88}]),
+          _match(players=[{"steamid": "S1", "adr": 86}])]
+    g = {"metric": "adr", "target": 85, "scope": {"player": "S1", "callout": "Mid"}, "baseline": 60}
+    res = goals.grade(g, ms)
+    assert res["callout"] == "Mid" and res["callout_status"] == "fallback"
+    assert "map-wide" in res["callout_label"]
+    assert [s["value"] for s in res["series"]] == [90.0, 88.0, 86.0]   # normal ADR series, unchanged
+    assert res["metric_label"] == "ADR"            # registry label preserved on fallback
+
+
+def test_grade_callout_group_aggregates_members():
+    """A squad callout goal sums death-counts across your members at the callout per match."""
+    def mk(s1_d, s2_d):
+        return _match(players=[{"steamid": "S1", "position_stats": [_ps("A", ct_d=s1_d)]},
+                               {"steamid": "S2", "position_stats": [_ps("A", ct_d=s2_d)]},
+                               {"steamid": "ENEMY", "position_stats": [_ps("A", ct_d=99)]}])
+    ms = [mk(1, 1), mk(2, 1), mk(2, 2)]   # team deaths at A: 2, 3, 4 (ENEMY excluded)
+    g = {"metric": "pos", "target": 2, "scope": {"group": "squad", "members": ["S1", "S2"], "callout": "A"},
+         "baseline": 4}
+    res = goals.grade(g, ms)
+    assert [s["value"] for s in res["series"]] == [2.0, 3.0, 4.0]   # summed, no ENEMY
+    assert res["callout_status"] == "graded"
+    # per-member breakdown is also callout-scoped
+    mem = {x["steamid"]: x for x in res["members"]}
+    assert mem["S1"]["current"] == 1.0 and mem["S2"]["current"] == 1.0
+
+
+def test_grade_no_callout_unchanged():
+    """Guarantee: a goal WITHOUT scope.callout grades exactly as before (no callout keys added)."""
+    ms = _adr_matches([90, 88, 86, 70, 60])
+    res = goals.grade(_adr_goal(85), ms)
+    assert res["verdict"] == "fixed" and res["current"] == 90 and res["samples"] == 5
+    assert "callout" not in res and "callout_status" not in res
+    # a callout goal for a player who isn't in any match -> no_data (never throws)
+    g = {"metric": "pos", "target": 2, "scope": {"player": "GHOST", "callout": "A"}}
+    empty = goals.grade(g, _adr_matches([90, 88]))
+    assert empty["verdict"] == "no_data" and empty["callout_status"] == "graded"
+    # a present player with no position_stats reads 0 deaths at the callout (not dying there is real)
+    g2 = {"metric": "pos", "target": 2, "scope": {"player": "S1", "callout": "A"}}
+    pres = goals.grade(g2, _adr_matches([90, 88]))   # S1 present, but no position_stats
+    assert [s["value"] for s in pres["series"]] == [0.0, 0.0] and pres["verdict"] == "insufficient"
+
+
+def test_callout_baseline_from_source_measured_at_callout(tmp_path):
+    """add_goal's baseline for a callout goal is the value AT the callout, not the map-wide value."""
+    import db
+    db.DB_PATH = str(tmp_path / "goals.sqlite")
+    db.migrate()
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    (cache / "src.json").write_text(json.dumps({
+        "map": "de_x", "source_sha1": "SRC", "rounds": [{}],
+        "analytics": {"players": [{"steamid": "S1",
+                                   "position_stats": [_ps("A", ct_d=3), _ps("Mid", ct_d=9)]}]}}),
+        encoding="utf-8")
+    goals._matches_memo["sig"] = None
+    g = goals.add_goal({"metric": "pos", "target": 2, "source_match_key": "SRC",
+                        "scope": {"player": "S1", "callout": "A"}}, cache_dir=str(cache))
+    assert g["baseline"] == 3.0    # deaths at callout A in the source match (NOT 12 map-wide)
+
+
 # ---- CRUD (SQLite-backed) --------------------------------------------------
 def test_crud(tmp_path):
     import db
