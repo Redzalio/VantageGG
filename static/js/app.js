@@ -2133,14 +2133,17 @@ const App = {
   renderLibrary() {
     const all = this._libAll || [];
     const teams = this._libTeams || [];
+    const canTag = !!(this.me && this.me.user);   // tagging is per-user -> needs a logged-in account
     const teamName = (id) => { const t = teams.find(x => x.id === id); return t ? t.name : "Team"; };
+    const tags = [...new Set(all.map(d => d.tag).filter(Boolean))].sort();   // distinct demo tags
     const fb = $("libFilters");
-    if (teams.length) {
+    if (teams.length || tags.length) {
       const f = this._libFilter || "all";
       const n = (pred) => all.filter(pred).length;
-      const chips = [{ key: "all", label: "All", n: all.length },
-                     { key: "personal", label: "Personal", n: n(d => d.personal) }]
-        .concat(teams.map(t => ({ key: "team:" + t.id, label: t.name, n: n(d => (d.team_ids || []).includes(t.id)) })));
+      let chips = [{ key: "all", label: "All", n: all.length }];
+      if (teams.length) chips.push({ key: "personal", label: "Personal", n: n(d => d.personal) },
+        ...teams.map(t => ({ key: "team:" + t.id, label: t.name, n: n(d => (d.team_ids || []).includes(t.id)) })));
+      chips = chips.concat(tags.map(tg => ({ key: "tag:" + tg, label: "#" + tg, n: n(d => d.tag === tg) })));
       fb.innerHTML = chips.map(c => '<button class="lib-chip' + (c.key === f ? ' on' : '')
         + '" data-f="' + esc(c.key) + '">' + esc(c.label)
         + '<span class="lib-chip-n">' + c.n + '</span></button>').join("");
@@ -2150,10 +2153,11 @@ const App = {
     } else {
       fb.innerHTML = ""; fb.style.display = "none";
     }
-    const f = teams.length ? (this._libFilter || "all") : "all";
+    const f = (teams.length || tags.length) ? (this._libFilter || "all") : "all";
     let demos = all;
     if (f === "personal") demos = all.filter(d => d.personal);
     else if (f.indexOf("team:") === 0) { const id = +f.slice(5); demos = all.filter(d => (d.team_ids || []).includes(id)); }
+    else if (f.indexOf("tag:") === 0) { const tg = f.slice(4); demos = all.filter(d => d.tag === tg); }
 
     $("demoLibCount").textContent = all.length ? `(${all.length})` : "";
     const list = $("libList");
@@ -2178,6 +2182,7 @@ const App = {
       const teamBadge = tnames.length
         ? '<span class="lib-team" title="Shared with ' + esc(tnames.join(", ")) + '">' + esc(tnames.join(" · ")) + '</span>'
         : "";
+      const tagBadge = d.tag ? '<span class="lib-tagb" title="Tag">#' + esc(d.tag) + '</span>' : "";
       const meta = [(d.rounds || 0) + ' rounds', when].filter(Boolean).join(' · ');
       const label = [pretty, when].filter(Boolean).join(' · ');   // for the confirm dialog, not the raw filename
       // background = the map's loading-screen art at 30% opacity (rendered in a ::before layer via
@@ -2185,9 +2190,10 @@ const App = {
       const style = bg ? ' style="--cardbg:url(\'' + bg + '\')"' : '';
       return '<div class="lib-row' + (bg ? ' has-bg' : '') + '" data-id="' + esc(d.id) + '" data-label="' + esc(label) + '"'
         + ' title="' + esc(d.name || d.id) + '"' + style + '>'
-        + '<div class="lib-mid"><div class="lib-name">' + esc(pretty) + stale + teamBadge + '</div>'
+        + '<div class="lib-mid"><div class="lib-name">' + esc(pretty) + stale + teamBadge + tagBadge + '</div>'
         +   '<div class="lib-meta">' + esc(meta) + '</div></div>'
         + '<div class="lib-score">' + sc.ct + '<span>:</span>' + sc.t + '</div>'
+        + (canTag ? '<button class="lib-tag btn ghost sm" title="Tag this match (scrim / matchmaking / faceit ...)">&#127991;</button>' : '')
         + ((this.myTeams && this.myTeams.length)
             ? '<button class="lib-share btn ghost sm" title="Share this match with a team">Share</button>' : '')
         + '<button class="btn primary lib-view">View</button>'
@@ -2197,11 +2203,27 @@ const App = {
       row.querySelector(".lib-view").onclick = () => this.viewLibraryDemo(row.dataset.id);
       const sh = row.querySelector(".lib-share");
       if (sh) sh.onclick = (e) => { e.stopPropagation(); this.shareDemo(row.dataset.id); };
+      const tg = row.querySelector(".lib-tag");
+      if (tg) tg.onclick = (e) => { e.stopPropagation(); this.tagDemo(row.dataset.id); };
       row.querySelector(".lib-del").onclick = (e) => {
         e.stopPropagation();
         this.deleteLibraryDemo(row.dataset.id, row.dataset.label || row.querySelector(".lib-name").textContent.trim(), row);
       };
     });
+  },
+  // Set/clear the current user's tag on a demo (scrim / matchmaking / faceit / esea / ...). Per-user.
+  async tagDemo(id) {
+    const cur = (this._libAll || []).find(d => d.id === id);
+    const tag = window.prompt("Tag this match (e.g. scrim, matchmaking, faceit, esea, tournament) — blank to clear:",
+                              (cur && cur.tag) || "");
+    if (tag === null) return;                                   // cancelled
+    const r = await fetch("api/demo/" + encodeURIComponent(id) + "/tag", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tag: tag.trim() }),
+    }).then(r => r.json()).catch(() => null);
+    if (!r || r.ok === false) { this._toast && this._toast("Couldn't set the tag"); return; }
+    if (cur) cur.tag = (tag || "").trim();                      // update local copy + re-render chips/badges
+    this.renderLibrary();
   },
 
   // Delete = remove the replay (raw .dem + parsed cache) and drop it from the library to free storage,
@@ -2912,6 +2934,22 @@ const App = {
   },
 
   // --- multi-demo trends + team config (cross-match "am I getting better?") -
+  // Player-vs-player comparison (Pro). Renders a side-by-side metric table from /api/compare.
+  async renderCompare(a, b) {
+    const out = $("trCompareOut"); if (!out) return;
+    if (!a || !b) { out.innerHTML = ""; return; }
+    if (String(a) === String(b)) { out.innerHTML = `<div class="empty">Pick two different players.</div>`; return; }
+    out.innerHTML = `<div class="empty">Comparing…</div>`;
+    const r = await fetch(`api/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`)
+      .then(r => r.ok ? r.json() : null).catch(() => null);
+    if (!r || !Array.isArray(r.metrics)) { out.innerHTML = `<div class="empty">Comparison unavailable.</div>`; return; }
+    const an = (r.a && r.a.label) || "A", bn = (r.b && r.b.label) || "B";
+    const cell = (v, u, win) => `<td class="${win ? "cmp-win" : ""}">${v == null ? "--" : esc(String(v)) + (u ? esc(u) : "")}</td>`;
+    const rows = r.metrics.map(m =>
+      `<tr><td class="cmp-k">${esc(m.label)}</td>${cell(m.a_val, m.unit, m.winner === "a")}${cell(m.b_val, m.unit, m.winner === "b")}</tr>`).join("");
+    out.innerHTML = `<table class="cmp-table"><thead><tr><th></th><th>${esc(an)}</th><th>${esc(bn)}</th></tr></thead>`
+      + `<tbody>${rows}</tbody></table>` + (r.summary ? `<div class="cmp-sum">${esc(r.summary)}</div>` : "");
+  },
   async openTrends(focusSid) {
     this.pausePlayback();
     $("trendsModal").classList.add("show");
@@ -2927,8 +2965,17 @@ const App = {
       : `<option value="">no parsed matches yet</option>`;
     const maps = ["all", ...Array.from(new Set(matches.map(m => m.map).filter(Boolean))).sort()];
     $("trMap").innerHTML = maps.map(m => `<option value="${m}">${m === "all" ? "all maps" : esc(m)}</option>`).join("");
+    // compare picker: any parsed player; comparing this player vs the chosen one
+    const cmp = $("trCompare");
+    if (cmp) {
+      cmp.innerHTML = `<option value="">— compare with —</option>` + this._squadOptions(players, "");
+      cmp.onchange = () => this.renderCompare(sel.value, cmp.value);
+    }
     // player change re-renders trend + tendencies; map change only filters the trend series
-    sel.onchange = () => { this.renderTrend(sel.value, $("trMap").value); this.renderTendencies(sel.value); };
+    sel.onchange = () => {
+      this.renderTrend(sel.value, $("trMap").value); this.renderTendencies(sel.value);
+      if (cmp && cmp.value) this.renderCompare(sel.value, cmp.value); else if ($("trCompareOut")) $("trCompareOut").innerHTML = "";
+    };
     $("trMap").onchange = () => this.renderTrend(sel.value, $("trMap").value);
     const want = (focusSid && players.some(p => String(p.steamid) === String(focusSid))) ? String(focusSid) : "";
     const sq = this._squad || {};
