@@ -1684,13 +1684,17 @@ def api_sidestats():
     if bucket:
         region = request.args.get("region") or "all"
         pub, src = {}, None
-        for mp in out:
+        for mp in out:                                       # per-map overlay (needs a verified map-id mapping)
             b = benchmarks.ct_t_benchmark(mp, bucket, region=region, datasets=ds)
             if b:
                 pub[mp] = {"ct_wr": b.get("ct_win_rate"), "t_wr": b.get("t_win_rate"), "games": b.get("sample_size")}
                 src = src or b
-        if pub:                                              # honest: omit the overlay entirely if unsourced
+        overall = benchmarks.ct_t_benchmark("all", bucket, region=region, datasets=ds)  # all-maps avg (always reliable)
+        if pub or overall:                                   # honest: omit entirely if nothing sourced
+            src = src or overall
             resp["benchmark"] = {"bucket": bucket, "maps": pub,
+                                 "overall": ({"ct_wr": overall.get("ct_win_rate"), "t_wr": overall.get("t_win_rate"),
+                                              "games": overall.get("sample_size")} if overall else None),
                                  "source_name": (src or {}).get("source_name"),
                                  "source_date": (src or {}).get("source_date"),
                                  "source_url": getattr(benchmarks, "LEETIFY_URL", None),
@@ -1755,7 +1759,8 @@ def _parse_benchmark_rows(rows, kind, body):
     common = dict(source_url=body.get("source_url"), source_date=body.get("source_date"),
                   source_name=body.get("source_name", "Leetify"))
     if kind == "premier-ct-t-side-winrates":
-        records = benchmarks.parse_leetify_ct_t(rows, **common)
+        emap = body.get("map_ids") if isinstance(body.get("map_ids"), dict) else None
+        records = benchmarks.parse_leetify_ct_t(rows, extra_map_ids=emap, **common)
     else:
         records = benchmarks.parse_leetify_pdl(rows, kind=kind,
                                                aggregate_premier=bool(body.get("aggregate_premier", True)), **common)

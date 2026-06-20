@@ -670,16 +670,11 @@ _LEETIFY_MAP_ALIASES = {
     "cobblestone": "de_cbble",
     "office": "de_office",
     "italy": "de_italy",
-    # numeric/internal ids occasionally exposed for the active-duty pool
-    "1": "de_dust2",
-    "2": "de_mirage",
-    "3": "de_inferno",
-    "4": "de_nuke",
-    "5": "de_overpass",
-    "6": "de_vertigo",
-    "7": "de_ancient",
-    "8": "de_anubis",
-    "9": "de_train",
+    # NOTE: Leetify's live game_map_id is an opaque NUMERIC id (e.g. 101, 1911359) with no public
+    # id->name reference we could verify. We deliberately do NOT guess those (no-fake-data rule) --
+    # per-map rows with an unmapped numeric id are skipped. The "all" (all-maps) row IS authoritative
+    # and is handled in _local_map_id, so the global comparison works without any id mapping. An admin
+    # can supply a verified id->map dict via parse_leetify_ct_t(..., extra_map_ids=...) to light up per-map.
 }
 
 
@@ -695,6 +690,8 @@ def _local_map_id(game_map_id):
     s = str(game_map_id).strip().lower()
     if not s:
         return None
+    if s == "all":                 # the authoritative all-maps aggregate row (no id mapping needed)
+        return "all"
     # already a real map name -> use directly (do not second-guess a valid de_ id).
     if s.startswith(("de_", "cs_", "ar_")):
         return s
@@ -731,7 +728,7 @@ def _winrate_to_percent(v):
 
 
 def parse_leetify_ct_t(rows, *, source_url=None, source_date=None,
-                       source_name="Leetify"):
+                       source_name="Leetify", extra_map_ids=None):
     """PURE transform: documented premier-ct-t-side-winrates rows -> benchmark records.
 
     ``rows`` is a list of dicts shaped like the Leetify
@@ -755,11 +752,13 @@ def parse_leetify_ct_t(rows, *, source_url=None, source_date=None,
     """
     if not isinstance(rows, list):
         return []
+    emap = {str(k): str(v) for k, v in (extra_map_ids or {}).items()}   # admin-supplied verified id->map
     out = []
     for row in rows:
         if not isinstance(row, dict):
             continue
-        local_map = _local_map_id(row.get("game_map_id"))
+        gid = row.get("game_map_id")
+        local_map = emap.get(str(gid)) or _local_map_id(gid)
         if local_map is None:
             continue  # unknown map id -> skip, never guess
         bucket = row.get("rating_bucket")

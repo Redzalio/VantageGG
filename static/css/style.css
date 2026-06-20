@@ -1243,7 +1243,8 @@ textarea.lf-in{height:46px;resize:vertical;font-family:inherit}
 .ss-flag{font-size:9px;color:var(--mut);border:1px solid var(--line);border-radius:5px;padding:0 4px;font-weight:700}
 .ss-bucket{font-size:11px;color:var(--mut);margin-bottom:6px}
 .ss-bucket select{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:2px 6px;font-size:11px}
-.ss-attr{font-size:10px;color:var(--mut);margin-top:6px} .ss-attr a{color:var(--mut);text-decoration:underline}
+.ss-overall{font-size:11px;color:var(--mut);margin-top:6px} .ss-overall b{color:var(--txt)}
+.ss-attr{font-size:10px;color:var(--mut);margin-top:4px} .ss-attr a{color:var(--mut);text-decoration:underline}
 /* admin Benchmark Data panel */
 .adm-bm-hint{margin-bottom:8px} .adm-bm{display:flex;flex-direction:column;gap:8px;max-width:680px}
 .adm-bm-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}

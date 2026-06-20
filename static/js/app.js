@@ -3015,12 +3015,15 @@ const App = {
       return `<tr><td class="ss-map">${esc(pretty)}${ss}</td>
         <td class="${cls(d.ct_wr)}">${d.ct_wr}%</td><td class="${cls(d.t_wr)}">${d.t_wr}%</td>${pub}<td class="ss-g">${d.games}</td></tr>`;
     }).join("");
+    const ov = bm && bm.overall;
+    const overallLine = ov
+      ? `<div class="ss-overall">Premier ${esc(bm.bucket)} average (all maps): CT <b>${ov.ct_wr}%</b> &middot; T <b>${ov.t_wr}%</b></div>` : "";
     const attr = bm
       ? `<div class="ss-attr">${esc(bm.attribution || "Data provided by Leetify")}${bm.source_date ? " &middot; " + esc(bm.source_date) : ""} &middot; <a href="${esc(bm.source_url || "https://leetify.com")}" target="_blank" rel="noopener">leetify.com</a></div>`
       : (bucket ? `<div class="ss-attr">Public benchmark for ${esc(bucket)} not imported yet.</div>` : "");
     out.innerHTML = selHtml + `<table class="ss-table"><thead><tr><th>Map</th>
       <th title="your CT-side round win %">CT</th><th title="your T-side round win %">T</th>${pubHead}<th>Games</th></tr></thead>
-      <tbody>${rows}</tbody></table>` + attr;
+      <tbody>${rows}</tbody></table>` + overallLine + attr;
     wire();
   },
   async renderCompare(a, b) {
