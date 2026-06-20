@@ -51,6 +51,7 @@ import nadeclusters                                     # auto-detect consistent
 import coaching_summary                                 # heuristic NL coaching summary (+ optional env-gated AI)
 import compare                                          # player-vs-player comparison (presentation over trends)
 import export_report                                    # rich match-report export: text / JSON / printable HTML
+import analytics_migrations                             # in-place, .dem-free upgrade of stale cached analytics
 from schema import ANALYTICS_VERSION, SCHEMA_VERSION   # dep-free; safe at import time
 
 
@@ -555,10 +556,15 @@ def sample():
         data = load_cache(path)
         write_meta(path, data, status="regenerated-mock")
     elif not analytics_valid(data) and data.get("analytics") is not None:
-        print("[sample] analytics version stale and no .dem to recompute -> dropping it")
-        data["analytics"] = None
-        atomic_write_json(path, data)
-        write_meta(path, data, status="analytics-dropped")
+        analytics_migrations.migrate(data)            # try a .dem-free in-place upgrade first
+        if analytics_valid(data):
+            atomic_write_json(path, data)
+            write_meta(path, data, status="analytics-migrated")
+        else:                                          # truly unmigratable -> drop wrong numbers
+            print("[sample] analytics version stale and unmigratable -> dropping it")
+            data["analytics"] = None
+            atomic_write_json(path, data)
+            write_meta(path, data, status="analytics-dropped")
     elif not os.path.exists(meta_path_for(path)) and data is not None:
         write_meta(path, data)   # backfill sidecar for an already-valid sample
     if not os.path.exists(path):
@@ -1057,6 +1063,7 @@ def api_demo(demo_id):
     data = library.load_demo(CACHE, demo_id)
     if data is None:
         return jsonify({"error": "no demo with that id"}), 404
+    analytics_migrations.migrate(data)              # upgrade stale-but-derivable analytics in place (.dem-free)
     resp = jsonify(data)
     resp.headers["Cache-Control"] = "no-store"
     return resp
@@ -1069,13 +1076,16 @@ def _load_demo_by_sha(sid):
         return None
     d = library.load_demo(CACHE, sid)                    # library copy (lib_<sha>.json)
     if d is not None:
+        analytics_migrations.migrate(d)                  # .dem-free upgrade of stale-but-derivable analytics
         return d
     if re.fullmatch(r"[A-Za-z0-9]+", sid):               # content-hash cache (<sha[:16]>.json)
         d = load_cache(os.path.join(CACHE, f"{sid[:16]}.json"))
         if d is not None:
+            analytics_migrations.migrate(d)
             return d
     s = load_cache(os.path.join(CACHE, "sample.json"))   # the sample
     if s is not None and s.get("source_sha1") == sid:
+        analytics_migrations.migrate(s)
         return s
     return None
 
