@@ -1675,7 +1675,27 @@ def api_sidestats():
         ok = db.visible_predicate(sc)
         matches = [m for m in matches if ok(m.get("sha"))]
     pairs = [(m["analytics"], m.get("map")) for m in matches if isinstance(m.get("analytics"), dict)]
-    return _nostore({"maps": sidestats.aggregate_side_winrates(pairs, steamid=steamid)})
+    out = sidestats.aggregate_side_winrates(pairs, steamid=steamid)
+    ds = benchmarks.load_datasets()
+    # tell the UI whether to even show the "vs Premier" overlay (hide-until-data)
+    resp = {"maps": out,
+            "benchmark_available": any(r.get("bucket_type") == "premier_ct_t_side_winrates" for r in ds)}
+    bucket = request.args.get("bucket") or None              # public CT/T overlay (only when sourced)
+    if bucket:
+        region = request.args.get("region") or "all"
+        pub, src = {}, None
+        for mp in out:
+            b = benchmarks.ct_t_benchmark(mp, bucket, region=region, datasets=ds)
+            if b:
+                pub[mp] = {"ct_wr": b.get("ct_win_rate"), "t_wr": b.get("t_win_rate"), "games": b.get("sample_size")}
+                src = src or b
+        if pub:                                              # honest: omit the overlay entirely if unsourced
+            resp["benchmark"] = {"bucket": bucket, "maps": pub,
+                                 "source_name": (src or {}).get("source_name"),
+                                 "source_date": (src or {}).get("source_date"),
+                                 "source_url": getattr(benchmarks, "LEETIFY_URL", None),
+                                 "attribution": getattr(benchmarks, "ATTRIBUTION_TEXT", None)}
+    return _nostore(resp)
 
 
 @app.route("/api/benchmarks/compare")
@@ -1714,6 +1734,70 @@ def api_benchmarks_compare():
     return _nostore(benchmarks.compare(stats, btype, bucket, region=region, map_filter=map_filter))
 
 
+@app.route("/api/benchmarks/status")
+def api_benchmarks_status():
+    """Whether a sourced benchmark dataset is loaded (drives hide-until-data in the UI) + the provenance
+    to render the required visible attribution. Cheap; safe for any signed-in user."""
+    mode, _ = _scope_or_block()
+    if mode == "blocked":
+        return _nostore({"error": "login required"}), 401
+    ds = benchmarks.load_datasets()
+    types = sorted({r.get("bucket_type") for r in ds if r.get("bucket_type")})
+    src = next((r for r in ds if r.get("source_name")), {})
+    return _nostore({"available": bool(ds), "bucket_types": types,
+                     "source_name": src.get("source_name"), "source_date": src.get("source_date"),
+                     "source_url": getattr(benchmarks, "LEETIFY_URL", None) or src.get("source_url"),
+                     "attribution": getattr(benchmarks, "ATTRIBUTION_TEXT", None) or src.get("attribution")})
+
+
+def _parse_benchmark_rows(rows, kind, body):
+    """Dispatch sourced rows to the right benchmarks parser by kind. Raises ValueError on empty result."""
+    common = dict(source_url=body.get("source_url"), source_date=body.get("source_date"),
+                  source_name=body.get("source_name", "Leetify"))
+    if kind == "premier-ct-t-side-winrates":
+        records = benchmarks.parse_leetify_ct_t(rows, **common)
+    else:
+        records = benchmarks.parse_leetify_pdl(rows, kind=kind,
+                                               aggregate_premier=bool(body.get("aggregate_premier", True)), **common)
+    if not records:
+        raise ValueError("no usable benchmark rows found (check the source/kind)")
+    return records
+
+
+def _save_benchmark_records(u, records, body):
+    fname = (str(body.get("source_name", "leetify")) + "_" + str(body.get("kind", "")) + "_"
+             + str(body.get("source_date") or "import")).lower().replace(" ", "_").replace("/", "-") + ".json"
+    path = benchmarks.save_datasets(records, fname)
+    db.log_admin_action(u.get("id"), "benchmarks_import", "benchmark",
+                        os.path.basename(path), {"records": len(records), "kind": body.get("kind")})
+    return _nostore({"ok": True, "records": len(records), "file": os.path.basename(path)})
+
+
+@app.route("/api/admin/benchmarks/fetch", methods=["POST"])
+def api_admin_benchmarks_fetch():
+    """Admin-triggered ONE-SHOT pull of a dated public snapshot, then store + attribute it. Not a
+    background job -- the admin clicks it. Body: {date: YYYY-MM-DD, kind, platform}."""
+    u = _admin_or_none()
+    if u is None:
+        return _nostore({"error": "admin only"}), 403
+    body = request.get_json(silent=True) or {}
+    date = (body.get("date") or "").strip()
+    kind = body.get("kind", "performance-metric-tool")
+    platform = body.get("platform", "premier")
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+        return _nostore({"error": "date must be YYYY-MM-DD (e.g. 2026-03-01)"}), 400
+    try:
+        rows = benchmarks.fetch_leetify(date, kind=kind, platform=platform)
+    except Exception as e:
+        return _nostore({"error": f"fetch failed: {e}"}), 502
+    body.setdefault("source_date", date)
+    body.setdefault("source_url", benchmarks.LEETIFY_URL)
+    try:
+        return _save_benchmark_records(u, _parse_benchmark_rows(rows, kind, body), body)
+    except ValueError as e:
+        return _nostore({"error": str(e)}), 400
+
+
 @app.route("/api/admin/benchmarks", methods=["GET", "POST"])
 def api_admin_benchmarks():
     """Admin: list loaded benchmark datasets, or import a sourced one. Import accepts the raw rows from a
@@ -1728,19 +1812,10 @@ def api_admin_benchmarks():
         if not isinstance(rows, list) or not rows:
             return _nostore({"error": "need a non-empty 'rows' array from a sourced dataset"}), 400
         try:
-            records = benchmarks.parse_leetify_pdl(
-                rows, kind=body.get("kind", "performance-metric-tool"),
-                source_url=body.get("source_url"), source_date=body.get("source_date"),
-                source_name=body.get("source_name", "Leetify"),
-                aggregate_premier=bool(body.get("aggregate_premier", True)))
-            if not records:
-                return _nostore({"error": "no usable benchmark rows found in that import"}), 400
-            fname = (body.get("source_name", "leetify") + "_" + (body.get("source_date") or "import")
-                     ).lower().replace(" ", "_").replace("/", "-") + ".json"
-            path = benchmarks.save_datasets(records, fname)
-            db.log_admin_action(u.get("id"), "benchmarks_import", "benchmark",
-                                os.path.basename(path), {"records": len(records)})
-            return _nostore({"ok": True, "records": len(records), "file": os.path.basename(path)})
+            records = _parse_benchmark_rows(rows, body.get("kind", "performance-metric-tool"), body)
+            return _save_benchmark_records(u, records, body)
+        except ValueError as e:
+            return _nostore({"error": str(e)}), 400
         except Exception as e:
             return _nostore({"error": f"import failed: {e}"}), 400
     # GET: a compact provenance summary of what's loaded (for the admin status panel)

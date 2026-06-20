@@ -382,3 +382,342 @@ def test_normalize_drops_non_numeric_metric_values():
     })
     # only the real finite number survives; null/garbage/NaN are dropped (-> unavailable)
     assert rec["metrics"] == {"adr": 80.0}
+
+
+# =====================================================================
+# CT/T side-winrate import -- parse_leetify_ct_t
+# =====================================================================
+# A fixture row shaped like the documented premier-ct-t-side-winrates response.
+def _ctt_row(game_map_id, bucket, **over):
+    row = {
+        "game_map_id": game_map_id,
+        "region": "eu",
+        "rating_bucket": bucket,
+        "total_games": 1200,
+        "total_rounds": 30000,
+        "avg_ct_win_rate": 0.53,     # fraction in this fixture (0..1)
+        "avg_t_win_rate": 0.47,
+        "avg_ct_rounds_won": 8.0,
+        "avg_t_rounds_won": 7.0,
+    }
+    row.update(over)
+    return row
+
+
+def test_parse_ct_t_maps_de_ids_and_emits_metrics():
+    rows = [_ctt_row("de_mirage", "15k-20k")]
+    recs = benchmarks.parse_leetify_ct_t(
+        rows, source_url="https://leetify.com/dl", source_date="2026-06-15")
+    assert len(recs) == 1
+    rec = recs[0]
+    assert rec["bucket_type"] == "premier_ct_t_side_winrates"
+    assert rec["bucket"] == "15k-20k"
+    assert rec["map_filter"] == "de_mirage"
+    assert rec["region"] == "eu"
+    assert rec["source_name"] == "Leetify"
+    assert rec["source_url"] == "https://leetify.com/dl"
+    assert rec["source_date"] == "2026-06-15"
+    assert rec["sample_size"] == 1200
+    assert rec["attribution"] == "Leetify"
+    # 0.53 fraction normalized to a 0-100 percent
+    assert rec["metrics"]["ct_win_rate"] == 53.0
+    assert rec["metrics"]["t_win_rate"] == 47.0
+
+
+def test_parse_ct_t_normalizes_percent_passthrough():
+    # If the source already gives percents (>1), they pass through unchanged.
+    rows = [_ctt_row("de_inferno", "20k-25k", avg_ct_win_rate=55.0, avg_t_win_rate=45.0)]
+    recs = benchmarks.parse_leetify_ct_t(rows, source_url="u", source_date="d")
+    m = recs[0]["metrics"]
+    assert m["ct_win_rate"] == 55.0
+    assert m["t_win_rate"] == 45.0
+
+
+def test_parse_ct_t_skips_unknown_map_id():
+    # Unknown game_map_id -> SKIPPED (never pinned to a guessed map). Known ones survive.
+    rows = [
+        _ctt_row("de_nuke", "10k-15k"),
+        _ctt_row("some_unknown_workshop_map", "10k-15k"),
+        _ctt_row("", "10k-15k"),          # empty id -> skip
+    ]
+    recs = benchmarks.parse_leetify_ct_t(rows, source_url="u", source_date="d")
+    assert len(recs) == 1
+    assert recs[0]["map_filter"] == "de_nuke"
+
+
+def test_parse_ct_t_alias_and_bare_name_mapping():
+    # A bare "mirage" maps to de_mirage via the alias table.
+    rows = [_ctt_row("mirage", "5k-10k")]
+    recs = benchmarks.parse_leetify_ct_t(rows, source_url="u", source_date="d")
+    assert recs[0]["map_filter"] == "de_mirage"
+
+
+def test_parse_ct_t_non_list_returns_empty():
+    assert benchmarks.parse_leetify_ct_t(None) == []
+    assert benchmarks.parse_leetify_ct_t("nope") == []
+
+
+# =====================================================================
+# ct_t_benchmark lookup
+# =====================================================================
+def test_ct_t_benchmark_none_when_absent():
+    # No datasets / no matching map+bucket -> None (never fabricated).
+    assert benchmarks.ct_t_benchmark("de_mirage", "15k-20k", datasets=[]) is None
+    recs = benchmarks.parse_leetify_ct_t(
+        [_ctt_row("de_mirage", "15k-20k")], source_url="u", source_date="d")
+    ds = [benchmarks._normalize_record(r) for r in recs]
+    # right map, wrong bucket -> None
+    assert benchmarks.ct_t_benchmark("de_mirage", "30k+", datasets=ds) is None
+    # wrong map, right bucket -> None
+    assert benchmarks.ct_t_benchmark("de_dust2", "15k-20k", datasets=ds) is None
+
+
+def test_ct_t_benchmark_returns_values_and_source():
+    recs = benchmarks.parse_leetify_ct_t(
+        [_ctt_row("de_mirage", "15k-20k", region="all")],
+        source_url="https://leetify.com/x", source_date="2026-06-10")
+    ds = [benchmarks._normalize_record(r) for r in recs]
+    out = benchmarks.ct_t_benchmark("de_mirage", "15k-20k", datasets=ds)
+    assert out is not None
+    assert out["ct_win_rate"] == 53.0
+    assert out["t_win_rate"] == 47.0
+    assert out["sample_size"] == 1200
+    assert out["source_name"] == "Leetify"
+    assert out["source_url"] == "https://leetify.com/x"
+    assert out["source_date"] == "2026-06-10"
+    assert out["attribution"] == "Leetify"
+
+
+def test_ct_t_benchmark_prefers_exact_region():
+    # An "all"-region and an "eu"-region record for the same map+bucket: asking for
+    # eu must return the eu numbers, not the global "all" ones.
+    rows = [
+        _ctt_row("de_ancient", "10k-15k", region="all",
+                 avg_ct_win_rate=0.50, avg_t_win_rate=0.50, total_games=9999),
+        _ctt_row("de_ancient", "10k-15k", region="eu",
+                 avg_ct_win_rate=0.57, avg_t_win_rate=0.43, total_games=1111),
+    ]
+    recs = benchmarks.parse_leetify_ct_t(rows, source_url="u", source_date="d")
+    ds = [benchmarks._normalize_record(r) for r in recs]
+    out = benchmarks.ct_t_benchmark("de_ancient", "10k-15k", region="eu", datasets=ds)
+    assert out["ct_win_rate"] == 57.0
+    assert out["sample_size"] == 1111
+
+
+def test_ct_t_benchmark_none_when_no_winrate_present():
+    # A record matching the key but carrying neither win rate -> unavailable (None).
+    rec = benchmarks._normalize_record({
+        "bucket_type": "premier_ct_t_side_winrates", "bucket": "15k-20k",
+        "map_filter": "de_mirage", "region": "all",
+        "metrics": {},  # no ct/t winrate
+        "source_name": "Leetify",
+    })
+    assert benchmarks.ct_t_benchmark("de_mirage", "15k-20k", datasets=[rec]) is None
+
+
+# =====================================================================
+# fetch_leetify -- URL building + JSON shape parsing (NO real network)
+# =====================================================================
+class _FakeResp:
+    """Minimal context-manager standing in for urllib's response object."""
+    def __init__(self, body):
+        self._body = body.encode("utf-8") if isinstance(body, str) else body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def read(self):
+        return self._body
+
+
+def test_fetch_leetify_url_patterns():
+    # Pure URL builder: premier/faceit x perf-metric / ct-t-side-winrates.
+    assert benchmarks.leetify_url("2026-03-01") == (
+        "https://api-public-data-library.i-prod.leetify.com/api/"
+        "premier/v1/performance-metric-tool/2026-03-01")
+    assert benchmarks.leetify_url(
+        "2026-03-01", kind="premier-ct-t-side-winrates") == (
+        "https://api-public-data-library.i-prod.leetify.com/api/"
+        "premier/v1/premier-ct-t-side-winrates/2026-03-01")
+    assert benchmarks.leetify_url("2026-03-01", platform="faceit") == (
+        "https://api-public-data-library.i-prod.leetify.com/api/"
+        "faceit/v1/performance-metric-tool/2026-03-01")
+
+
+def test_fetch_leetify_parses_bare_list(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        captured["timeout"] = timeout
+        captured["ua"] = req.get_header("User-agent")
+        return _FakeResp(json.dumps([{"rating_bucket": "15k-20k"}]))
+
+    monkeypatch.setattr(benchmarks.urllib.request, "urlopen", fake_urlopen)
+    rows = benchmarks.fetch_leetify("2026-03-01")
+    assert rows == [{"rating_bucket": "15k-20k"}]
+    # built the premier perf-metric URL, set a timeout + a User-Agent
+    assert captured["url"].endswith("/premier/v1/performance-metric-tool/2026-03-01")
+    assert captured["timeout"] and captured["timeout"] > 0
+    assert captured["ua"]
+
+
+def test_fetch_leetify_parses_data_wrapper(monkeypatch):
+    def fake_urlopen(req, timeout=None):
+        return _FakeResp(json.dumps({"data": [{"game_map_id": "de_mirage"}]}))
+
+    monkeypatch.setattr(benchmarks.urllib.request, "urlopen", fake_urlopen)
+    rows = benchmarks.fetch_leetify(
+        "2026-03-01", kind="premier-ct-t-side-winrates")
+    assert rows == [{"game_map_id": "de_mirage"}]
+
+
+def test_fetch_leetify_faceit_platform_url(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url
+        return _FakeResp("[]")
+
+    monkeypatch.setattr(benchmarks.urllib.request, "urlopen", fake_urlopen)
+    benchmarks.fetch_leetify("2026-03-01", platform="faceit",
+                             kind="premier-ct-t-side-winrates")
+    assert captured["url"].endswith(
+        "/faceit/v1/premier-ct-t-side-winrates/2026-03-01")
+
+
+def test_fetch_leetify_raises_on_bad_json(monkeypatch):
+    def fake_urlopen(req, timeout=None):
+        return _FakeResp("{not json")
+
+    monkeypatch.setattr(benchmarks.urllib.request, "urlopen", fake_urlopen)
+    try:
+        benchmarks.fetch_leetify("2026-03-01")
+        assert False, "expected a RuntimeError on bad JSON"
+    except RuntimeError:
+        pass
+
+
+def test_fetch_leetify_raises_on_unexpected_shape(monkeypatch):
+    # A dict with no 'data' list is not usable -> clear error, not a silent [].
+    def fake_urlopen(req, timeout=None):
+        return _FakeResp(json.dumps({"nope": 1}))
+
+    monkeypatch.setattr(benchmarks.urllib.request, "urlopen", fake_urlopen)
+    try:
+        benchmarks.fetch_leetify("2026-03-01")
+        assert False, "expected a RuntimeError on unexpected shape"
+    except RuntimeError:
+        pass
+
+
+def test_attribution_constants_present():
+    assert benchmarks.LEETIFY_URL == "https://leetify.com"
+    assert isinstance(benchmarks.ATTRIBUTION_TEXT, str) and benchmarks.ATTRIBUTION_TEXT
+    assert "leetify" in benchmarks.ATTRIBUTION_TEXT.lower()
+
+
+# =====================================================================
+# biggest_gap -- single most actionable reliable weakness
+# =====================================================================
+def _ds_premier(metrics, *, bucket="15k-20k", sample_size=5000, region="all",
+                map_filter="all"):
+    """One normalized premier_rating benchmark record with the given metrics."""
+    return benchmarks._normalize_record({
+        "source_name": "Leetify", "source_url": "https://leetify.com/x",
+        "source_date": "2026-06-10", "bucket_type": "premier_rating",
+        "bucket": bucket, "region": region, "map_filter": map_filter,
+        "metrics": metrics, "sample_size": sample_size,
+        "attribution": "Data: Leetify",
+    })
+
+
+def test_biggest_gap_picks_worst_below_metric():
+    # Benchmark carries two higher-is-better metrics. Player is below on both, but
+    # avg_accuracy_head is the bigger NORMALIZED gap -> that one is returned.
+    ds = [_ds_premier({"avg_accuracy_head": 28.0, "avg_spray_accuracy": 26.0})]
+    player = {"avg_accuracy_head": 18.0, "avg_spray_accuracy": 24.0}
+    out = benchmarks.biggest_gap(player, "premier_rating", "15k-20k", datasets=ds)
+    assert out is not None
+    assert out["metric"] == "avg_accuracy_head"
+    assert out["label"] == "Head Accuracy"
+    assert out["player_value"] == 18.0
+    assert out["benchmark_value"] == 28.0
+    assert out["delta"] == -10.0
+    assert out["source_name"] == "Leetify"
+    assert out["source_url"] == "https://leetify.com/x"
+    assert out["attribution"] == "Data: Leetify"
+
+
+def test_biggest_gap_none_when_nothing_below():
+    # Player is at/above benchmark on every carried metric -> no actionable gap.
+    ds = [_ds_premier({"avg_accuracy_head": 20.0})]
+    out = benchmarks.biggest_gap(
+        {"avg_accuracy_head": 30.0}, "premier_rating", "15k-20k", datasets=ds)
+    assert out is None
+
+
+def test_biggest_gap_never_returns_unavailable_metric():
+    # Player has kast/adr that the dataset does NOT carry (-> unavailable). Even
+    # though those would be "below" if we guessed, biggest_gap must ignore them and
+    # only consider the metric the dataset really has.
+    ds = [_ds_premier({"avg_accuracy_head": 28.0})]
+    player = {"avg_accuracy_head": 27.5,   # ~near, not below
+              "kast": 40.0, "adr": 50.0}   # would look terrible IF a benchmark existed
+    out = benchmarks.biggest_gap(player, "premier_rating", "15k-20k", datasets=ds)
+    # head accuracy is within ~5% near-band, kast/adr are unavailable -> nothing below
+    assert out is None
+
+
+def test_biggest_gap_honors_lower_is_better():
+    # avg_reaction_time is lower-is-better. Player SLOWER (higher) than benchmark is
+    # the weakness; a faster metric must NOT be chosen as the gap.
+    ds = [_ds_premier({"avg_reaction_time": 0.50, "avg_preaim": 6.0})]
+    player = {"avg_reaction_time": 0.70,   # slower -> below (worse)
+              "avg_preaim": 5.0}           # smaller error -> above (better)
+    out = benchmarks.biggest_gap(player, "premier_rating", "15k-20k", datasets=ds)
+    assert out is not None
+    assert out["metric"] == "avg_reaction_time"
+    assert out["player_value"] == 0.70
+    assert out["benchmark_value"] == 0.50
+
+
+def test_biggest_gap_requires_sample_size():
+    # A matching dataset with NO/zero sample_size is not reliable enough to coach off
+    # -> None even though the player is clearly below.
+    ds = [_ds_premier({"avg_accuracy_head": 28.0}, sample_size=None)]
+    out = benchmarks.biggest_gap(
+        {"avg_accuracy_head": 18.0}, "premier_rating", "15k-20k", datasets=ds)
+    assert out is None
+    ds0 = [_ds_premier({"avg_accuracy_head": 28.0}, sample_size=0)]
+    out0 = benchmarks.biggest_gap(
+        {"avg_accuracy_head": 18.0}, "premier_rating", "15k-20k", datasets=ds0)
+    assert out0 is None
+
+
+def test_biggest_gap_none_when_no_dataset():
+    # No benchmark dataset at all -> compare() unavailable -> biggest_gap None.
+    out = benchmarks.biggest_gap(
+        {"adr": 50.0}, "premier_rating", "15k-20k", datasets=[])
+    assert out is None
+
+
+def test_biggest_gap_ct_t_winrate_metric():
+    # biggest_gap works against a CT/T side-winrate dataset too: player below on CT.
+    recs = benchmarks.parse_leetify_ct_t(
+        [_ctt_row("de_mirage", "15k-20k", region="all",
+                  avg_ct_win_rate=0.55, avg_t_win_rate=0.45)],
+        source_url="https://leetify.com/x", source_date="2026-06-10")
+    ds = [benchmarks._normalize_record(r) for r in recs]
+    # player wins only 40% on CT (below 55), 46% on T (near 45)
+    out = benchmarks.biggest_gap(
+        {"ct_win_rate": 40.0, "t_win_rate": 46.0},
+        "premier_ct_t_side_winrates", "15k-20k",
+        map_filter="de_mirage", datasets=ds)
+    assert out is not None
+    assert out["metric"] == "ct_win_rate"
+    assert out["label"] == "CT Win Rate"
+    assert out["benchmark_value"] == 55.0

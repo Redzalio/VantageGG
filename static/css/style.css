@@ -1239,8 +1239,20 @@ textarea.lf-in{height:46px;resize:vertical;font-family:inherit}
 .ss-table td{padding:4px 8px;text-align:right;border-bottom:1px solid #161c25}
 .ss-table td.ss-map{text-align:left;text-transform:capitalize}
 .ss-good{color:var(--good,#5fbf5f);font-weight:700} .ss-bad{color:var(--bad,#e25555);font-weight:700} .ss-neu{color:var(--txt)}
-.ss-g{color:var(--mut)}
+.ss-g{color:var(--mut)} .ss-pub{color:var(--mut)} .ss-na{color:var(--mut);text-align:right}
 .ss-flag{font-size:9px;color:var(--mut);border:1px solid var(--line);border-radius:5px;padding:0 4px;font-weight:700}
+.ss-bucket{font-size:11px;color:var(--mut);margin-bottom:6px}
+.ss-bucket select{background:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:2px 6px;font-size:11px}
+.ss-attr{font-size:10px;color:var(--mut);margin-top:6px} .ss-attr a{color:var(--mut);text-decoration:underline}
+/* admin Benchmark Data panel */
+.adm-bm-hint{margin-bottom:8px} .adm-bm{display:flex;flex-direction:column;gap:8px;max-width:680px}
+.adm-bm-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.adm-bm-date{width:120px}
+.adm-bm-paste{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--mut)}
+.adm-bm-paste textarea{font-family:ui-monospace,monospace;font-size:11px;width:100%}
+.adm-bm-status{display:flex;flex-direction:column;gap:4px;margin-top:4px}
+.adm-bm-ds{font-size:12px;color:var(--txt);background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:6px 9px}
+.adm-bm-ds a{color:var(--accent)}
 .tr-row{display:grid;grid-template-columns:1.6fr .8fr .8fr .8fr .8fr .8fr;gap:6px;font-size:12px;
   padding:4px 4px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
 .tr-row.tr-head{color:var(--mut);font-weight:600;border-top:0}

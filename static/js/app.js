@@ -1245,6 +1245,19 @@ const App = {
            <button id="admOpenCallouts" class="btn ghost sm">Open callout editor</button></div>
          <div class="round adm-callout-hint">Add, rename, move, and draw boundaries for each map's callouts. Demo-learned centroids show as ghosts you can snap to. Changes apply to analytics, the 2D overlay, utility matching, and labeling.</div>
          <div id="calloutEditorRoot" class="adm-callout-wrap"></div>` : "")
+      + (this.isAdmin ? `<div class="dash-sec-head adm-uhead"><h2>Benchmark Data</h2></div>
+         <div class="round adm-bm-hint">Compare players/teams to public skill-bucket averages. Import a sourced, <b>dated</b> snapshot — admin-triggered, never auto-fetched. Attribution + source date are shown wherever benchmarks appear (and in exports).</div>
+         <div class="adm-bm">
+           <div class="adm-bm-row">
+             <label>Source date <input id="bmDate" class="adm-search adm-bm-date" placeholder="2026-03-01" value="2026-03-01"></label>
+             <select id="bmKind" class="lf-in"><option value="performance-metric-tool">Performance metrics</option><option value="premier-ct-t-side-winrates">CT/T map winrates</option></select>
+             <select id="bmPlatform" class="lf-in"><option value="premier">Premier</option><option value="faceit">FACEIT</option></select>
+             <button id="bmFetch" class="btn ghost sm">Fetch from Leetify</button>
+           </div>
+           <label class="adm-bm-paste">…or paste sourced rows JSON<textarea id="bmPaste" class="adm-search" rows="3" placeholder="[ { ...provider rows... } ]"></textarea></label>
+           <div class="adm-bm-row"><button id="bmImport" class="btn ghost sm">Import pasted rows</button><span id="bmMsg" class="round"></span></div>
+           <div id="bmStatus" class="adm-bm-status"></div>
+         </div>` : "")
       + (this.isAdmin ? `<div class="dash-sec-head adm-uhead"><h2>Pricing</h2></div><div id="admPricing" class="adm-pricing"></div>` : "")
       + (() => {
           const warns = [];
@@ -1271,6 +1284,7 @@ const App = {
     search.oninput = () => { this._admFilter = search.value; this._renderAdmUserList(); };
     this._renderAdmUserList();
     if (this.isAdmin) this._renderAdminPricing();
+    if (this.isAdmin) this._bindBenchmarks();
 
     const teamsBtn = $("admLoadTeams");
     if (teamsBtn) teamsBtn.onclick = async () => {
@@ -1312,6 +1326,40 @@ const App = {
       if (window.AdminCallouts && root) window.AdminCallouts.open(root);
       else if (root) root.innerHTML = "<div class='round'>Callout editor failed to load.</div>";
       coBtn.disabled = true; coBtn.textContent = "Editor loaded ↓";
+    };
+  },
+  // Admin Benchmark Data: import a sourced, dated benchmark snapshot (admin-triggered fetch OR pasted
+  // rows). Shows loaded datasets with source/date/attribution. No auto-fetch; nothing fake.
+  async _bindBenchmarks() {
+    const status = $("bmStatus"), msg = $("bmMsg");
+    const load = async () => {
+      const r = await fetch("/api/admin/benchmarks").then(x => x.json()).catch(() => null);
+      if (!status) return;
+      const ds = (r && r.datasets) || [];
+      status.innerHTML = ds.length
+        ? ds.map(d => `<div class="adm-bm-ds"><b>${esc(d.source_name || "?")}</b> &middot; ${esc(d.source_date || "?")} &middot; ${esc(d.bucket_type || "?")} &middot; ${d.buckets || 0} buckets`
+            + (d.source_url ? ` &middot; <a href="${esc(d.source_url)}" target="_blank" rel="noopener">source</a>` : "") + `</div>`).join("")
+        : `<div class="round">No benchmark datasets imported yet — the comparison UI stays hidden until one is loaded.</div>`;
+    };
+    await load();
+    const fb = $("bmFetch");
+    if (fb) fb.onclick = async () => {
+      fb.disabled = true; if (msg) msg.textContent = "Fetching…";
+      const body = { date: ($("bmDate").value || "").trim(), kind: $("bmKind").value, platform: $("bmPlatform").value };
+      const r = await fetch("/api/admin/benchmarks/fetch", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body) }).then(x => x.json()).catch(() => null);
+      fb.disabled = false;
+      if (msg) msg.textContent = r && r.ok ? `Imported ${r.records} ${body.kind} rows (${body.date}).` : ((r && r.error) || "Fetch failed.");
+      if (r && r.ok) load();
+    };
+    const ib = $("bmImport");
+    if (ib) ib.onclick = async () => {
+      let rows; try { rows = JSON.parse($("bmPaste").value); } catch (e) { if (msg) msg.textContent = "Invalid JSON."; return; }
+      const body = { rows, kind: $("bmKind").value, source_date: ($("bmDate").value || "").trim(), aggregate_premier: true };
+      const r = await fetch("/api/admin/benchmarks", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body) }).then(x => x.json()).catch(() => null);
+      if (msg) msg.textContent = r && r.ok ? `Imported ${r.records} records.` : ((r && r.error) || "Import failed.");
+      if (r && r.ok) load();
     };
   },
   // Admin "Storage & parsing" section: where the bytes go + upload/parse timing (from the jobs table).
@@ -2938,24 +2986,42 @@ const App = {
   // CT/T round win rate by map across visible matches (map-pool / veto focus). Own data, scope-aware.
   async renderSideStats(steamid) {
     const out = $("trSides"); if (!out) return;
+    this._sideSid = steamid;
     out.innerHTML = `<div class="empty">Loading…</div>`;
-    const q = steamid ? ("?player=" + encodeURIComponent(steamid)) : "";
-    const r = await fetch("api/sidestats" + q).then(r => r.ok ? r.json() : null).catch(() => null);
+    const bucket = this._sideBucket || "";
+    const qp = new URLSearchParams();
+    if (steamid) qp.set("player", steamid);
+    if (bucket) qp.set("bucket", bucket);
+    const r = await fetch("api/sidestats?" + qp.toString()).then(r => r.ok ? r.json() : null).catch(() => null);
     const maps = (r && r.maps) || {};
+    const bm = (r && r.benchmark) || null;                   // public CT/T overlay (only present when sourced)
     const keys = Object.keys(maps).sort();
-    if (!keys.length) { out.innerHTML = `<div class="empty">Not enough side data yet — review a few more matches.</div>`; return; }
+    // "vs Premier" bucket selector — shown ONLY when a public CT/T dataset is imported (hide-until-data)
+    const BUCKETS = ["1k-5k", "5k-10k", "10k-15k", "15k-20k", "20k-25k", ">25k"];
+    const selHtml = (r && r.benchmark_available)
+      ? `<div class="ss-bucket">vs Premier <select id="ssBucket"><option value="">— off —</option>${
+          BUCKETS.map(b => `<option value="${b}"${b === bucket ? " selected" : ""}>${b}</option>`).join("")}</select></div>`
+      : "";
+    const wire = () => { const b = $("ssBucket"); if (b) b.onchange = () => { this._sideBucket = b.value; this.renderSideStats(this._sideSid); }; };
+    if (!keys.length) { out.innerHTML = selHtml + `<div class="empty">Not enough side data yet — review a few more matches.</div>`; wire(); return; }
     const cls = wr => wr >= 55 ? "ss-good" : wr <= 45 ? "ss-bad" : "ss-neu";
+    const pubHead = bm ? `<th title="public CT win %">CT&middot;pub</th><th title="public T win %">T&middot;pub</th>` : "";
     const rows = keys.map(m => {
       const d = maps[m];
       const pretty = this._prettyMap ? this._prettyMap(m) : m;
       const ss = d.small_sample ? ` <span class="ss-flag" title="small sample — treat as a hint">small</span>` : "";
+      let pub = "";
+      if (bm) { const p = bm.maps[m]; pub = p ? `<td class="ss-pub">${p.ct_wr}%</td><td class="ss-pub">${p.t_wr}%</td>` : `<td class="ss-na">—</td><td class="ss-na">—</td>`; }
       return `<tr><td class="ss-map">${esc(pretty)}${ss}</td>
-        <td class="${cls(d.ct_wr)}">${d.ct_wr}%</td><td class="${cls(d.t_wr)}">${d.t_wr}%</td>
-        <td class="ss-g">${d.games}</td></tr>`;
+        <td class="${cls(d.ct_wr)}">${d.ct_wr}%</td><td class="${cls(d.t_wr)}">${d.t_wr}%</td>${pub}<td class="ss-g">${d.games}</td></tr>`;
     }).join("");
-    out.innerHTML = `<table class="ss-table"><thead><tr><th>Map</th>
-      <th title="CT-side round win %">CT</th><th title="T-side round win %">T</th><th>Games</th></tr></thead>
-      <tbody>${rows}</tbody></table>`;
+    const attr = bm
+      ? `<div class="ss-attr">${esc(bm.attribution || "Data provided by Leetify")}${bm.source_date ? " &middot; " + esc(bm.source_date) : ""} &middot; <a href="${esc(bm.source_url || "https://leetify.com")}" target="_blank" rel="noopener">leetify.com</a></div>`
+      : (bucket ? `<div class="ss-attr">Public benchmark for ${esc(bucket)} not imported yet.</div>` : "");
+    out.innerHTML = selHtml + `<table class="ss-table"><thead><tr><th>Map</th>
+      <th title="your CT-side round win %">CT</th><th title="your T-side round win %">T</th>${pubHead}<th>Games</th></tr></thead>
+      <tbody>${rows}</tbody></table>` + attr;
+    wire();
   },
   async renderCompare(a, b) {
     const out = $("trCompareOut"); if (!out) return;

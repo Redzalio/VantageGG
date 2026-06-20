@@ -35,6 +35,8 @@ input (they degrade to "unavailable"/None rather than throwing).
 """
 import json
 import os
+import urllib.error
+import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # DATA_DIR matches appconfig.py / the rest of the app so a hosted deploy can mount it.
@@ -630,3 +632,333 @@ def save_datasets(records, filename, *, directory=None):
         json.dump(records, fh, indent=2)
     os.replace(tmp, path)
     return path
+
+
+# ---- Leetify attribution (Public Data Library requirement) ------------------
+# Leetify's Public Data Library guidelines require a VISIBLE credit + a link back
+# to leetify.com wherever their numbers are shown (UI and exports). These constants
+# give the UI/export layer one place to render that required attribution; the data
+# itself stays attributed per-record via the "attribution" field too.
+LEETIFY_URL = "https://leetify.com"
+ATTRIBUTION_TEXT = "Data provided by Leetify"
+
+
+# ---- Leetify CT/T side-winrate import ---------------------------------------
+# The documented "premier-ct-t-side-winrates" rows identify the map with a
+# game_map_id. We map that id to our LOCAL de_* map name. The mapping is
+# deliberately TOLERANT but NEVER guesses:
+#   * an id that already looks like a de_* name is used as-is (lower-cased);
+#   * a known variant/alias is translated via _LEETIFY_MAP_ALIASES;
+#   * anything else (an unknown id) is SKIPPED -- we do not invent a map.
+# This mirrors the no-fake-data rule: an unrecognized map id yields no record
+# rather than a record pinned to a guessed map.
+_LEETIFY_MAP_ALIASES = {
+    # bare map names (no de_ prefix) seen in some Leetify exports
+    "mirage": "de_mirage",
+    "inferno": "de_inferno",
+    "nuke": "de_nuke",
+    "overpass": "de_overpass",
+    "vertigo": "de_vertigo",
+    "ancient": "de_ancient",
+    "anubis": "de_anubis",
+    "dust2": "de_dust2",
+    "dust_2": "de_dust2",
+    "dust-2": "de_dust2",
+    "train": "de_train",
+    "cache": "de_cache",
+    "cbble": "de_cbble",
+    "cobblestone": "de_cbble",
+    "office": "de_office",
+    "italy": "de_italy",
+    # numeric/internal ids occasionally exposed for the active-duty pool
+    "1": "de_dust2",
+    "2": "de_mirage",
+    "3": "de_inferno",
+    "4": "de_nuke",
+    "5": "de_overpass",
+    "6": "de_vertigo",
+    "7": "de_ancient",
+    "8": "de_anubis",
+    "9": "de_train",
+}
+
+
+def _local_map_id(game_map_id):
+    """Map a Leetify game_map_id to a LOCAL map name (de_*), or None if unmappable.
+
+    Tolerant but never-guessing: a value that already looks like a ``de_*`` (or
+    ``cs_*``/``ar_*``) map name is accepted as-is (lower-cased); a known alias is
+    translated; an empty/unknown id returns None so the caller SKIPS the row.
+    """
+    if game_map_id is None:
+        return None
+    s = str(game_map_id).strip().lower()
+    if not s:
+        return None
+    # already a real map name -> use directly (do not second-guess a valid de_ id).
+    if s.startswith(("de_", "cs_", "ar_")):
+        return s
+    return _LEETIFY_MAP_ALIASES.get(s)
+
+
+# Public, importable alias table so callers/tests can inspect or extend the mapping.
+LEETIFY_MAP_IDS = dict(_LEETIFY_MAP_ALIASES)
+
+# The CT/T metric keys a side-winrate record carries. Both are 0-100 percentages
+# after normalization (see _winrate_to_percent). Higher win rate is "better".
+CT_T_METRIC_FIELDS = ("ct_win_rate", "t_win_rate")
+_BETTER["ct_win_rate"] = "high"
+_BETTER["t_win_rate"] = "high"
+
+
+def _winrate_to_percent(v):
+    """Normalize a Leetify win-rate value to a 0-100 percentage, or None.
+
+    ASSUMPTION (documented): Leetify's avg_ct_win_rate / avg_t_win_rate may be
+    published either as a FRACTION (0..1, e.g. 0.52) or already as a PERCENT
+    (0..100, e.g. 52.0). We normalize deterministically: a value whose magnitude is
+    <= 1.0 is treated as a fraction and multiplied by 100; a value > 1.0 is treated
+    as already a percent and passed through. This is a unit normalization, not a
+    fabricated number -- the underlying value is whatever the source carried.
+    A non-numeric/missing value returns None (stays "unavailable" downstream).
+    """
+    f = _as_float(v)
+    if f is None:
+        return None
+    if abs(f) <= 1.0:
+        return round(f * 100.0, 4)
+    return round(f, 4)
+
+
+def parse_leetify_ct_t(rows, *, source_url=None, source_date=None,
+                       source_name="Leetify"):
+    """PURE transform: documented premier-ct-t-side-winrates rows -> benchmark records.
+
+    ``rows`` is a list of dicts shaped like the Leetify
+    ``premier-ct-t-side-winrates`` response. Documented fields used:
+    ``game_map_id``, ``region``, ``rating_bucket``, ``total_games``,
+    ``total_rounds``, ``avg_ct_win_rate``, ``avg_t_win_rate`` (others ignored).
+
+    Emits ONE record per (map, rating_bucket, region) with::
+
+        bucket_type = "premier_ct_t_side_winrates"
+        bucket      = rating_bucket
+        map_filter  = <local de_* map>
+        region      = <row region or "all">
+        metrics     = {"ct_win_rate": <0-100>, "t_win_rate": <0-100>}
+        sample_size = total_games
+
+    Rows whose ``game_map_id`` can't be mapped to a local map are SKIPPED (never
+    pinned to a guessed map). Win-rate values are normalized to 0-100 percentages
+    via :func:`_winrate_to_percent`. Does NOT fetch -- the caller supplies rows.
+    Never raises on bad input (non-list -> []; bad row -> skipped).
+    """
+    if not isinstance(rows, list):
+        return []
+    out = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        local_map = _local_map_id(row.get("game_map_id"))
+        if local_map is None:
+            continue  # unknown map id -> skip, never guess
+        bucket = row.get("rating_bucket")
+        if bucket is None or (isinstance(bucket, str) and not bucket.strip()):
+            continue  # no bucket -> nothing to key on
+        region = row.get("region") or "all"
+        metrics = {}
+        ct = _winrate_to_percent(row.get("avg_ct_win_rate"))
+        t = _winrate_to_percent(row.get("avg_t_win_rate"))
+        if ct is not None:
+            metrics["ct_win_rate"] = ct
+        if t is not None:
+            metrics["t_win_rate"] = t
+        out.append(_record(
+            source_name, source_url, source_date, region, local_map,
+            "premier_ct_t_side_winrates", bucket, metrics,
+            sample_size=_as_int(row.get("total_games")),
+        ))
+    return out
+
+
+def ct_t_benchmark(map_name, bucket, *, region="all", datasets=None):
+    """Public CT/T side win-rates for a map + bucket (+ region), or None.
+
+    Looks up a ``premier_ct_t_side_winrates`` record for ``map_name`` and ``bucket``,
+    preferring an exact ``region`` match over a generic "all" record (via
+    :func:`get_dataset`'s specificity ranking). Returns::
+
+        {ct_win_rate, t_win_rate, sample_size,
+         source_name, source_url, source_date, attribution}
+
+    where win rates are 0-100 percentages (the normalized values stored on the
+    record), or None when no matching dataset is loaded / the record carries
+    neither win rate. ``datasets`` may be a pre-loaded list to avoid disk reads.
+    Never fabricates a value -- a missing metric stays None, and if BOTH win rates
+    are absent the whole lookup is considered unavailable (returns None).
+    """
+    rec = get_dataset("premier_ct_t_side_winrates", bucket, region=region,
+                      map_filter=map_name, datasets=datasets)
+    if rec is None:
+        return None
+    metrics = rec.get("metrics") or {}
+    ct = _as_float(metrics.get("ct_win_rate"))
+    t = _as_float(metrics.get("t_win_rate"))
+    if ct is None and t is None:
+        return None  # no real winrate present -> unavailable, not a guess
+    return {
+        "ct_win_rate": ct,
+        "t_win_rate": t,
+        "sample_size": rec.get("sample_size"),
+        "source_name": rec.get("source_name"),
+        "source_url": rec.get("source_url"),
+        "source_date": rec.get("source_date"),
+        "attribution": rec.get("attribution"),
+    }
+
+
+# ---- admin-triggered fetch (network; NEVER called at import time or in tests) ----
+# Base host for Leetify's public data library API. The full URL is built per call
+# from (platform, kind, date) -- see fetch_leetify. This module never calls it on
+# its own; only an admin route does, one-shot (no retries/looping).
+LEETIFY_API_BASE = "https://api-public-data-library.i-prod.leetify.com/api"
+_FETCH_TIMEOUT = 15  # seconds
+_FETCH_USER_AGENT = "VantageGG/1.0 (+https://leetify.com)"
+
+
+def leetify_url(date, *, kind="performance-metric-tool", platform="premier"):
+    """Build the Leetify public-data-library URL for (platform, kind, date).
+
+    e.g. ``leetify_url("2026-03-01")`` ->
+    ``https://api-public-data-library.i-prod.leetify.com/api/premier/v1/performance-metric-tool/2026-03-01``.
+    Pure string builder (no network) -- shared by fetch_leetify and tests.
+    """
+    return "%s/%s/v1/%s/%s" % (LEETIFY_API_BASE, platform, kind, date)
+
+
+def fetch_leetify(date, *, kind="performance-metric-tool", platform="premier"):
+    """Fetch one Leetify public-data-library dataset (ADMIN-ONLY; makes a network call).
+
+    Builds the URL via :func:`leetify_url` (``date`` like "2026-03-01"), GETs it with
+    the stdlib ``urllib`` using a ~15s timeout and a normal User-Agent, parses the
+    JSON body, and returns the ROWS list. Both a bare JSON list and a
+    ``{"data": [...]}`` wrapper are accepted (the rows list is returned either way).
+
+    One-shot: NO retries, NO looping. Raises a clear ``RuntimeError`` on any
+    HTTP/URL/parse problem so the admin route can surface it. This function is
+    NEVER called at import time or in tests -- only by an explicit admin action.
+    """
+    url = leetify_url(date, kind=kind, platform=platform)
+    req = urllib.request.Request(url, headers={"User-Agent": _FETCH_USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=_FETCH_TIMEOUT) as resp:
+            raw = resp.read()
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError("Leetify fetch failed (HTTP %s) for %s" % (exc.code, url))
+    except urllib.error.URLError as exc:
+        raise RuntimeError("Leetify fetch failed (%s) for %s" % (exc.reason, url))
+    except Exception as exc:  # socket timeout, etc.
+        raise RuntimeError("Leetify fetch failed (%s) for %s" % (exc, url))
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError("Leetify fetch returned invalid JSON for %s: %s" % (url, exc))
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        rows = data.get("data")
+        if isinstance(rows, list):
+            return rows
+        raise RuntimeError("Leetify fetch JSON has no 'data' list for %s" % url)
+    raise RuntimeError("Leetify fetch returned unexpected JSON shape for %s" % url)
+
+
+# ---- biggest actionable gap -------------------------------------------------
+# Human-readable labels for the metrics biggest_gap may surface. A metric not here
+# falls back to its raw key (we never block a real gap just for lacking a label).
+_METRIC_LABELS = {
+    "hltv": "Rating", "adr": "ADR", "kast": "KAST", "kd": "K/D",
+    "open_wr": "Opening WR", "traded_pct": "Traded %", "udr": "Util Dmg/Rd",
+    "enemy_flashed": "Enemies Flashed", "team_flashed": "Teammates Flashed",
+    "avg_blind": "Avg Blind Time",
+    "ct_win_rate": "CT Win Rate", "t_win_rate": "T Win Rate",
+    "avg_reaction_time": "Reaction Time", "avg_preaim": "Pre-aim Error",
+    "avg_accuracy_enemy_spotted": "Accuracy (enemy spotted)",
+    "avg_spray_accuracy": "Spray Accuracy", "avg_accuracy_head": "Head Accuracy",
+    "avg_counter_strafing_good_ratio": "Counter-strafing",
+    "avg_flashbang_hit_foe_avg_duration": "Flash Foe Duration",
+    "avg_flashbang_hit_foe": "Enemies Flashed (avg)",
+    "avg_flashbang_hit_friend": "Teammates Flashed (avg)",
+    "avg_total_flash_blind_duration": "Total Blind Duration",
+    "avg_he_foes_damage_avg": "HE Damage", "avg_he_thrown": "HE Thrown",
+    "avg_molotov_thrown": "Molotovs Thrown", "avg_smoke_thrown": "Smokes Thrown",
+    "avg_flashbang_thrown": "Flashes Thrown",
+}
+
+
+def metric_label(metric):
+    """Human label for a metric key (falls back to the raw key)."""
+    return _METRIC_LABELS.get(metric, metric)
+
+
+def biggest_gap(player_stats, bucket_type, bucket, *, region="all",
+                map_filter="all", datasets=None):
+    """The single most actionable, reliable weakness vs a sourced benchmark, or None.
+
+    Runs :func:`compare` and picks the ONE metric where the player is reliably
+    WORSE than the benchmark -- i.e. ``status == "below"`` (already honors each
+    metric's higher/lower-is-better direction via :func:`better_for`) AND a real
+    ``benchmark_value`` is present. Candidates are ranked by NORMALIZED gap size so
+    a percentage metric doesn't always dominate a raw-count one; the largest
+    normalized gap wins.
+
+    Reliability guard: the matched dataset must carry a present, non-trivial
+    ``sample_size`` (> 0). Without a real sample size we return None rather than
+    coach off a one-off / unsourced number.
+
+    Returns::
+
+        {metric, label, player_value, benchmark_value, delta,
+         source_name, source_url, source_date, attribution}
+
+    or None when nothing is reliably below benchmark. NEVER returns an
+    "unavailable"/no-benchmark metric (those are filtered out up front).
+    """
+    res = compare(player_stats, bucket_type, bucket, region=region,
+                  map_filter=map_filter, datasets=datasets)
+    if not res.get("available"):
+        return None
+    # Reliability: require a real, non-trivial sample size on the matched dataset.
+    sample_size = _as_int(res.get("sample_size"))
+    if sample_size is None or sample_size <= 0:
+        return None
+
+    best = None
+    best_score = -1.0
+    for m in res.get("metrics", []):
+        if m.get("status") != "below":
+            continue
+        pv = m.get("player_value")
+        bv = m.get("benchmark_value")
+        if pv is None or bv is None:   # defensive: "below" implies both, but be safe
+            continue
+        gap = abs(pv - bv)
+        base = max(abs(pv) + abs(bv), 1.0)   # normalize; avoid div-by-zero near 0
+        score = gap / base
+        if score > best_score:
+            best_score = score
+            best = m
+
+    if best is None:
+        return None
+    return {
+        "metric": best["metric"],
+        "label": metric_label(best["metric"]),
+        "player_value": best["player_value"],
+        "benchmark_value": best["benchmark_value"],
+        "delta": best.get("delta"),
+        "source_name": res.get("source"),
+        "source_url": res.get("source_url"),
+        "source_date": res.get("source_date"),
+        "attribution": res.get("attribution"),
+    }
