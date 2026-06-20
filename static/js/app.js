@@ -689,22 +689,60 @@ const App = {
   },
 
   // ---- first-time walkthrough -----------------------------------------------
-  // A lightweight spotlight tour over real UI elements. Auto-runs once for new users (localStorage
-  // flag), re-launchable from the "?" button. Steps whose target is missing/hidden are skipped.
-  _tourSteps() {
+  // A guided spotlight tour over real UI elements. Auto-runs once for new users (localStorage
+  // flag), re-launchable from the "Tour" button. Steps whose target is missing/hidden are skipped
+  // lazily in _tourShow, so the same step list adapts to dashboard vs replay vs 2D-vs-3D state.
+  //
+  // The replay walkthrough -- targets elements that only exist once a demo is loaded. Action steps
+  // trigger real UI (enter 3D, open a panel); waitUntil auto-advances once the state flips, so the
+  // tour stays in lockstep with what the user is actually looking at.
+  _replayTourSteps() {
     return [
-      { title: "Welcome to VantageGG", body: "Upload a CS2 demo and get a 2D + 3D replay, deep stats, and coaching that tells you what to fix. Here's the 20-second tour." },
-      { el: "#uploadBtn", title: "Upload your demos", body: "Drop a CS2 <b>.dem</b> (or a .zip of several). Parsing runs in the background &mdash; you don't have to wait on the page." },
-      { el: "#sampleBtn", title: "Or load the sample", body: "No demo handy? Load a full sample match and explore the replay and stats right now." },
-      { el: "#toggleTrends", title: "Trends & analytics", body: "Once you have a few matches, track rating, ADR, KAST and more over time &mdash; and see what's improving." },
-      { el: "#goalsBtn", title: "Practice goals", body: "Turn recurring mistakes into measurable goals and check progress every match." },
-      { el: "#libraryBtn", title: "Your library", body: "All your parsed matches live here. Open one for the 2D/3D replay, scoreboard, and per-round breakdown." },
-      { title: "You're set", body: "Replay this tour anytime from the <b>?</b> button up top. Start by uploading a demo or loading the sample." },
+      { el: ".viewport", title: "The 2D radar", body: "This is the top-down replay. Dots are players &mdash; <b>green = CT</b>, <b>orange/red = T</b>. Pan with right-click drag (or touch), zoom with the scroll wheel." },
+      { el: "#playPause", title: "Play the round", body: "Hit Play to watch the round unfold. Press <b>Space</b> to toggle playback at any time." },
+      { el: "#timeline", title: "Scrub the timeline", body: "Drag the timeline to jump to any moment in the round." },
+      { el: "#prevRound", title: "Jump between rounds", body: "Use the arrow buttons &mdash; or the <b>[</b> and <b>]</b> keys &mdash; to move round to round." },
+      { el: "#toggle3d", title: "Go 3D", body: "Switch to 3D for a fly-around view of the exact same replay.",
+        action: { label: "Enter 3D", fn: () => { if (this.entitled("threeD")) this.toggle3d(); else this._upsell("threeD"); } },
+        waitUntil: () => !!(this.view3d && this.view3d.active) },
+      // Centered (no el): #view3dHint is auto-hidden on calibrated maps (Mirage etc.), so we can't
+      // reliably spotlight it. The body lists every control, so a centered card is the robust call.
+      // onEnter still surfaces the hint bar when it IS available (uncalibrated / still-loading maps).
+      { title: "Move around in 3D", body: "<b>WASD</b> to move, <b>E/Q</b> up/down, <b>Shift</b> to sprint. <b>Space</b> plays/pauses, <b>C</b> cycles camera modes (Fly / Follow / Overhead). Click the view to lock your mouse, <b>Esc</b> to release it.",
+        onEnter: () => { const h = $("view3dHint"); if (h && this.view3d && this.view3d.active && h.innerHTML.trim()) h.classList.add("show"); } },
+      { el: "#toggle3d", title: "Back to 2D", body: "Click <b>2D</b> to drop back to the radar view whenever you want.",
+        action: { label: "Back to 2D", fn: () => { if (this.exit3D) this.exit3D(); else this.toggle3d(); } },
+        waitUntil: () => !(this.view3d && this.view3d.active) },
+      { el: "#toggleAnalytics", title: "Analytics", body: "Analytics turns the replay into patterns: K/D, ADR, KAST, openings, trades, and the mistakes you keep repeating.",
+        action: { label: "Open Analytics", fn: () => $("toggleAnalytics") && $("toggleAnalytics").click() } },
+      { el: "#toggleUtil", title: "Utility", body: "Utility shows every smoke, flash, and molly thrown in the match &mdash; and lets you save lineups to your nade library.",
+        action: { label: "Open Utility", fn: () => $("toggleUtil") && $("toggleUtil").click() } },
+      { el: "#toggleReview", title: "Review", body: "Review is where you bookmark rounds, add notes, and queue practice sessions &mdash; perfect for fixing what Analytics finds.",
+        action: { label: "Open Review", fn: () => $("toggleReview") && $("toggleReview").click() } },
+      { title: "That's VantageGG", body: "The loop: <b>Watch</b> (2D/3D) &rarr; <b>Find patterns</b> (Analytics) &rarr; <b>Mark moments</b> (Review) &rarr; <b>Practice</b> (Utility). Replay this tour anytime from the <b>Tour</b> button up top." },
     ];
   },
+  // The entry tour for the dashboard: load the sample, then flow straight into the replay
+  // walkthrough. Because the load-sample step's waitUntil fires once `this.demo` exists, the
+  // very next step (the first replay step) takes over naturally -- one continuous tour.
+  _dashTourSteps() {
+    const loadSampleStep = {
+      title: "Welcome to VantageGG",
+      body: "Upload a CS2 demo or load a sample match to get a 2D + 3D replay, deep stats, and coaching. Let's try it now.",
+      action: { label: "Load sample & start walkthrough", fn: () => this.loadSample() },
+      waitUntil: () => !!this.demo,
+    };
+    return [loadSampleStep, ...this._replayTourSteps()];
+  },
   startTour(fromUser) {
-    const vis = (s) => { if (!s.el) return true; const t = document.querySelector(s.el); return t && t.offsetParent !== null; };
-    const steps = this._tourSteps().filter(vis);
+    // If a demo is already on screen, jump straight into the replay walkthrough; otherwise
+    // start at the dashboard entry step (which loads the sample, then flows into the replay).
+    // NOTE: we do NOT pre-filter by visibility here. The dashboard tour deliberately keeps the
+    // replay steps even though their targets are hidden right now -- the load-sample step's
+    // waitUntil fires once the demo exists, and by then those targets are live. _tourShow does
+    // the skipping lazily (per current visibility) so the flow stays correct as the page changes.
+    const steps = (this.demo ? this._replayTourSteps() : this._dashTourSteps());
+    // if every step is unreachable (e.g. somehow no targets and no centered steps), bail
     if (!steps.length) return;
     this._tour = { steps, i: 0, fromUser: !!fromUser };
     if (!this._tourEl) this._buildTourDom();
@@ -719,17 +757,27 @@ const App = {
     wrap.innerHTML = `<div class="tour-spot"></div>`
       + `<div class="tour-card"><div class="tour-step"></div>`
       + `<h3 class="tour-title"></h3><p class="tour-body"></p>`
+      + `<button class="btn primary sm tour-action-btn"></button>`
       + `<div class="tour-actions"><button class="btn ghost sm tour-skip">Skip</button>`
       + `<div class="tour-nav"><button class="btn ghost sm tour-back">Back</button>`
       + `<button class="btn primary sm tour-next">Next</button></div></div></div>`;
     document.body.appendChild(wrap);
     this._tourEl = wrap;
+    // advance one step forward; _tourShow skips any not-yet-visible steps and ends the tour
+    // itself if it runs off the end, so a plain i+1 is safe even with lazy skipping.
+    const advance = () => this._tourShow(this._tour.i + 1);
     wrap.querySelector(".tour-skip").onclick = () => this._tourEnd();
     wrap.querySelector(".tour-back").onclick = () => this._tourShow(this._tour.i - 1);
-    wrap.querySelector(".tour-next").onclick = () => {
-      if (this._tour.i >= this._tour.steps.length - 1) this._tourEnd();
-      else this._tourShow(this._tour.i + 1);
+    wrap.querySelector(".tour-action-btn").onclick = () => {
+      const step = this._tour && this._tour.steps[this._tour.i];
+      if (!step) return;
+      if (step.action && step.action.fn) { try { step.action.fn(); } catch (e) { /* tolerate */ } }
+      // If the step also has a waitUntil, the action just KICKS OFF the work (often async, e.g.
+      // loading the sample or entering 3D) -- the poller set up in _tourShow advances once the
+      // condition flips. Advancing here too would race past the not-yet-ready replay steps.
+      if (!step.waitUntil) advance();
     };
+    wrap.querySelector(".tour-next").onclick = advance;
     this._tourKey = (e) => {
       if (!this._tour) return;
       if (e.key === "Escape") this._tourEnd();
@@ -738,15 +786,67 @@ const App = {
     };
     this._tourReflow = () => { if (this._tour) this._tourShow(this._tour.i); };
   },
+  // is this step showable right now? a centered (no-el) step always is; an el step needs a
+  // target that's actually rendered/visible (offsetParent != null catches display:none ancestors).
+  _tourStepVisible(s) {
+    if (!s || !s.el) return true;
+    const t = document.querySelector(s.el);
+    return !!(t && t.offsetParent !== null);
+  },
   _tourShow(i) {
     const t = this._tour; if (!t) return;
-    i = Math.max(0, Math.min(t.steps.length - 1, i)); t.i = i;
+    // tear down anything tied to the step we're leaving (poll loop + onLeave side-effects)
+    this._tourClearWait();
+    const from = t.i;
+    const prev = t.steps[from];
+    // direction of travel from the requested index (a request past the end means "advance off the
+    // last step" -> end the tour). Don't pre-clamp the upper bound or that end signal is lost.
+    const dir = i >= from ? 1 : -1;
+    // lazily skip steps whose target isn't visible right now (e.g. replay controls while still on
+    // the dashboard). Travel in the direction the user moved; if we run off the end going forward,
+    // end the tour; off the start going back, snap to the first visible step.
+    while (i >= 0 && i < t.steps.length && !this._tourStepVisible(t.steps[i])) i += dir;
+    if (i < 0) { // nothing visible before here -- find the first visible step forward instead
+      i = 0; while (i < t.steps.length && !this._tourStepVisible(t.steps[i])) i++;
+    }
+    if (i >= t.steps.length) { this._tourEnd(); return; }   // ran out going forward -> done
+    if (prev && i !== from && prev.onLeave) { try { prev.onLeave(); } catch (e) { /* tolerate */ } }
+    t.i = i;
     const step = t.steps[i], el = this._tourEl;
-    el.querySelector(".tour-step").textContent = `${i + 1} / ${t.steps.length}`;
+    // counter + first/last reflect only the steps showable right now (skipped ones don't count),
+    // so "2 / 11" stays honest even though the underlying array is longer.
+    const visIdx = t.steps.map((s, k) => this._tourStepVisible(s) ? k : -1).filter(k => k >= 0);
+    const pos = visIdx.indexOf(i);
+    const isFirst = pos <= 0;
+    const isLast = pos === visIdx.length - 1;
+    el.querySelector(".tour-step").textContent = `${pos + 1} / ${visIdx.length}`;
     el.querySelector(".tour-title").innerHTML = step.title;
     el.querySelector(".tour-body").innerHTML = step.body;
-    el.querySelector(".tour-back").style.visibility = i === 0 ? "hidden" : "";
-    el.querySelector(".tour-next").textContent = i >= t.steps.length - 1 ? "Done" : "Next";
+    el.querySelector(".tour-back").style.visibility = isFirst ? "hidden" : "";
+    const nextBtn = el.querySelector(".tour-next");
+    nextBtn.textContent = isLast ? "Done" : "Next";
+    // action button: shown only when this step defines one, advances after running its fn
+    const actBtn = el.querySelector(".tour-action-btn");
+    if (step.action) { actBtn.textContent = step.action.label || "Continue"; actBtn.classList.add("show"); }
+    else actBtn.classList.remove("show");
+    // let the step open whatever it needs before we measure / spotlight its target
+    if (step.onEnter) { try { step.onEnter(); } catch (e) { /* tolerate */ } }
+    // waitUntil: hold Next disabled and poll until the world catches up, then auto-advance.
+    // (advance to i+1 -- _tourShow skips forward past any not-yet-visible steps from there.)
+    if (step.waitUntil) {
+      nextBtn.disabled = true;
+      if (!step.waitUntil()) {
+        this._tourWait = setInterval(() => {
+          if (!this._tour || this._tour.i !== i) { this._tourClearWait(); return; }
+          let ok = false; try { ok = !!step.waitUntil(); } catch (e) { ok = false; }
+          if (ok) {
+            this._tourClearWait();
+            nextBtn.disabled = false;
+            if (isLast) this._tourEnd(); else this._tourShow(i + 1);
+          }
+        }, 300);
+      } else { nextBtn.disabled = false; if (!isLast) { this._tourShow(i + 1); return; } }
+    } else { nextBtn.disabled = false; }
     const spot = el.querySelector(".tour-spot"), card = el.querySelector(".tour-card");
     const target = step.el && document.querySelector(step.el);
     if (target) {
@@ -768,18 +868,22 @@ const App = {
       card.style.left = ""; card.style.top = ""; card.style.bottom = "";
     }
   },
+  _tourClearWait() {
+    if (this._tourWait) { clearInterval(this._tourWait); this._tourWait = null; }
+  },
   _tourEnd() {
+    this._tourClearWait();
     if (this._tourEl) this._tourEl.hidden = true;
     window.removeEventListener("keydown", this._tourKey);
     window.removeEventListener("resize", this._tourReflow);
     this._tour = null;
-    try { localStorage.setItem("cs2dp_tour_v1", "done"); } catch (e) { /* private mode */ }
+    try { localStorage.setItem("cs2dp_tour_v2", "done"); } catch (e) { /* private mode */ }
   },
   _maybeAutoTour() {
     if (this._tourChecked) return;
     this._tourChecked = true;
     let seen = null;
-    try { seen = localStorage.getItem("cs2dp_tour_v1"); } catch (e) { seen = "done"; }   // private mode: don't nag
+    try { seen = localStorage.getItem("cs2dp_tour_v2"); } catch (e) { seen = "done"; }   // private mode: don't nag
     if (!seen) setTimeout(() => { if (document.body.classList.contains("on-dashboard")) this.startTour(false); }, 700);
   },
 

@@ -370,8 +370,11 @@ body.on-dashboard #topbar .match{display:none}
 .tour-step{color:var(--mut);font-size:11px;font-weight:700;letter-spacing:.04em;margin-bottom:6px}
 .tour-title{margin:0 0 6px;font-size:17px}
 .tour-body{margin:0 0 14px;color:var(--mut);font-size:13px;line-height:1.5}
-.tour-actions{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.tour-actions{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .tour-nav{display:flex;gap:8px}
+.tour-action-btn{display:none;width:100%;margin-bottom:8px}
+.tour-action-btn.show{display:block}
+.tour-next:disabled{opacity:.5;cursor:not-allowed}
 @media(max-width:760px){.mf-groups{grid-template-columns:1fr;gap:14px}}
 .dash-jobs{display:none;background:var(--panel);border:1px solid var(--accent);border-radius:12px;padding:14px 16px;margin-bottom:20px}
 .dash-jobs.show{display:block}
