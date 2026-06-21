@@ -1149,6 +1149,7 @@ textarea.lf-in{height:46px;resize:vertical;font-family:inherit}
 .da-ut{background:#0c1116;border:1px solid var(--line);border-radius:9px;padding:10px 12px;border-left:3px solid var(--line2)}
 .da-ut.ut-smoke{border-left-color:#9aa7b4}.da-ut.ut-flash{border-left-color:#e8c84a}
 .da-ut.ut-he{border-left-color:#e8843a}.da-ut.ut-molotov{border-left-color:#e2563a}
+.da-ut.ut-impact{border-left-color:var(--accent);background:linear-gradient(180deg,rgba(232,116,59,.06),#0c1116)}
 .da-ut-v{font-size:20px;font-weight:800;line-height:1.1}
 .da-ut-k{font-size:11px;color:var(--mut);margin-top:3px}
 .da-util-actions,.da-flash-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}

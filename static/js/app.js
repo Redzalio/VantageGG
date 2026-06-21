@@ -3448,31 +3448,62 @@ const App = {
   // ---- Utility tab: most-common by map + by type, with effectiveness (HE dmg, flashes hit, etc).
   _daUtilityHtml(data) {
     const u = data.utility || {};
-    const byType = u.by_type || {};
     const byMap = u.by_map || [];
     const dmgByMap = u.dmg_by_map || [];
     const flashByMap = u.flash_by_map || [];
-    const hasType = ["smoke", "flash", "he", "molotov"].some(k => byType[k] != null);
+    const players = (data.players || []);
+    const utilPlayers = players.filter(p => p.utility && Object.keys(p.utility).length);
     const hasMap = byMap.length > 0;
-    if (!hasType && !hasMap) return `<div class="da-report"><div class="rp-card"><div class="rp-h">Utility</div>
+    if (!utilPlayers.length && !hasMap) return `<div class="da-report"><div class="rp-card"><div class="rp-h">Utility</div>
       <div class="empty">Not enough utility data yet — review a few more matches.</div></div></div>`;
     const n = (v) => v != null ? (Math.round(v * 10) / 10) : "—";
-    // by-type tiles (per-match averages from the contract)
-    const typeDefs = [["smoke", "Smokes"], ["flash", "Flashes"], ["he", "HE"], ["molotov", "Molotovs"]];
-    const typeTiles = hasType ? `<div class="rp-card"><div class="rp-h">Utility by type <em>per match</em></div>
-      <div class="da-util-types">${typeDefs.map(([k, lbl]) =>
-        `<div class="da-ut ut-${k}"><div class="da-ut-v">${n(byType[k])}</div><div class="da-ut-k">${lbl}</div></div>`).join("")}</div></div>` : "";
-    // by-map table (counts + HE dmg join)
+    const avgOf = (pick) => { const xs = players.map(pick).filter(v => v != null && !isNaN(v)); return xs.length ? xs.reduce((s, v) => s + v, 0) / xs.length : null; };
+    const uavg = (k) => avgOf(p => (p.utility || {})[k]);
+    const pavg = (k) => avgOf(p => (p.perf || {})[k]);
+    const udrAvg = avgOf(p => p.udr);
+
+    // 1) output + IMPACT tiles -- the "is our utility doing work" headline (UDR + HE damage up front,
+    //    not buried under flash). Roster averages, consistent with the per-match player.utility values.
+    const tile = (val, lbl, cls, title) => `<div class="da-ut ${cls}"${title ? ` title="${title}"` : ""}><div class="da-ut-v">${val}</div><div class="da-ut-k">${lbl}</div></div>`;
+    const tiles = `<div class="rp-card"><div class="rp-h">Utility output &amp; impact <em>roster averages</em></div>
+      <div class="da-util-types">
+        ${tile(n(uavg("smokes")), "Smokes / match", "ut-smoke")}
+        ${tile(n(uavg("flashes_thrown")), "Flashes / match", "ut-flash")}
+        ${tile(n(uavg("hes")), "HE / match", "ut-he")}
+        ${tile(n(uavg("molotovs")), "Molotovs / match", "ut-molotov")}
+        ${tile(udrAvg != null ? n(udrAvg) : "—", "Util dmg / round", "ut-impact", "team utility damage per round (UDR)")}
+        ${tile(pavg("he_dmg_per_he") != null ? n(pavg("he_dmg_per_he")) : "—", "Avg HE dmg", "ut-impact", "average damage per HE grenade thrown")}
+        ${tile(uavg("enemy_flashed") != null ? n(uavg("enemy_flashed")) : "—", "Enemies flashed / match", "ut-impact")}
+      </div></div>`;
+
+    // 2) PER-PLAYER utility -- the depth: throw mix + HE damage + util dmg/round per teammate (sorted
+    //    by UDR so the most impactful utility shows first). This is the non-flash detail that was missing.
+    const sortedPlayers = utilPlayers.slice().sort((a, b) => (b.udr || 0) - (a.udr || 0));
+    const playerTbl = utilPlayers.length ? `<div class="rp-card"><div class="rp-h">Per-player utility <em>output, HE damage &amp; util dmg/round</em></div>
+      <div class="da-scroll"><table class="da-form-table" style="min-width:560px">
+        <thead><tr><th>Player</th><th>Smoke</th><th>Flash</th><th>HE</th><th>Molotov</th>
+          <th title="average damage per HE grenade">Avg HE dmg</th><th title="utility damage per round">UDR</th>
+          <th title="enemies flashed per match">Enemies flashed</th></tr></thead>
+        <tbody>${sortedPlayers.map(p => { const ut = p.utility || {}, pf = p.perf || {};
+          return `<tr><td class="da-fl">${esc(p.name || p.steamid)}</td>
+            <td>${ut.smokes != null ? n(ut.smokes) : "—"}</td><td>${ut.flashes_thrown != null ? n(ut.flashes_thrown) : "—"}</td>
+            <td>${ut.hes != null ? n(ut.hes) : "—"}</td><td>${ut.molotovs != null ? n(ut.molotovs) : "—"}</td>
+            <td>${pf.he_dmg_per_he != null ? n(pf.he_dmg_per_he) : "—"}</td>
+            <td>${p.udr != null ? n(p.udr) : "—"}</td>
+            <td>${ut.enemy_flashed != null ? n(ut.enemy_flashed) : "—"}</td></tr>`;
+        }).join("")}</tbody></table></div></div>` : "";
+
+    // 3) by-map throw mix + HE damage by map
     const dmgMap = {}; dmgByMap.forEach(d => { dmgMap[d.map] = d.he_dmg; });
-    const mapTable = hasMap ? `<div class="rp-card"><div class="rp-h">Most-thrown by map <em>where your utility goes</em></div>
-      <div class="da-scroll"><table class="da-form-table" style="min-width:460px">
+    const mapTable = hasMap ? `<div class="rp-card"><div class="rp-h">By map <em>throw mix &amp; HE damage</em></div>
+      <div class="da-scroll"><table class="da-form-table" style="min-width:480px">
         <thead><tr><th>Map</th><th>Smoke</th><th>Flash</th><th>HE</th><th>Molotov</th><th>Total</th><th title="HE damage on this map">HE dmg</th></tr></thead>
         <tbody>${byMap.map(r => `<tr><td class="da-fl">${esc(this._fmtMap(r.map))}</td>
           <td>${r.smoke != null ? r.smoke : "—"}</td><td>${r.flash != null ? r.flash : "—"}</td>
           <td>${r.he != null ? r.he : "—"}</td><td>${r.molotov != null ? r.molotov : "—"}</td>
           <td>${r.total != null ? r.total : "—"}</td><td>${dmgMap[r.map] != null ? Math.round(dmgMap[r.map]) : "—"}</td></tr>`).join("")}</tbody>
       </table></div></div>` : "";
-    // flash effectiveness by map (blind value)
+    // 4) flash effectiveness by map (blind value)
     const flashTable = flashByMap.length ? `<div class="rp-card"><div class="rp-h">Flash effectiveness by map <em>blinds that landed</em></div>
       <div class="da-scroll"><table class="da-form-table" style="min-width:520px">
         <thead><tr><th>Map</th><th>Thrown</th><th>Enemies</th><th>Teammates</th><th title="avg blind seconds">Avg blind</th><th title="enemies blinded per flash">Enemy/flash</th></tr></thead>
@@ -3506,7 +3537,7 @@ const App = {
       <button class="btn ghost sm gl-rc-goal" data-metric="he_dmg_per_he" data-area="utility" data-title="Improve HE damage" data-target="">+ Utility goal</button>
       <button class="btn ghost sm gl-rc-goal" data-metric="avg_flashbang_hit_foe" data-area="utility" data-title="Land more flashes on enemies" data-target="">+ Flash goal</button>
     </div>`;
-    return `<div class="da-report">${typeTiles}${mapTable}${flashTable}${flashPlayerTable}${actions}</div>`;
+    return `<div class="da-report">${tiles}${playerTbl}${mapTable}${flashTable}${flashPlayerTable}${actions}</div>`;
   },
   // ---- Benchmarks tab: player selector (default = top-by-matches roster player) -> reuse the existing
   // shared renderPerfBench panel (Leetify-comparable metrics vs the chosen rank bucket).
