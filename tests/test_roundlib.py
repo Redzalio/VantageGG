@@ -4,8 +4,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from roundlib import (classify_buy, is_util_damage_weapon, kill_reward,   # noqa: E402
-                      norm_weapon, pair_rounds, winner_str)
+from roundlib import (classify_buy, is_fire_damage_weapon, is_he_damage_weapon,   # noqa: E402
+                      is_util_damage_weapon, kill_reward, norm_weapon, pair_rounds, winner_str)
 
 
 def test_winner_str_variants():
@@ -117,3 +117,20 @@ def test_is_util_damage_weapon():
         assert is_util_damage_weapon(w) is True, w
     for w in ("ak47", "weapon_ak47", "knife", "awp", "deagle", "", None):
         assert is_util_damage_weapon(w) is False, w
+
+
+def test_he_vs_fire_damage_split():
+    # HE-only (for "HE damage per HE" -- must NOT include molotov/fire)
+    for w in ("hegrenade", "weapon_hegrenade", "HEGrenade"):
+        assert is_he_damage_weapon(w) is True, w
+        assert is_fire_damage_weapon(w) is False, w
+    # molotov / incendiary fire (the complement)
+    for w in ("molotov", "weapon_molotov", "inferno", "incgrenade", "inc_grenade", "incendiary"):
+        assert is_fire_damage_weapon(w) is True, w
+        assert is_he_damage_weapon(w) is False, w
+    # neither for bullets / empty
+    for w in ("ak47", "awp", "", None):
+        assert is_he_damage_weapon(w) is False and is_fire_damage_weapon(w) is False, w
+    # the split partitions is_util_damage_weapon exactly (he XOR fire == util)
+    for w in ("hegrenade", "molotov", "inferno", "incgrenade"):
+        assert is_he_damage_weapon(w) ^ is_fire_damage_weapon(w) == is_util_damage_weapon(w)

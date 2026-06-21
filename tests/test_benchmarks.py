@@ -742,3 +742,64 @@ def test_biggest_gap_ct_t_winrate_metric():
     assert out["metric"] == "ct_win_rate"
     assert out["label"] == "CT Win Rate"
     assert out["benchmark_value"] == 55.0
+
+
+# ---- perf-metric comparison: the CURATED SAFE player->Leetify key gate ------
+def test_perf_compare_map_contains_only_safe_pairs():
+    m = benchmarks.PERF_COMPARE_MAP
+    # safe pairs are present
+    assert m["hes"] == "avg_he_thrown"
+    assert m["smokes"] == "avg_smoke_thrown"
+    assert m["flashes_thrown"] == "avg_flashbang_thrown"
+    assert m["molotovs"] == "avg_molotov_thrown"
+    assert m["he_dmg_per_he"] == "avg_he_foes_damage_avg"
+    assert m["headshot_accuracy"] == "avg_accuracy_head"
+    assert m["flashes_hit_foe_per_game"] == "avg_flashbang_hit_foe"
+    # UNSAFE pairs must NEVER be bridged (would show a misleading delta)
+    for unsafe in ("counter_strafe", "hs_pct", "accuracy", "spray_accuracy", "preaim", "reaction_time"):
+        assert unsafe not in m, unsafe
+    # and no value maps to the unsafe Leetify keys
+    bad = {"avg_counter_strafing_good_ratio", "avg_spray_accuracy",
+           "avg_accuracy_enemy_spotted", "avg_preaim", "avg_reaction_time"}
+    assert not (set(m.values()) & bad)
+
+
+def test_perf_player_vals_rekeys_safe_present_only():
+    pv = benchmarks.perf_player_vals({
+        "hes": 5, "headshot_accuracy": 24.5, "smokes": 3.0,
+        "counter_strafe": 61.0,        # unsafe -> dropped
+        "hs_pct": 55.0,                # unsafe -> dropped
+        "flashes_thrown": None,        # None -> skipped (no fake)
+    })
+    assert pv == {"avg_he_thrown": 5.0, "avg_accuracy_head": 24.5, "avg_smoke_thrown": 3.0}
+    assert benchmarks.perf_player_vals(None) == {}     # non-dict safe
+
+
+def test_perf_compare_bridges_safe_leaves_unsafe_unavailable(tmp_path):
+    # Dataset carries a SAFE metric (avg_he_thrown) and an UNSAFE one
+    # (avg_counter_strafing_good_ratio). The player has both a bridgeable field (hes) and an
+    # unbridgeable one (counter_strafe). perf_compare must compare the safe metric and leave the
+    # unsafe one player-side unavailable (benchmark shown, no delta) -- never a wrong comparison.
+    _write_dataset(tmp_path, [{
+        "source_name": "Leetify", "source_url": "https://leetify.invalid",
+        "source_date": "2026-03-01", "bucket_type": "premier_rating",
+        "bucket": "15k-20k", "region": "all", "map_filter": "all",
+        "metrics": {"avg_he_thrown": 6.0, "avg_counter_strafing_good_ratio": 32.0,
+                    "avg_accuracy_head": 20.0},
+        "attribution": "Leetify",
+    }])
+    res = benchmarks.perf_compare(
+        {"hes": 8, "counter_strafe": 61.0, "headshot_accuracy": 24.0},
+        "premier_rating", "15k-20k")
+    assert res["available"] is True
+    by = {m["metric"]: m for m in res["metrics"]}
+    # SAFE: bridged + compared
+    assert by["avg_he_thrown"]["player_value"] == 8.0
+    assert by["avg_he_thrown"]["benchmark_value"] == 6.0
+    assert by["avg_he_thrown"]["status"] in ("above", "near", "below")
+    assert by["avg_accuracy_head"]["player_value"] == 24.0
+    # UNSAFE: benchmark present but player side stays unavailable (NOT a 61-vs-32 delta)
+    assert by["avg_counter_strafing_good_ratio"]["benchmark_value"] == 32.0
+    assert by["avg_counter_strafing_good_ratio"]["player_value"] is None
+    assert by["avg_counter_strafing_good_ratio"]["delta"] is None
+    assert by["avg_counter_strafing_good_ratio"]["status"] == "unavailable"

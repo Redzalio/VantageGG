@@ -29,6 +29,62 @@ DB_PATH = os.environ.get("SQLITE_PATH") or os.path.join(DATA_DIR, "cs2dp.sqlite"
 _PLAYER_FIELDS = mi._PLAYER_FIELDS              # kills,deaths,kd,adr,kast,hltv,open_wr,traded_pct,udr
 _TREND_STATS = mi._STATS                        # hltv,adr,kast,open_wr,traded_pct,udr
 
+# Leetify-comparable per-match perf metrics, stored per (sha1, steamid) for the dashboard "last N
+# matches" average + the per-match Player panel. Each entry: db_col -> (player_field, quality_key).
+# quality_key gates no-fake-data: the value is stored ONLY when analytics flagged it perf_quality
+# == "exact"; otherwise NULL, so SQL AVG()/COUNT() skip it (an unavailable metric never drags the
+# average toward 0). quality_key=None = always-exact counts (0 thrown IS a real value).
+_PERF_DB_FIELDS = {
+    "headshot_accuracy":                   ("headshot_accuracy", "accuracy_head"),
+    "he_dmg_per_he":                       ("he_dmg_per_he", "he_foes_damage_avg"),
+    "accuracy":                            ("accuracy", "accuracy"),
+    "flashes_hit_foe_per_game":            ("flashes_hit_foe_per_game", "flashbang_hit_foe"),
+    "flashes_hit_friend_per_game":         ("flashes_hit_friend_per_game", "flashbang_hit_friend"),
+    "total_flash_blind_duration_per_game": ("total_flash_blind_duration_per_game", "total_flash_blind_duration"),
+    "flash_foe_avg_duration":              ("flash_foe_avg_duration", "flashbang_hit_foe_avg_duration"),
+    "hes":            ("hes", None),
+    "flashes_thrown": ("flashes_thrown", None),
+    "smokes":         ("smokes", None),
+    "molotovs":       ("molotovs", None),
+    # gated flash scalars used by the cross-demo dashboard utility aggregates. Gated on the SAME
+    # signal as the other flash metrics (perf_quality.flashbang_hit_foe == "exact" iff the demo has
+    # player_blind data): a demo without player_blind stores NULL here, never a fabricated 0, so the
+    # dashboard flash aggregate is omitted/None rather than wrongly showing "0 enemies flashed".
+    "enemy_flashed":  ("enemy_flashed", "flashbang_hit_foe"),
+    "team_flashed":   ("team_flashed", "flashbang_hit_foe"),
+    "blind_time":     ("blind_time", "flashbang_hit_foe"),
+    # total HE damage (HE-only, excludes molotov/fire). Always exact -- 0 HE damage IS a real value,
+    # like the other 0-default counts -- so quality_key=None (stored as-is).
+    "he_dmg":         ("he_dmg", None),
+}
+_PERF_DB_COLS = list(_PERF_DB_FIELDS)
+
+# Subset of demo_players columns the cross-demo dashboard reads for its utility / flash / perf
+# aggregates (all already persisted above). Kept as one list so the dashboard query and the tests
+# stay in lock-step. `udr` lives in _PLAYER_FIELDS (per-round util damage) and is added by callers.
+_DASH_UTIL_COLS = ["smokes", "flashes_thrown", "hes", "molotovs",
+                   "enemy_flashed", "team_flashed", "blind_time", "he_dmg"]
+_DASH_PERF_COLS = ["headshot_accuracy", "he_dmg_per_he", "accuracy",
+                   "flashes_hit_foe_per_game", "flashes_hit_friend_per_game",
+                   "total_flash_blind_duration_per_game"]
+
+
+def _perf_db_values(p):
+    """Per-match perf values for one player dict, aligned to _PERF_DB_COLS. Returns the value only when
+    its perf_quality flag is 'exact' (else None -> NULL), so unavailable metrics are skipped by AVG()
+    rather than fabricated as 0. Falls back to the raw value (None-preserving) if no quality block."""
+    quality = p.get("perf_quality") if isinstance(p.get("perf_quality"), dict) else {}
+    out = []
+    for col in _PERF_DB_COLS:
+        field, qkey = _PERF_DB_FIELDS[col]
+        v = p.get(field)
+        if qkey is not None and quality:
+            status = (quality.get(qkey) or {}).get("status")
+            if status != "exact":
+                v = None
+        out.append(v if isinstance(v, (int, float)) else None)
+    return out
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS demos (
   sha1 TEXT PRIMARY KEY,
@@ -207,6 +263,8 @@ def migrate(con=None):
         _ensure_column(c, "jobs", "team_id", "INTEGER")             # upload destination: target team (NULL = personal)
         _ensure_column(c, "user_demos", "archived", "INTEGER DEFAULT 0")  # #22: replay removed to free space, stats kept
         _ensure_column(c, "user_demos", "tag", "TEXT")             # per-user label (scrim/mm/faceit/... or free-form); NULL = untagged
+        for _pc in _PERF_DB_COLS:                                   # #117: Leetify-comparable perf metrics (nullable; NULL = unavailable that match)
+            _ensure_column(c, "demo_players", _pc, "REAL")
         if not had_user_demos:
             c.execute("""INSERT OR IGNORE INTO user_demos(user_id, sha1, team_id, created_at)
                          SELECT owner_user_id, sha1, team_id, created_at
@@ -262,12 +320,16 @@ def index_demo(data, key, created_at=None, owner_user_id=None, con=None, team_id
             sid = p.get("steamid")
             if not sid:
                 continue
+            # core stats via mi._num (0-default is fine -- always present); perf via _perf_db_values
+            # (None-preserving + quality-gated, so an unavailable metric is NULL, never a fake 0).
             rows.append((sha, str(sid), p.get("name"),
-                         *[mi._num(p.get(f)) for f in _PLAYER_FIELDS]))
+                         *[mi._num(p.get(f)) for f in _PLAYER_FIELDS],
+                         *_perf_db_values(p)))
         if rows:
+            allcols = _PLAYER_FIELDS + _PERF_DB_COLS
             c.executemany(
                 "INSERT OR REPLACE INTO demo_players(sha1,steamid,name,"
-                + ",".join(_PLAYER_FIELDS) + ") VALUES(" + ",".join(["?"] * (3 + len(_PLAYER_FIELDS))) + ")",
+                + ",".join(allcols) + ") VALUES(" + ",".join(["?"] * (3 + len(allcols))) + ")",
                 rows)
         # AUTOMATIC per-user library membership: every uploader (including the 2nd person who uploads
         # the same match -> cache hit, but still re-saved) gets their own copy. Idempotent.
@@ -1316,6 +1378,72 @@ def player_trends(steamid, cache_dir=None, scope=None, con=None):
                                      - sum(e[s] for e in first) / len(first))
         return {"steamid": str(steamid), "name": name, "n_matches": n,
                 "series": series, "averages": averages, "trend": trend}
+    finally:
+        if con is None:
+            c.close()
+
+
+def player_perf_averages(steamid, *, scope=None, limit=15, con=None):
+    """Average the Leetify-comparable perf metrics over a player's most recent `limit` matches
+    (scope-aware). A metric that was unavailable in a match is stored NULL, so SQL AVG()/COUNT() skip
+    it -- it never drags the average toward 0, and its honest per-metric sample size is returned in
+    `counts`. Returns {steamid, name, window, averages:{col:avg|None}, counts:{col:n}}."""
+    c = con or connect()
+    try:
+        clause, vargs = _visibility(scope, "d.sha1")
+        inner = ("SELECT dp.name AS name, "
+                 + ", ".join("dp.%s AS %s" % (col, col) for col in _PERF_DB_COLS)
+                 + " FROM demo_players dp JOIN demos d ON d.sha1=dp.sha1 WHERE dp.steamid=?")
+        args = [str(steamid)]
+        if clause:
+            inner += " AND " + clause
+            args += vargs
+        inner += " ORDER BY d.created_at DESC LIMIT ?"
+        args.append(int(limit))
+        agg = ("SELECT COUNT(*) AS window_n, MAX(name) AS name, "
+               + ", ".join("AVG(%s) AS %s, COUNT(%s) AS %s__n" % (col, col, col, col)
+                           for col in _PERF_DB_COLS)
+               + " FROM (" + inner + ")")
+        r = c.execute(agg, args).fetchone()
+        averages, counts = {}, {}
+        for col in _PERF_DB_COLS:
+            v = r[col]
+            averages[col] = round(v, 4) if isinstance(v, (int, float)) else None
+            counts[col] = int(r[col + "__n"] or 0)
+        return {"steamid": str(steamid), "name": r["name"], "window": int(r["window_n"] or 0),
+                "averages": averages, "counts": counts}
+    finally:
+        if con is None:
+            c.close()
+
+
+def dashboard_player_metrics(scope=None, con=None):
+    """Per-(sha1, steamid) utility / flash / perf columns for the cross-demo dashboard, restricted to
+    the matches `scope` may see (same visibility as list_matches). ONE bounded query against the
+    already-indexed demo_players rows -- no cache JSON / frames are loaded.
+
+    Returns {sha1: {steamid: {<col>: value|None}}} where the columns are _DASH_UTIL_COLS +
+    _DASH_PERF_COLS (+ map under the special key '_map' per sha). A value is None exactly when it was
+    unavailable that match (NULL in the DB) -- never a fabricated 0 -- so callers can omit honestly.
+    Demos indexed before these columns existed simply yield None for them (re-index/re-parse fills)."""
+    cols = _DASH_UTIL_COLS + _DASH_PERF_COLS
+    c = con or connect()
+    try:
+        clause, vargs = _visibility(scope, "d.sha1")
+        sql = ("SELECT dp.sha1 AS sha1, dp.steamid AS steamid, d.map AS map, "
+               + ", ".join("dp.%s AS %s" % (col, col) for col in cols)
+               + " FROM demo_players dp JOIN demos d ON d.sha1=dp.sha1")
+        if clause:
+            sql += " WHERE " + clause
+        out = {}
+        for r in c.execute(sql, vargs):
+            per = out.setdefault(r["sha1"], {})
+            row = {"_map": r["map"]}
+            for col in cols:
+                v = r[col]
+                row[col] = v if isinstance(v, (int, float)) else None
+            per[str(r["steamid"])] = row
+        return out
     finally:
         if con is None:
             c.close()

@@ -26,7 +26,8 @@ import teamplay                                                                 
 import roles                                                                       # multi-label role model
 import utilrating                                                                  # two-tier util rating
 import positions                                                                   # per-callout breakdown
-from roundlib import classify_buy, is_util_damage_weapon, pair_rounds, winner_str  # pure helpers
+from roundlib import (classify_buy, is_fire_damage_weapon, is_he_damage_weapon,  # pure helpers
+                      is_util_damage_weapon, norm_weapon, pair_rounds, winner_str)
 
 TICKRATE = 64
 TRADE_WINDOW = 5.0           # seconds (loose, Leetify default)
@@ -71,6 +72,36 @@ def _sid(v):
     except (ValueError, TypeError):
         s = str(v)
         return s if s and s != "nan" else None
+
+
+def _hitgroup(v):
+    """player_hurt hitgroup as an int (1 == head), or None if absent/garbage. None means the
+    demo didn't carry hitgroups -> headshot ACCURACY is unavailable (never silently 0)."""
+    try:
+        if v is None or (isinstance(v, float) and math.isnan(v)):
+            return None
+        return int(v)
+    except (ValueError, TypeError):
+        s = str(v).strip()
+        return int(s) if s.isdigit() else None
+
+
+def _accumulate_hit(acc, h, credited):
+    """Fold ONE credited ENEMY hit (caller has already applied self/team guards) into an attacker's
+    accumulator dict. Splits utility damage into HE-only vs molotov/fire (so HE-damage-per-HE excludes
+    fire), and counts bullet HITS + head HITS for true headshot ACCURACY (head hits / total hits --
+    distinct from hs_pct = headshot KILLS / kills). Pure apart from mutating `acc`; unit-tested."""
+    if h.get("util"):
+        acc["util_dmg"] += credited
+        if h.get("he"):
+            acc["he_dmg"] += credited
+        elif h.get("fire"):
+            acc["molly_dmg"] += credited
+    else:
+        # one player_hurt row = one landed bullet (shotgun pellets register multiple -> slight inflation)
+        acc["bullet_hits"] += 1
+        if h.get("hg") == 1:                            # hitgroup 1 == head
+            acc["head_hits"] += 1
 
 
 def _df(v):
@@ -980,16 +1011,30 @@ def compute_trade_opportunities(D, replay, roster, team_of, tickrate, trade_tick
 # threshold ~34% of the ~250 u/s run speed: a shot fired below it is "counter-strafed" / stopped.
 COUNTER_STRAFE_STOP = 85.0
 
+# Minimum samples before an accuracy ratio is stable enough to report (else -> unavailable, not 0).
+MIN_HITS_FOR_HS_ACC = 20      # head_hits / total_hits
+MIN_SHOTS_FOR_ACC = 30        # total_hits / total_shots
+
 
 def _attach_aim(players, replay):
     """Aim-mechanics from per-shot data. Counter-strafe %: of a player's bullet shots that carry a
     velocity sample, the share fired while effectively stopped (speed < COUNTER_STRAFE_STOP) -- i.e.
-    good trigger discipline. Only attached when shots have velocity (new parses); old demos skip it."""
-    agg = {}   # roster idx -> [shots_with_vel, shots_stopped]
+    good trigger discipline. Only attached when shots have velocity (new parses); old demos skip it.
+
+    Also computes overall shot ACCURACY = enemy bullet hits / shots fired (a STANDALONE stat -- it is
+    NOT Leetify's 'spotted accuracy', which needs visibility data we don't have, so it must never be
+    benchmarked against avg_accuracy_enemy_spotted). Total shots = all 'shot' events (fire_bullets),
+    hits = bullet_hits counted on enemies in the player_hurt pass."""
+    agg = {}        # roster idx -> [shots_with_vel, shots_stopped]
+    shots_all = {}  # roster idx -> total fire_bullets (regardless of velocity sample)
     for e in (replay.get("events") or []):
-        if e.get("type") != "shot" or "vel" not in e:
+        if e.get("type") != "shot":
             continue
-        a = agg.setdefault(e.get("player"), [0, 0])
+        pi = e.get("player")
+        shots_all[pi] = shots_all.get(pi, 0) + 1
+        if "vel" not in e:
+            continue
+        a = agg.setdefault(pi, [0, 0])
         a[0] += 1
         if e["vel"] < COUNTER_STRAFE_STOP:
             a[1] += 1
@@ -998,6 +1043,10 @@ def _attach_aim(players, replay):
         if a and a[0] >= 5:                      # need a few shots for the % to mean anything
             p["counter_strafe"] = round(100.0 * a[1] / a[0], 1)
             p["shots"] = a[0]
+        sa = shots_all.get(p.get("index"), 0)
+        p["shots_fired"] = sa
+        hits = int(p.get("bullet_hits") or 0)
+        p["accuracy"] = round(100.0 * hits / sa, 1) if sa >= MIN_SHOTS_FOR_ACC else None
 
 
 def analyze(parser, tickrate=TICKRATE, replay=None):
@@ -1110,6 +1159,7 @@ def analyze(parser, tickrate=TICKRATE, replay=None):
     # (engine definition; see credit_damage). dmg_acc holds CREDITED (HP-capped) damage and is
     # reused for the side splits, so they're capped too (they previously summed the raw value).
     dmg_acc = defaultdict(float)   # (round, atk, vic) -> credited dmg
+    hitgroup_seen = False          # did this demo carry ANY hitgroup? gates headshot_accuracy
     if len(hurts):
         by_rnd = defaultdict(list)
         for r in hurts.itertuples(index=False):
@@ -1117,11 +1167,18 @@ def analyze(parser, tickrate=TICKRATE, replay=None):
             rd = round_of(int(h["tick"]), rounds)
             if not rd:
                 continue
+            hg = _hitgroup(h.get("hitgroup"))
+            if hg is not None:
+                hitgroup_seen = True
+            wpn = norm_weapon(h.get("weapon"))
             by_rnd[rd["num"]].append({"tick": int(h["tick"]),
                                       "atk": _sid(h.get("attacker_steamid")),
                                       "vic": _sid(h.get("user_steamid")),
                                       "dmg": float(h.get("dmg_health") or 0),
-                                      "util": is_util_damage_weapon(h.get("weapon"))})
+                                      "weapon": wpn, "hg": hg,
+                                      "util": is_util_damage_weapon(wpn),
+                                      "he": is_he_damage_weapon(wpn),
+                                      "fire": is_fire_damage_weapon(wpn)})
         for rnum, hits in by_rnd.items():
             for h, credited in credit_damage(hits):   # depletes victim HP for ALL hits...
                 atk, vic = h["atk"], h["vic"]
@@ -1130,16 +1187,22 @@ def analyze(parser, tickrate=TICKRATE, replay=None):
                 if team_at(atk, rnum) == team_at(vic, rnum):
                     continue                            # ...but team/self damage isn't attributed
                 dmg_acc[(rnum, atk, vic)] += credited
-                if h["util"]:
-                    P[atk]["util_dmg"] += credited
+                _accumulate_hit(P[atk], h, credited)
     for (rnum, atk, vic), dv in dmg_acc.items():
         if atk in P:
             P[atk]["dmg"] += dv                          # already HP-capped; no further clamp
 
-    # flashes
+    # flashes. Two parallel sets:
+    #  * GATED (>=1.1s): enemy_flashed/team_flashed/blind_time -> feed the util RATING (a "meaningful
+    #    flash" threshold; unchanged so ratings stay stable).
+    #  * UNGATED (any blind): enemy_flashed_all/team_flashed_all/blind_time_all -> the Leetify-comparable
+    #    "Flashes Hit Foe/Friend per game" + "Total Flash Blind Duration per game" (Leetify counts every
+    #    blind, so the gated counts would undercount the benchmark).
     if len(blinds):
         flash_count = defaultdict(int); enemy_flashed = defaultdict(int)
         blind_time = defaultdict(float); team_flashed = defaultdict(int)
+        enemy_flashed_all = defaultdict(int); team_flashed_all = defaultdict(int)
+        blind_time_all = defaultdict(float)
         for r in blinds.itertuples(index=False):
             b = r._asdict()
             fl = _sid(b.get("attacker_steamid")); vic = _sid(b.get("user_steamid"))
@@ -1151,9 +1214,14 @@ def analyze(parser, tickrate=TICKRATE, replay=None):
             if fl == vic:
                 continue
             if team_at(fl, rnum) == team_at(vic, rnum):
+                if dur > 0:
+                    team_flashed_all[fl] += 1
                 if dur >= 1.1:
                     team_flashed[fl] += 1
             else:
+                if dur > 0:
+                    enemy_flashed_all[fl] += 1
+                    blind_time_all[fl] += dur
                 if dur >= 1.1:
                     enemy_flashed[fl] += 1
                     blind_time[fl] += dur
@@ -1161,6 +1229,9 @@ def analyze(parser, tickrate=TICKRATE, replay=None):
             P[s]["enemy_flashed"] = enemy_flashed.get(s, 0)
             P[s]["blind_time"] = blind_time.get(s, 0.0)
             P[s]["team_flashed"] = team_flashed.get(s, 0)
+            P[s]["enemy_flashed_all"] = enemy_flashed_all.get(s, 0)
+            P[s]["team_flashed_all"] = team_flashed_all.get(s, 0)
+            P[s]["blind_time_all"] = blind_time_all.get(s, 0.0)
 
     # kills / deaths / assists / opening / trades / multikills / zones
     deaths_by_round = defaultdict(list)
@@ -1273,6 +1344,13 @@ def analyze(parser, tickrate=TICKRATE, replay=None):
         open_k, open_d = int(a["open_k"]), int(a["open_d"])
         open_total = open_k + open_d
         zones = {z: {"k": v[0], "d": v[1]} for z, v in a["zones"].items()}
+        # --- Leetify-comparable perf metrics (additive; None where sample/data is insufficient,
+        #     never a fake 0). he_dmg_per_he is finished in _attach_roles_util once `hes` is known;
+        #     accuracy is finished in _attach_aim once total shots are known. ---
+        head_hits, bullet_hits = int(a["head_hits"]), int(a["bullet_hits"])
+        he_dmg, molly_dmg = round(a["he_dmg"], 1), round(a["molly_dmg"], 1)
+        hs_acc = (round(100.0 * head_hits / bullet_hits, 1)
+                  if (hitgroup_seen and bullet_hits >= MIN_HITS_FOR_HS_ACC) else None)
         out_players.append({
             "steamid": s, "name": names.get(s, s), "index": idx,
             "rounds_played": rounds_played.get(s, n_rounds),
@@ -1281,14 +1359,26 @@ def analyze(parser, tickrate=TICKRATE, replay=None):
             "adr": round(adr, 1), "kast": round(kast, 1),
             "hltv": round(rating, 2), "impact": round(imp, 2),
             "kpr": round(kpr, 2), "dpr": round(dpr, 2),
-            "hs_pct": round(100.0 * a["hs"] / kills, 1) if kills else 0,
+            "hs_pct": round(100.0 * a["hs"] / kills, 1) if kills else 0,  # headshot KILL % (not accuracy)
             "udr": round(a["util_dmg"] / rp, 1),
+            # true headshot ACCURACY (head hits / total hits) -- safe to benchmark vs Leetify head acc
+            "headshot_accuracy": hs_acc, "head_hits": head_hits, "bullet_hits": bullet_hits,
+            # HE-only utility damage, split out of udr (combined). he_dmg_per_he added later.
+            "he_dmg": he_dmg, "molly_dmg": molly_dmg,
+            # ungated flash metrics, per game (1 demo = 1 game); blank when demo has no player_blind
+            "flashes_hit_foe_per_game": int(a.get("enemy_flashed_all", 0)),
+            "flashes_hit_friend_per_game": int(a.get("team_flashed_all", 0)),
+            "total_flash_blind_duration_per_game": round(a.get("blind_time_all", 0.0), 1),
+            "flash_foe_avg_duration": (round(a.get("blind_time_all", 0.0)
+                                       / max(1, a.get("enemy_flashed_all", 0)), 2)
+                                       if a.get("enemy_flashed_all", 0) else None),
             "open_k": open_k, "open_d": open_d,
             "open_wr": round(100.0 * open_k / open_total, 1) if open_total else 0,
             "trade_k": int(a["trade_k"]), "traded_d": int(a["traded_d"]),
             "traded_pct": round(100.0 * a["traded_d"] / dths, 1) if dths else 0,
             "multi": {str(k): a["multi"][k] for k in sorted(a["multi"])},
             "enemy_flashed": int(a.get("enemy_flashed", 0)),
+            "blind_time": round(a.get("blind_time", 0.0), 2),   # total enemy-blind seconds (gated >=1.1s)
             "avg_blind": round(a.get("blind_time", 0) / max(1, a.get("enemy_flashed", 0)), 2),
             "team_flashed": int(a.get("team_flashed", 0)),
             "zones": zones,
@@ -1313,6 +1403,12 @@ def analyze(parser, tickrate=TICKRATE, replay=None):
             _attach_aim(out_players, replay)
         except Exception as e:
             print("  aim-mechanics compute failed:", e)
+    # per-metric data-quality flags (exact / approximate / unavailable + reason) for the new perf
+    # metrics, so the UI can show a clear unavailable state instead of a misleading 0.
+    try:
+        _attach_perf_quality(out_players, has_blind=bool(len(blinds)), hitgroup_seen=hitgroup_seen)
+    except Exception as e:
+        print("  perf-quality flags failed:", e)
 
     # trade *opportunity* metrics (needs replay frames for teammate positions at each death)
     try:
@@ -1671,6 +1767,56 @@ def _attach_roles_util(out_players, replay, n_rounds):
         p["hes"], p["molotovs"] = u["he"], u["molotov"]
         p["util_pr"] = round(sum(u.values()) / max(1, n_rounds), 2)
         p.setdefault("t_role", "--"); p.setdefault("ct_role", "--")
+        # HE damage per HE thrown (now that `hes` is known). None when no HEs were thrown -- never a
+        # fake 0, and never includes molotov/fire damage (he_dmg is HE-only from the player_hurt pass).
+        hes = int(p.get("hes") or 0)
+        p["he_dmg_per_he"] = round(float(p.get("he_dmg") or 0) / hes, 1) if hes > 0 else None
+
+
+def _attach_perf_quality(out_players, *, has_blind, hitgroup_seen):
+    """Tag each new perf metric per player with quality = exact | approximate | unavailable, plus
+    sample_size + a human reason. Lets the UI/benchmark layer show 'unavailable' honestly instead of
+    rendering a fake 0. Throw counts are always exact (from grenade trajectories); flash metrics need
+    player_blind in the demo; headshot accuracy needs hitgroup AND a minimum sample."""
+    def q(status, sample=None, reason=""):
+        return {"status": status, "sample_size": sample, "reason": reason}
+
+    for p in out_players:
+        bullet_hits = int(p.get("bullet_hits") or 0)
+        shots = int(p.get("shots_fired") or 0)
+        hes = int(p.get("hes") or 0)
+        quality = {
+            "he_thrown": q("exact", hes),
+            "flashbang_thrown": q("exact", int(p.get("flashes_thrown") or 0)),
+            "smoke_thrown": q("exact", int(p.get("smokes") or 0)),
+            "molotov_thrown": q("exact", int(p.get("molotovs") or 0)),
+        }
+        # HE damage per HE
+        if hes <= 0:
+            quality["he_foes_damage_avg"] = q("unavailable", 0, "no HE grenades thrown")
+        else:
+            quality["he_foes_damage_avg"] = q("exact", hes)
+        # true headshot accuracy
+        if not hitgroup_seen:
+            quality["accuracy_head"] = q("unavailable", 0, "demo carries no hitgroup data")
+        elif bullet_hits < MIN_HITS_FOR_HS_ACC:
+            quality["accuracy_head"] = q("unavailable", bullet_hits,
+                                         f"only {bullet_hits} hits (need {MIN_HITS_FOR_HS_ACC})")
+        else:
+            quality["accuracy_head"] = q("exact", bullet_hits)
+        # overall accuracy (standalone -- NOT Leetify spotted accuracy)
+        if shots < MIN_SHOTS_FOR_ACC:
+            quality["accuracy"] = q("unavailable", shots,
+                                    f"only {shots} shots (need {MIN_SHOTS_FOR_ACC})")
+        else:
+            quality["accuracy"] = q("exact", shots)
+        # flash hit foe/friend + blind duration (need player_blind in the demo)
+        flash_status = ("exact", int(p.get("flashes_hit_foe_per_game") or 0), "") if has_blind \
+            else ("unavailable", 0, "demo carries no player_blind data")
+        for k in ("flashbang_hit_foe", "flashbang_hit_friend", "total_flash_blind_duration",
+                  "flashbang_hit_foe_avg_duration"):
+            quality[k] = q(*flash_status)
+        p["perf_quality"] = quality
 
 
 _CHEAP = ("knife", "bayonet", "karambit", "dagger", "glove", "glock", "usp", "p2000",

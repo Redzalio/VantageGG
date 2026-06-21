@@ -21,11 +21,20 @@ def _v9_cache():
     }}
 
 
+# Highest version reachable from a v9 cache via CACHE-DERIVABLE transforms only. Currently v10 (econ
+# backfill); v11 (perf metrics) needs the raw demo, so it's intentionally unregistered and migrate()
+# stops at v10 -- the cache then flags stale and a re-upload recomputes it. Robust to future bumps.
+def _reachable_from(v):
+    while (v + 1) in M.MIGRATIONS:
+        v += 1
+    return v
+
+
 def test_migrate_backfills_econ_and_bumps_version():
     data = _v9_cache()
     assert M.migrate(data) is True
     a = data["analytics"]
-    assert a["version"] == ANALYTICS_VERSION                  # advanced to current
+    assert a["version"] == _reachable_from(9) == 10          # advances as far as transforms allow
     for c in a["round_cards"]:
         assert "econ_verdict" in c and "econ_note" in c       # field now present on every card
     assert a["round_cards"][0]["econ_verdict"] == "eco_loss"  # T ecoed into CT's full
@@ -36,7 +45,7 @@ def test_migrate_is_idempotent():
     data = _v9_cache()
     assert M.migrate(data) is True
     assert M.migrate(data) is False                           # nothing left to do
-    assert data["analytics"]["version"] == ANALYTICS_VERSION
+    assert data["analytics"]["version"] == _reachable_from(9)
 
 
 def test_already_current_is_noop():
@@ -52,4 +61,4 @@ def test_safe_on_missing_or_partial():
     data = {"analytics": {"version": 9, "round_cards": [{"round": 1}]}}
     M.migrate(data)
     assert data["analytics"]["round_cards"][0]["econ_verdict"] is None
-    assert data["analytics"]["version"] == ANALYTICS_VERSION
+    assert data["analytics"]["version"] == _reachable_from(9)

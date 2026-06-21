@@ -395,6 +395,53 @@ def compare(player_stats, bucket_type, bucket, *, region="all", map_filter="all"
     }
 
 
+# ---- perf-metric comparison: curated SAFE player->Leetify key map -----------
+# compare() matches purely by key name, and our analytics keys (counter_strafe, hs_pct, smokes...)
+# don't share names with Leetify's avg_* keys -- so NOTHING is compared unless we explicitly bridge
+# it here. This map is that bridge, and it contains ONLY pairs whose DEFINITIONS are compatible, so
+# a misleading apples-to-oranges delta is impossible by construction. Audit: PERF_METRICS_FEASIBILITY.md.
+#
+# DELIBERATELY ABSENT (unsafe -- do NOT add without aligning definitions / sourcing data):
+#   counter_strafe -> avg_counter_strafing_good_ratio   different definition + ~2x scale (~60% vs ~30%)
+#   hs_pct         -> avg_accuracy_head                 hs_pct is headshot-KILL %, not head-HIT accuracy
+#   <none yet>     -> avg_spray_accuracy                approximate (needs shot<->hit matching)
+#   accuracy       -> avg_accuracy_enemy_spotted        overall accuracy != SPOTTED accuracy (no vis data)
+#   <none>         -> avg_preaim                        experimental (no LOS/occlusion, 16fps)
+#   <none>         -> avg_reaction_time                 no visibility/contact-time data
+PERF_COMPARE_MAP = {
+    "hes": "avg_he_thrown",
+    "flashes_thrown": "avg_flashbang_thrown",
+    "smokes": "avg_smoke_thrown",
+    "molotovs": "avg_molotov_thrown",
+    "he_dmg_per_he": "avg_he_foes_damage_avg",
+    "headshot_accuracy": "avg_accuracy_head",
+    "flashes_hit_foe_per_game": "avg_flashbang_hit_foe",
+    "flashes_hit_friend_per_game": "avg_flashbang_hit_friend",
+    "total_flash_blind_duration_per_game": "avg_total_flash_blind_duration",
+    "flash_foe_avg_duration": "avg_flashbang_hit_foe_avg_duration",
+}
+
+
+def perf_player_vals(player_stats):
+    """Re-key a player's analytics stats into Leetify metric keys, SAFE pairs only. A field that's
+    missing or None is skipped, so it stays 'unavailable' downstream rather than a guessed delta."""
+    player_stats = player_stats if isinstance(player_stats, dict) else {}
+    out = {}
+    for local_key, leetify_key in PERF_COMPARE_MAP.items():
+        v = _as_float(player_stats.get(local_key))
+        if v is not None:
+            out[leetify_key] = v
+    return out
+
+
+def perf_compare(player_stats, bucket_type, bucket, *, region="all", datasets=None):
+    """compare() a player's performance metrics against a skill bucket using ONLY the curated safe
+    key map. Unsafe metrics never receive a player value, so they surface as 'unavailable' (benchmark
+    shown, player side blank) instead of a wrong delta. bucket_type is premier_rating | faceit_level."""
+    return compare(perf_player_vals(player_stats), bucket_type, bucket,
+                   region=region, map_filter="all", datasets=datasets)
+
+
 # ---- Leetify Performance Metric Tool import ---------------------------------
 # The ONLY metric keys the documented Leetify PDL response carries. parse_leetify_pdl
 # maps exactly these into the record's metrics map and NOTHING else -- so K/D, ADR,

@@ -1412,12 +1412,36 @@ def api_dashboard_analytics():
 
     roster_mode, roster_sids, roster_members = _build_roster(g_uid, ws_team, ws_scope, mode)
     matches = db.list_matches(scope=ws_scope)   # newest-first
+    # Per-(sha,steamid) utility/flash/perf columns for the visible matches -- one bounded SQL query
+    # against the index (no cache JSON / frames). Honest None where a metric was unavailable a match.
+    try:
+        dash_metrics = db.dashboard_player_metrics(scope=ws_scope)
+    except Exception:
+        dash_metrics = {}
 
     STAT_FIELDS = ["kills", "deaths", "kd", "adr", "kast", "hltv", "open_wr", "traded_pct", "udr"]
     AVG_FIELDS = ["adr", "kast", "hltv", "open_wr", "traded_pct", "udr"]
+    # raw util counts (per-game), gated flash, and the Leetify-comparable perf metrics surfaced from
+    # demo_players. UTIL_COUNT_FIELDS are always-present counts; FLASH_FIELDS/he_dmg are None when the
+    # demo lacked player_blind / HE data (omitted, never a fake 0).
+    UTIL_COUNT_FIELDS = ["smokes", "flashes_thrown", "hes", "molotovs"]
+    FLASH_FIELDS = ["enemy_flashed", "team_flashed", "blind_time"]
+    PERF_FIELDS = ["headshot_accuracy", "he_dmg_per_he", "accuracy",
+                   "flashes_hit_foe_per_game", "flashes_hit_friend_per_game",
+                   "total_flash_blind_duration_per_game"]
 
     def _in_roster(sid):
         return not roster_sids or str(sid or "") in roster_sids
+
+    def _metric(sha, sid, col):
+        """A per-match metric value for (sha,steamid) from the index, or None if absent/unavailable."""
+        v = (dash_metrics.get(sha) or {}).get(str(sid or ""), {}).get(col)
+        return v if isinstance(v, (int, float)) else None
+
+    def _avg_none(vals):
+        """Mean of the non-None values, or None when there are none (no fabricated 0)."""
+        xs = [v for v in vals if isinstance(v, (int, float))]
+        return sum(xs) / len(xs) if xs else None
 
     # Per-player aggregate stats (roster-filtered)
     player_agg = {}
@@ -1447,6 +1471,70 @@ def api_dashboard_analytics():
         players_out.append(row)
     players_out.sort(key=lambda r: (-r["n_matches"], -(r.get("hltv") or 0)))
 
+    # Per-player enrichment: per-map split + per-game utility averages + None-aware perf averages.
+    # Built from the same scope/roster-filtered matches and the indexed metrics (no extra cache load).
+    pmap = {}          # sid -> {map -> {"n":int, "hltv":[], "adr":[], "kast":[]}}
+    putil = {}         # sid -> {col -> [vals]}  (UTIL_COUNT_FIELDS + enemy_flashed/team_flashed/avg_blind)
+    pperf = {}         # sid -> {col -> [vals]}  (PERF_FIELDS)
+    for m in matches:
+        mp = m.get("map") or "unknown"
+        sha = m.get("id")
+        for p in (m.get("players") or []):
+            sid = str(p.get("steamid") or "")
+            if not sid or not _in_roster(sid):
+                continue
+            mm = pmap.setdefault(sid, {}).setdefault(mp, {"n": 0, "hltv": [], "adr": [], "kast": []})
+            mm["n"] += 1
+            for f in ("hltv", "adr", "kast"):
+                v = p.get(f)
+                if isinstance(v, (int, float)) and v > 0:
+                    mm[f].append(v)
+            u = putil.setdefault(sid, {})
+            for f in UTIL_COUNT_FIELDS:
+                mv = _metric(sha, sid, f)
+                if mv is not None:
+                    u.setdefault(f, []).append(mv)
+            # per-game flash: enemy/team flashed counts + avg blind (derived per match)
+            ef, tf, bt = (_metric(sha, sid, "enemy_flashed"), _metric(sha, sid, "team_flashed"),
+                          _metric(sha, sid, "blind_time"))
+            if ef is not None:
+                u.setdefault("enemy_flashed", []).append(ef)
+                if isinstance(bt, (int, float)):
+                    u.setdefault("avg_blind", []).append(round(bt / ef, 2) if ef else 0.0)
+            if tf is not None:
+                u.setdefault("team_flashed", []).append(tf)
+            pf = pperf.setdefault(sid, {})
+            for f in PERF_FIELDS:
+                mv = _metric(sha, sid, f)
+                if mv is not None:
+                    pf.setdefault(f, []).append(mv)
+
+    for row in players_out:
+        sid = row["steamid"]
+        # per-map split (n>=1), sorted by matches then rating
+        maps = []
+        for mp, mm in (pmap.get(sid) or {}).items():
+            maps.append({"map": mp, "n": mm["n"],
+                         "hltv": round(_avg_none(mm["hltv"]), 2) if _avg_none(mm["hltv"]) is not None else None,
+                         "adr": round(_avg_none(mm["adr"]), 1) if _avg_none(mm["adr"]) is not None else None,
+                         "kast": round(_avg_none(mm["kast"]), 1) if _avg_none(mm["kast"]) is not None else None})
+        maps.sort(key=lambda r: (-r["n"], -(r.get("hltv") or 0)))
+        row["maps"] = maps
+        # per-game utility averages (omit a key entirely when no samples -> never a fake 0)
+        u, util_out = putil.get(sid) or {}, {}
+        for f in UTIL_COUNT_FIELDS + ["enemy_flashed", "team_flashed", "avg_blind"]:
+            av = _avg_none(u.get(f) or [])
+            if av is not None:
+                util_out[f] = round(av, 2)
+        row["utility"] = util_out
+        # None-aware perf averages (skip None; omit a key with no samples)
+        pf, perf_out = pperf.get(sid) or {}, {}
+        for f in PERF_FIELDS:
+            av = _avg_none(pf.get(f) or [])
+            if av is not None:
+                perf_out[f] = round(av, 2)
+        row["perf"] = perf_out
+
     # Form windows: average each stat across roster players per-match, then average per window
     def _match_avg(m, field):
         vals = [p.get(field) for p in (m.get("players") or [])
@@ -1473,20 +1561,66 @@ def api_dashboard_analytics():
 
     delta3 = {f: _delta(last3.get(f), all_avg.get(f)) for f in AVG_FIELDS}
 
-    # Per-map stats (roster-filtered)
+    # Per-map stats (roster-filtered). Alongside the existing AVG_FIELDS we now also accumulate the
+    # per-game utility counts, gated flash, total HE damage, and per-round util damage -- all from the
+    # index (dash_metrics), None-aware so an unavailable metric never drags an average toward 0.
+    UTIL_AGG_FIELDS = UTIL_COUNT_FIELDS + FLASH_FIELDS + ["he_dmg", "udr"]
     map_agg = {}
     for m in matches:
         mp = m.get("map") or "unknown"
+        sha = m.get("id")
         if mp not in map_agg:
-            map_agg[mp] = {"map": mp, "count": 0, **{f: [] for f in AVG_FIELDS}}
+            map_agg[mp] = {"map": mp, "count": 0,
+                           **{f: [] for f in AVG_FIELDS}, **{f: [] for f in UTIL_AGG_FIELDS}}
         map_agg[mp]["count"] += 1
         for p in (m.get("players") or []):
-            if not _in_roster(str(p.get("steamid") or "")):
+            sid = str(p.get("steamid") or "")
+            if not _in_roster(sid):
                 continue
             for f in AVG_FIELDS:
                 v = p.get(f)
                 if isinstance(v, (int, float)) and v > 0:
                     map_agg[mp][f].append(v)
+            # util/flash/he_dmg/udr come from the index per (sha,steamid); keep None out of the list
+            for f in UTIL_COUNT_FIELDS + FLASH_FIELDS + ["he_dmg"]:
+                mv = _metric(sha, sid, f)
+                if mv is not None:
+                    map_agg[mp][f].append(mv)
+            uv = p.get("udr")                          # udr is in the match row already
+            if isinstance(uv, (int, float)):
+                map_agg[mp]["udr"].append(uv)
+
+    def _flash_block(d):
+        """Roster flash aggregate for a per-map/overall accumulator dict, or None when no player_blind
+        data contributed (all flash lists empty) -- honest 'unavailable' instead of a fake 0 block."""
+        ef, tf, bt = d.get("enemy_flashed") or [], d.get("team_flashed") or [], d.get("blind_time") or []
+        if not ef and not tf and not bt:
+            return None
+        enemies = round(sum(ef), 1) if ef else 0.0
+        teammates = round(sum(tf), 1) if tf else 0.0
+        blind_total = round(sum(bt), 1) if bt else 0.0
+        thrown = d.get("flashes_thrown") or []
+        thrown_sum = sum(thrown) if thrown else 0
+        return {
+            "thrown": round(thrown_sum, 1) if thrown else None,
+            "enemies": enemies, "teammates": teammates, "blind_total": blind_total,
+            "avg_blind": round(blind_total / enemies, 2) if enemies else None,
+            "enemies_per_flash": round(enemies / thrown_sum, 2) if thrown_sum else None,
+            "teammates_per_flash": round(teammates / thrown_sum, 2) if thrown_sum else None,
+        }
+
+    # per-map CT/T round-winrate (reuse sidestats; cheap analytics-only sidecars, scope-filtered).
+    side_by_map = {}
+    try:
+        srecs = goals._matches(CACHE)
+        if ws_scope is not None:
+            okp = db.visible_predicate(ws_scope)
+            srecs = [r for r in srecs if okp(r.get("sha"))]
+        spairs = [(r["analytics"], r.get("map")) for r in srecs if isinstance(r.get("analytics"), dict)]
+        side_sid = next(iter(roster_sids)) if roster_sids else None
+        side_by_map = sidestats.aggregate_side_winrates(spairs, steamid=side_sid)
+    except Exception:
+        side_by_map = {}
 
     map_stats = []
     for mp, d in sorted(map_agg.items(), key=lambda x: -x[1]["count"]):
@@ -1494,7 +1628,71 @@ def api_dashboard_analytics():
         for f in AVG_FIELDS:
             vals = d[f]
             row[f] = round(sum(vals) / len(vals), 1) if vals else None
+        # new per-map utility fields (avg over roster players on that map; None when no data)
+        upr = _avg_none(d["udr"])
+        row["util_per_round"] = round(upr, 1) if upr is not None else None
+        hed = _avg_none(d["he_dmg"])
+        row["he_dmg"] = round(hed, 1) if hed is not None else None
+        fb = _flash_block(d)
+        if fb is not None:
+            row["flash"] = fb
+        sw = side_by_map.get(mp)
+        if sw is not None:
+            row["ct_win_rate"] = sw.get("ct_wr")
+            row["t_win_rate"] = sw.get("t_wr")
         map_stats.append(row)
+
+    # ---- top-level utility breakdown (roster/scope-respecting) ----------------
+    util_by_type = {"smoke": 0, "flash": 0, "he": 0, "molotov": 0}
+    util_by_map_acc, flash_by_map_acc, dmg_by_map_acc = {}, {}, {}
+    _TYPE_COL = {"smoke": "smokes", "flash": "flashes_thrown", "he": "hes", "molotov": "molotovs"}
+    for m in matches:
+        mp = m.get("map") or "unknown"
+        sha = m.get("id")
+        ub = util_by_map_acc.setdefault(mp, {"map": mp, "smoke": 0, "flash": 0, "he": 0, "molotov": 0})
+        fb = flash_by_map_acc.setdefault(mp, {f: [] for f in FLASH_FIELDS + ["flashes_thrown"]})
+        dm = dmg_by_map_acc.setdefault(mp, [])
+        for p in (m.get("players") or []):
+            sid = str(p.get("steamid") or "")
+            if not _in_roster(sid):
+                continue
+            for t, col in _TYPE_COL.items():
+                mv = _metric(sha, sid, col)
+                if mv is not None:
+                    util_by_type[t] += mv
+                    ub[t] += mv
+            for f in FLASH_FIELDS + ["flashes_thrown"]:
+                mv = _metric(sha, sid, f)
+                if mv is not None:
+                    fb[f].append(mv)
+            hed = _metric(sha, sid, "he_dmg")
+            if hed is not None:
+                dm.append(hed)
+
+    util_by_map = sorted(
+        ([{"map": mp, **{t: round(v[t], 1) for t in ("smoke", "flash", "he", "molotov")},
+           "total": round(v["smoke"] + v["flash"] + v["he"] + v["molotov"], 1)}
+          for mp, v in util_by_map_acc.items()]),
+        key=lambda r: -r["total"])
+    util_by_map = [r for r in util_by_map if r["total"] > 0]
+    flash_by_map = []
+    for mp, d in flash_by_map_acc.items():
+        blk = _flash_block(d)
+        if blk is not None:
+            flash_by_map.append({
+                "map": mp, "thrown": blk["thrown"],
+                "enemies_flashed": blk["enemies"], "teammates_flashed": blk["teammates"],
+                "blind_total": blk["blind_total"], "avg_blind": blk["avg_blind"],
+                "enemies_per_flash": blk["enemies_per_flash"],
+                "teammates_per_flash": blk["teammates_per_flash"]})
+    flash_by_map.sort(key=lambda r: -((r.get("enemies_flashed") or 0) + (r.get("teammates_flashed") or 0)))
+    dmg_by_map = sorted(
+        [{"map": mp, "he_dmg": round(sum(xs) / len(xs), 1)} for mp, xs in dmg_by_map_acc.items() if xs],
+        key=lambda r: -r["he_dmg"])
+    utility = {
+        "by_type": {t: round(util_by_type[t], 1) for t in util_by_type},
+        "by_map": util_by_map, "flash_by_map": flash_by_map, "dmg_by_map": dmg_by_map,
+    }
 
     # Recurring issues
     try:
@@ -1545,6 +1743,7 @@ def api_dashboard_analytics():
             "map_stats": map_stats,
             "next_focus": next_focus[:3],
         },
+        "utility": utility,
         "recurring": recurring,
         "roster_mode": roster_mode,
         "roster_members": roster_members,
@@ -1735,7 +1934,103 @@ def api_benchmarks_compare():
     map_filter = request.args.get("map") or "all"
     if not bucket:
         return _nostore({"available": False, "reason": "no bucket selected", "metrics": []})
+    # Bridge the player's analytics perf fields (he_dmg_per_he, headshot_accuracy, utility throws,
+    # flash metrics) into Leetify metric keys via the CURATED-SAFE map, so they compare against the
+    # premier_rating/faceit_level perf datasets. Only definitionally-compatible pairs are bridged
+    # (benchmarks.PERF_COMPARE_MAP); unsafe metrics stay unavailable. Merge keeps any direct-key
+    # comparisons (adr/kast/...) working too.
+    stats = {**stats, **benchmarks.perf_player_vals(stats)}
     return _nostore(benchmarks.compare(stats, btype, bucket, region=region, map_filter=map_filter))
+
+
+def _perf_keep_safe(res):
+    """Keep only metrics that are actually bridgeable (in PERF_COMPARE_MAP) in a perf-compare result,
+    in place. Unsafe metrics (counter-strafe, spotted/spray/preaim/reaction) would otherwise show a
+    benchmark with a permanent player '—' -- noise that reads as broken. The CT/T + admin compare
+    endpoints are unaffected; this only trims the dedicated perf panel feed."""
+    safe = set(benchmarks.PERF_COMPARE_MAP.values())
+    if isinstance(res, dict) and isinstance(res.get("metrics"), list):
+        res["metrics"] = [m for m in res["metrics"] if m.get("metric") in safe]
+
+
+def _resolve_bucket(btype):
+    """Bucket label from ?bucket=, else derived from ?rating= / ?elo=. Shared by perf endpoints."""
+    bucket = request.args.get("bucket") or None
+    if bucket:
+        return bucket
+
+    def _int(v):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
+    if btype == "faceit_level" and request.args.get("elo"):
+        lvl = benchmarks.faceit_level(_int(request.args.get("elo")))
+        return str(lvl) if lvl else None
+    if request.args.get("rating"):
+        return benchmarks.premier_bucket(_int(request.args.get("rating")))
+    return None
+
+
+@app.route("/api/benchmarks/perf")
+def api_benchmarks_perf():
+    """Performance-metric comparison vs a skill bucket, two windows:
+      * ?key=<demo>&player=<sid>      -> THIS match's perf for that player (Player tab)
+      * ?recent=<N>&player=<sid>      -> average of the player's last N matches (Dashboard; default 15)
+    Bridges only the curated-safe player->Leetify keys (benchmarks.PERF_COMPARE_MAP), so unsafe metrics
+    (counter-strafe, spotted/spray/preaim/reaction, hs-kill%) surface as 'unavailable', never a wrong
+    delta. ?type=premier_rating|faceit_level + ?bucket= (or ?rating=/?elo=). NO fake data: a metric with
+    no sourced benchmark OR no player sample is 'unavailable'."""
+    mode, sc = _scope_or_block()
+    if mode == "blocked":
+        return _nostore({"error": "login required"}), 401
+    gate = require_feature("advancedAnalytics")
+    if gate:
+        return gate
+    btype = request.args.get("type") or "premier_rating"
+    bucket = _resolve_bucket(btype)
+    region = request.args.get("region") or "all"
+    steamid = request.args.get("player") or None
+    if not steamid:
+        return _nostore({"available": False, "reason": "no player selected", "metrics": []})
+    if not bucket:
+        return _nostore({"available": False, "reason": "no bucket selected", "metrics": []})
+
+    key = request.args.get("key") or None
+    if key:                                              # single-match window (Player tab)
+        if sc is not None and not db.accessible(key, sc):
+            return _nostore({"error": "no demo with that id"}), 404
+        data = library.load_demo(CACHE, key)
+        if data is None:
+            return _nostore({"error": "no demo with that id"}), 404
+        players = (data.get("analytics") or {}).get("players") or []
+        p = next((pp for pp in players if str(pp.get("steamid")) == str(steamid)), None)
+        if p is None:
+            return _nostore({"available": False, "reason": "player not in this match", "metrics": []})
+        res = benchmarks.perf_compare(p, btype, bucket, region=region)
+        _perf_keep_safe(res)                             # only show bridgeable metrics (no permanent "—" rows)
+        q = p.get("perf_quality") or {}                  # quality keys are the Leetify field minus "avg_"
+        for row in res.get("metrics", []):
+            qk = row["metric"][4:] if row["metric"].startswith("avg_") else row["metric"]
+            row["sample_size"] = (q.get(qk) or {}).get("sample_size")
+        res["window"] = {"mode": "match", "n": 1}
+        return _nostore(res)
+
+    # recent-average window (Dashboard): average the player's last N matches, no-fake-data (NULL-skipping)
+    try:
+        recent = max(1, min(int(request.args.get("recent") or 15), 100))
+    except (TypeError, ValueError):
+        recent = 15
+    avg = db.player_perf_averages(steamid, scope=sc, limit=recent)
+    res = benchmarks.perf_compare(avg.get("averages") or {}, btype, bucket, region=region)
+    _perf_keep_safe(res)                                 # only show bridgeable metrics (no permanent "—" rows)
+    counts = avg.get("counts") or {}                     # per-metric # of matches that carried the value
+    rev = {v: k for k, v in benchmarks.PERF_COMPARE_MAP.items()}
+    for row in res.get("metrics", []):
+        local = rev.get(row["metric"])
+        row["sample_size"] = counts.get(local) if local else None
+    res["window"] = {"mode": "recent", "requested": recent, "n": avg.get("window", 0)}
+    return _nostore(res)
 
 
 @app.route("/api/benchmarks/status")
@@ -2374,6 +2669,210 @@ def api_admin_ops():
     }
     return _nostore({"storage": storage, "storage_total": sum(s["bytes"] for s in storage),
                      "disk": disk, "timing": timing})
+
+
+# ---- admin storage drilldown (read-only; never deletes) ----------------------
+def _storage_categories():
+    """Allowlisted storage categories -> (label, root_abs, kind). kind: 'dir' = walk it,
+    'dbfiles' = the sqlite trio, 'volume_root' = the data volume top level (top-level entries only).
+    Roots are resolved fresh each call so a test/env override of CACHE/db.DB_PATH/etc. is honored.
+    NOTHING outside this map is ever scannable (unknown id -> 400)."""
+    volume_root = os.path.dirname(db.DB_PATH) or HERE
+    return {
+        "parsed_cache": ("Parsed demo cache", CACHE, "dir"),
+        "raw_uploads":  ("Raw uploads (.dem)", UPLOADS, "dir"),
+        "maps3d":       ("3D map geometry", os.path.join(STATIC, "maps3d"), "dir"),
+        "radars":       ("Radars + images", os.path.join(STATIC, "maps"), "dir"),
+        "database":     ("Database (SQLite)", db.DB_PATH, "dbfiles"),
+        "nades":        ("Nade library + clips", getattr(nades, "LIB_DIR", os.path.join(HERE, "nades")), "dir"),
+        "app_root_other": ("App data volume (top level)", volume_root, "volume_root"),
+    }
+
+
+_STORAGE_MAX_ENTRIES = 50          # top-N largest entries returned
+_STORAGE_MAX_DEPTH = 12            # hard recursion-depth cap when sizing a directory
+_STORAGE_MAX_SCAN = 200_000        # hard cap on files visited while sizing one category (DoS guard)
+
+
+def _within(root_real, path):
+    """True iff `path` (after realpath) is inside `root_real` -- blocks symlink/.. escapes."""
+    try:
+        pr = os.path.realpath(path)
+    except OSError:
+        return False
+    root_real = root_real.rstrip(os.sep)
+    return pr == root_real or pr.startswith(root_real + os.sep)
+
+
+def _safe_dir_size(path, root_real, notes, counter):
+    """Recursively sum file sizes under `path`, staying within `root_real`. Skips symlinks (and any
+    entry that resolves outside the root), bounds depth + total files visited, and records the first
+    permission/oversize problem in `notes` instead of raising. Returns total bytes."""
+    total = 0
+    stack = [(path, 0)]
+    while stack:
+        cur, depth = stack.pop()
+        if depth > _STORAGE_MAX_DEPTH:
+            notes.append("Stopped at depth %d (too deep): %s" % (_STORAGE_MAX_DEPTH, os.path.basename(cur)))
+            continue
+        try:
+            with os.scandir(cur) as it:
+                for e in it:
+                    if counter[0] >= _STORAGE_MAX_SCAN:
+                        notes.append("Stopped after %d files (too many to scan)." % _STORAGE_MAX_SCAN)
+                        return total
+                    counter[0] += 1
+                    try:
+                        if e.is_symlink():
+                            continue                    # never follow links (escape/loop guard)
+                        if not _within(root_real, e.path):
+                            continue                    # resolved outside the root -> skip
+                        if e.is_dir(follow_symlinks=False):
+                            stack.append((e.path, depth + 1))
+                        elif e.is_file(follow_symlinks=False):
+                            total += e.stat(follow_symlinks=False).st_size
+                    except OSError:
+                        continue                        # unreadable single entry -> skip
+        except PermissionError:
+            notes.append("Permission denied reading a folder; its size may be undercounted.")
+        except OSError:
+            pass
+    return total
+
+
+def _storage_overview():
+    """Category sizes + the whole-volume disk usage, with the unexplained (non-app) remainder."""
+    import shutil
+    cats_def = _storage_categories()
+    cats, app_total = [], 0
+    for cid, (label, root, kind) in cats_def.items():
+        notes, counter = [], [0]
+        if kind == "dbfiles":
+            b = 0
+            for ext in ("", "-wal", "-shm"):
+                try:
+                    b += os.path.getsize(root + ext)
+                except OSError:
+                    pass
+        else:
+            rr = os.path.realpath(root)
+            b = _safe_dir_size(root, rr, notes, counter) if os.path.isdir(root) else 0
+        # app_root_other is the volume root that already CONTAINS cache/uploads/db etc., so counting it
+        # into app_total would double-count; it's reported as a category but excluded from the sum.
+        if cid != "app_root_other":
+            app_total += b
+        cats.append({"id": cid, "label": label, "bytes": b})
+    cats.sort(key=lambda c: -c["bytes"])
+    volume = {}
+    try:
+        du = shutil.disk_usage(os.path.dirname(db.DB_PATH) or HERE)
+        volume = {"used": du.used, "free": du.free, "total": du.total}
+    except Exception:
+        volume = {"used": None, "free": None, "total": None}
+    used = volume.get("used")
+    unexplained = (used - app_total) if isinstance(used, int) and used >= app_total else None
+    return {
+        "volume": volume, "app_data_total": app_total, "categories": cats,
+        "unexplained_bytes": unexplained,
+        "note": ("App data total counts known CS2DemoPlayer folders. Disk used is the whole mounted "
+                 "volume/filesystem (OS, logs, venvs, Docker layers, backups, etc.)."),
+    }
+
+
+def _storage_detail(category):
+    """Top-N largest entries within one allowlisted category (files + immediate dirs), read-only.
+    Realpath-guarded so a resolved entry can never escape the category root; symlinks are skipped;
+    depth + entry counts are bounded; permission/size errors land in `notes`, never an exception.
+    Absolute paths are NOT exposed for non-root categories (only relative names + a root_label)."""
+    cats_def = _storage_categories()
+    label, root, kind = cats_def[category]
+    notes, entries, total, file_count, truncated = [], [], 0, 0, False
+    root_label = label
+
+    if kind == "dbfiles":
+        for ext in ("", "-wal", "-shm"):
+            fp = root + ext
+            try:
+                st = os.stat(fp)
+            except OSError:
+                continue
+            entries.append({"name": os.path.basename(fp), "type": "file", "bytes": st.st_size,
+                            "modified": datetime.datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds")})
+            total += st.st_size
+            file_count += 1
+        entries.sort(key=lambda e: -e["bytes"])
+        return {"category": category, "label": label, "root_label": "cs2dp.sqlite (+ -wal / -shm)",
+                "total_bytes": total, "file_count": file_count, "entries": entries,
+                "notes": notes, "truncated": False}
+
+    rr = os.path.realpath(root)
+    if not os.path.isdir(root):
+        notes.append("Folder does not exist yet (no data stored here).")
+        return {"category": category, "label": label, "root_label": root_label,
+                "total_bytes": 0, "file_count": 0, "entries": [], "notes": notes, "truncated": False}
+
+    raw = []
+    counter = [0]
+    try:
+        with os.scandir(root) as it:
+            for e in it:
+                try:
+                    if e.is_symlink() or not _within(rr, e.path):
+                        continue                        # skip links / anything resolving outside root
+                    if e.is_dir(follow_symlinks=False):
+                        sub_notes = []
+                        b = _safe_dir_size(e.path, rr, sub_notes, counter)
+                        notes.extend(sub_notes[:1])     # surface at most one nested note per dir
+                        try:
+                            mt = e.stat(follow_symlinks=False).st_mtime
+                        except OSError:
+                            mt = None
+                        raw.append({"name": e.name, "type": "dir", "bytes": b,
+                                    "modified": (datetime.datetime.fromtimestamp(mt).isoformat(timespec="seconds")
+                                                 if mt else None)})
+                        total += b
+                    elif e.is_file(follow_symlinks=False):
+                        st = e.stat(follow_symlinks=False)
+                        raw.append({"name": e.name, "type": "file", "bytes": st.st_size,
+                                    "modified": datetime.datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds")})
+                        total += st.st_size
+                        file_count += 1
+                except OSError:
+                    continue
+    except PermissionError:
+        notes.append("Permission denied reading this folder.")
+    except OSError:
+        notes.append("Could not read this folder.")
+
+    raw.sort(key=lambda e: -e["bytes"])
+    if len(raw) > _STORAGE_MAX_ENTRIES:
+        truncated = True
+        entries = raw[:_STORAGE_MAX_ENTRIES]
+    else:
+        entries = raw
+    # de-duplicate notes while preserving order
+    seen, uniq = set(), []
+    for nx in notes:
+        if nx not in seen:
+            seen.add(nx); uniq.append(nx)
+    return {"category": category, "label": label, "root_label": root_label,
+            "total_bytes": total, "file_count": file_count, "entries": entries,
+            "notes": uniq, "truncated": truncated}
+
+
+@app.route("/api/admin/ops/storage-detail")
+def api_admin_ops_storage_detail():
+    """Admin/helper: drill into ONE allowlisted storage category (largest entries) or, with no
+    ?category, an overview that reconciles known app-data folders against total disk usage. Strictly
+    read-only and realpath-sandboxed -- it can never traverse outside an allowlisted root or delete."""
+    if not _helper_or_none():
+        return _nostore({"error": "admin only"}), 403
+    category = (request.args.get("category") or "").strip()
+    if not category:
+        return _nostore(_storage_overview())
+    if category not in _storage_categories():
+        return _nostore({"error": "unknown category"}), 400
+    return _nostore(_storage_detail(category))
 
 
 @app.route("/api/admin/recent")

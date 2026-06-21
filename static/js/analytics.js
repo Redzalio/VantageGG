@@ -152,6 +152,7 @@ function render() {
       <div class="an-col">
         ${skillsCard(sel)}
         ${radarCard(sel, A.benchmarks)}
+        <div id="anPerfBench" class="card pb-card"></div>
         ${contextCard(sel)}
         ${zonesCard(sel)}
       </div>
@@ -206,6 +207,12 @@ function render() {
         `<option value="${i}" ${i === SEL ? "selected" : ""}>${esc(p.name)} -- ${p.hltv.toFixed(2)}</option>`).join("");
       ps.onchange = (e) => { SEL = +e.target.value; rememberPlayer(A); render(); };
     }
+  }
+
+  // performance-vs-rank panel (this match) -- Pro player view only; backed by /api/benchmarks/perf
+  if (VIEW === "player" && proAA && sel && APP.renderPerfBench) {
+    const key = APP._reviewDemoId ? APP._reviewDemoId() : null;   // null for the sample (no saved id)
+    APP.renderPerfBench($("anPerfBench"), { player: sel.steamid, key: key || undefined });
   }
 
   // wire jumps + row clicks

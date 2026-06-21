@@ -22,6 +22,7 @@ window.THREE = THREE;   // debug
 const S = 0.06;                 // world-units -> three units
 const INCH = 0.0254;            // metres per Source unit (VRF exports glTF in metres)
 const PLAYER_H = 72, PLAYER_R = 16;
+const PLAYER_OPACITY = 0.5;     // model translucency -- SAME with x-ray on or off (x-ray only changes depth)
 const VERTICAL_FIT_MAX_UNITS = 96;
 const CT_COLOR = 0x4a90ff, T_COLOR = 0xff4040;   // 3D player colours by side
 const MODEL_YAW = Math.PI / 2;   // base rotation so the extracted CS model's mesh-forward = the player's aim
@@ -1154,16 +1155,18 @@ export class View3D {
       });
   }
 
-  // Player model opacity policy (single source). Models are ALWAYS translucent so they read cleanly:
-  //   x-ray OFF -> 0.5, occluded by walls normally (the "looks much better" default);
-  //   x-ray ON  -> 0.1, drawn THROUGH walls (faint "behind cover" ghost).
-  // Toggling x-ray must never snap back to 1.0 (the old bug); opacity stays 0.5/0.1.
+  // Player model opacity policy (single source). Models are ALWAYS translucent so they read cleanly at
+  // the SAME opacity whether x-ray is on or off -- x-ray ONLY changes depth behavior (draw-through),
+  // never opacity/colour. This is idempotent by construction (absolute set, no subtraction), so toggling
+  // x-ray any number of times can never compound or dim the models past the normal look the user prefers.
+  //   x-ray OFF -> opacity 0.5, occluded by walls normally;
+  //   x-ray ON  -> opacity 0.5 (unchanged), drawn THROUGH walls (depthTest/Write off).
   _applyXray(mat) {
     const x = this.xray;
     mat.depthTest = !x;          // x-ray on => draw through geometry
     mat.depthWrite = !x;         // no depth-write when seeing through walls
     mat.transparent = true;
-    mat.opacity = x ? 0.1 : 0.5;
+    mat.opacity = PLAYER_OPACITY;   // SAME in both modes -- x-ray must not dim players
   }
 
   render(state) {

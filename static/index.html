@@ -247,21 +247,38 @@
       </div>
 
       <div id="dashQuick" class="dash-quick"></div>
-      <div id="dashMe" class="dash-me"></div>
-      <div id="dashFocus" class="dash-focus"></div>
-      <div id="dashJobs" class="dash-jobs"></div>
-      <div id="dashEmpty" class="dash-empty-state" hidden></div>
 
-      <div class="dash-section" id="dashMatchSec">
-        <div class="dash-sec-head"><h2>Recent matches</h2>
-          <button id="dashAllMatches" class="btn ghost sm">Open library</button></div>
-        <div id="dashMatches" class="dash-matches"></div>
+      <!-- normal dashboard body (hidden while the in-dashboard analytics PAGE is open) -->
+      <div id="dashHome" class="dash-home">
+        <div id="dashMe" class="dash-me"></div>
+        <div id="dashFocus" class="dash-focus"></div>
+        <div id="dashJobs" class="dash-jobs"></div>
+        <div id="dashEmpty" class="dash-empty-state" hidden></div>
+
+        <div class="dash-section" id="dashMatchSec">
+          <div class="dash-sec-head"><h2>Recent matches</h2>
+            <button id="dashAllMatches" class="btn ghost sm">Open library</button></div>
+          <div id="dashMatches" class="dash-matches"></div>
+        </div>
+
+        <div class="dash-section" id="dashGoalSec">
+          <div class="dash-sec-head"><h2>Practice goals</h2>
+            <button id="dashGoals" class="btn ghost sm">All goals</button></div>
+          <div id="dashGoalsList" class="dash-goals"></div>
+        </div>
       </div>
 
-      <div class="dash-section" id="dashGoalSec">
-        <div class="dash-sec-head"><h2>Practice goals</h2>
-          <button id="dashGoals" class="btn ghost sm">All goals</button></div>
-        <div id="dashGoalsList" class="dash-goals"></div>
+      <!-- full in-dashboard analytics PAGE (replaces the modal). Workspace selector above stays
+           visible; this swaps in below it. Built/torn down by openDashAnalytics()/closeDashAnalytics(). -->
+      <div id="dashAnalytics" class="dash-analytics">
+        <div class="dapg-bar">
+          <button id="dapgBack" class="btn ghost sm dapg-back">&larr; Back to dashboard</button>
+          <h2 class="dapg-title">Analytics <span id="dapgMatchCount" class="round"></span></h2>
+          <span class="dapg-frame">your analytics compared to benchmarks</span>
+          <button id="dapgTrends" class="btn ghost sm dapg-trends">Full trends &rarr;</button>
+        </div>
+        <div id="dapgTabs" class="dapg-tabs antab-strip" role="tablist"></div>
+        <div id="dapgBody" class="dapg-body"></div>
       </div>
     </div>
   </section>

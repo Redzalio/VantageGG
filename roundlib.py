@@ -33,6 +33,19 @@ def is_util_damage_weapon(w):
     return any(tok in s for tok in ("hegren", "molotov", "inferno", "incgren", "incendiary"))
 
 
+def is_he_damage_weapon(w):
+    """True ONLY for HE-grenade damage (not fire). Splits the combined util-damage set so
+    'HE damage per HE' can be measured separately from molotov/incendiary fire damage."""
+    return "hegren" in _wkey(w)
+
+
+def is_fire_damage_weapon(w):
+    """True ONLY for molotov/incendiary FIRE damage ('inferno' is the fire entity). The
+    complement of is_he_damage_weapon within is_util_damage_weapon."""
+    s = _wkey(w)
+    return any(tok in s for tok in ("molotov", "inferno", "incgren", "incendiary"))
+
+
 def winner_str(wr):
     """Normalize a round_end winner (str 'CT'/'T'/'TERRORIST' or int 3/2) to 'CT'/'T'/''."""
     if isinstance(wr, str):
