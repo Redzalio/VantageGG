@@ -581,7 +581,7 @@ const App = {
     if (last && last.id && ids.has(last.id)) {
       parts.push(`<button class="dq-continue" data-id="${esc(last.id)}">&#9654; Continue &mdash; ${esc(last.map || "last match")}</button>`);
     }
-    parts.push(`<button class="btn ghost sm" data-q="analytics">Analytics</button>`);
+    // Analytics now lives in the main top bar (context-aware: dashboard page vs in-demo panel).
     parts.push(`<button class="btn ghost sm" data-q="library">Library</button>`);
     if (this.entitled("goals")) parts.push(`<button class="btn ghost sm" data-q="goals">Goals</button>`);
     if (this.me && this.me.authenticated) parts.push(`<button class="btn ghost sm" data-q="teams">Teams</button>`);
@@ -1925,7 +1925,10 @@ const App = {
     $("toggle3d").onclick = () => this.entitled("threeD") ? this.toggle3d() : this._upsell("threeD");
     $("camPreset").onclick = () => this.cycleCamPreset();
     $("toggleAnalytics").onclick = () => {
-      if (!this.demo) return;
+      if (!this.demo) {                              // dashboard context: open the cross-demo analytics PAGE
+        this.entitled("advancedAnalytics") ? this.openDashAnalytics() : this._upsell("advancedAnalytics");
+        return;
+      }
       if ($("analyticsPanel").classList.contains("show")) closeAnalytics(this);
       else { this.toggleUtil(false); this.toggleReview(false); this.pausePlayback(); openAnalytics(this); }   // only one panel open; pause while open
     };
@@ -2226,7 +2229,7 @@ const App = {
       : Array.isArray(files) ? files : [files];
     if (!list.length) return;
     this._upStrip("uploading", { pct: 0, label: list.length === 1 ? "Uploading…" : `Uploading ${list.length} files…` });
-    const queued = [];
+    const queued = [], dups = [];
     for (let i = 0; i < list.length; i++) {
       const f = list[i];
       const prefix = list.length === 1 ? "" : `(${i + 1}/${list.length}) `;
@@ -2237,10 +2240,17 @@ const App = {
       }
       catch (e) { this._upStrip("hide"); this.showOverlay(`Upload failed -- ${f.name} (is the server running?)`, true); return; }
       if (res.error) { this._upStrip("hide"); this.showOverlay(res.upsell ? res.error : ("Server error: " + res.error), true); return; }
-      if (res.jobs) queued.push(...res.jobs);
+      if (res.jobs) for (const j of res.jobs) { (j && j.duplicate) ? dups.push(j) : (j && j.id && queued.push(j)); }
       else if (res.demos) this.onUploaded(res.demos);     // legacy ?sync response (not used by default)
     }
+    // already-in-your-library demos are skipped server-side (no parse job) -> just tell the user
+    if (dups.length) {
+      this._toast && this._toast(dups.length === 1
+        ? `"${dups[0].filename}" is already in your library — skipped.`
+        : `${dups.length} demos were already in your library — skipped.`);
+    }
     if (queued.length) this._trackJobs(queued);           // poll all enqueued jobs together
+    else this._upStrip("hide");                            // nothing new to parse (all duplicates) -> clear the strip
   },
 
   // Compress a .dem in the browser before upload. CS2 demos are already internally compressed so

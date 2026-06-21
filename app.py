@@ -966,8 +966,20 @@ def upload():
                 fd, dtmp = tempfile.mkstemp(prefix="_jobup_", suffix=".dem", dir=UPLOADS)
                 os.close(fd)
                 ums, bts = _timed_save(f, dtmp)
-                created.append({"id": jobs.create_job(name, dtmp, owner_user_id=owner, upload_ms=ums, size_bytes=bts, team_id=dest_team),
-                                "filename": name, "status": "queued", "ok": True})
+                # Already in this user's library (same content sha1)? Don't re-queue it -- drop the temp
+                # and tell the client it's a duplicate so the UI says "already uploaded" instead of
+                # spinning up a redundant parse job. (Raw .dem: the temp IS the content, so the hash is
+                # exact + cheap. .gz/.bz2/zip stay idempotent via the worker's content-hash cache.)
+                dup_key = db.user_has_demo(owner, _sha1_file(dtmp))
+                if dup_key:
+                    try:
+                        os.remove(dtmp)
+                    except OSError:
+                        pass
+                    created.append({"filename": name, "ok": True, "duplicate": True, "id": dup_key})
+                else:
+                    created.append({"id": jobs.create_job(name, dtmp, owner_user_id=owner, upload_ms=ums, size_bytes=bts, team_id=dest_team),
+                                    "filename": name, "status": "queued", "ok": True})
         except Exception as e:
             traceback.print_exc()
             created.append({"filename": name, "ok": False, "error": f"upload failed: {e}"})
@@ -2774,8 +2786,12 @@ def _storage_overview():
     return {
         "volume": volume, "app_data_total": app_total, "categories": cats,
         "unexplained_bytes": unexplained,
-        "note": ("App data total counts known CS2DemoPlayer folders. Disk used is the whole mounted "
-                 "volume/filesystem (OS, logs, venvs, Docker layers, backups, etc.)."),
+        "note": ("App data total counts known CS2DemoPlayer folders. Disk used is the whole HOST "
+                 "volume, most of which lives OUTSIDE this app container and can't be itemized from "
+                 "here. On this Docker deploy the unexplained portion is almost always Docker BUILD "
+                 "CACHE (it grows on every `--build` deploy) plus images/OS. Reclaim it on the host "
+                 "with `docker builder prune -af` (safe — build cache regenerates), then "
+                 "`docker image prune -f`."),
     }
 
 

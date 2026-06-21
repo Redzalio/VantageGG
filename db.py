@@ -608,6 +608,25 @@ def user_demo_count(user_id, con=None):
             c.close()
 
 
+def user_has_demo(user_id, sha1, con=None):
+    """Does this user already have this demo (by content sha1) in their library, NOT archived? Used to
+    skip re-uploading a demo they already have. user_id None (local/open mode) -> check if ANY non-
+    archived copy exists (single-owner install). Returns the demo's loader key if present, else None."""
+    c = con or connect()
+    try:
+        if user_id is None:
+            r = c.execute("SELECT d.key FROM demos d WHERE d.sha1=?", (str(sha1),)).fetchone()
+            return (r["key"] if r else None)
+        r = c.execute(
+            "SELECT d.key FROM user_demos ud JOIN demos d ON d.sha1=ud.sha1 "
+            "WHERE ud.user_id=? AND ud.sha1=? AND ud.archived=0",
+            (user_id, str(sha1))).fetchone()
+        return (r["key"] if r else None)
+    finally:
+        if con is None:
+            c.close()
+
+
 def set_archived(user_id, sha1, archived=1, con=None):
     """Mark/unmark one user's copy of a demo as archived. Returns how many members still hold it as a
     FULL replay (archived=0) -- 0 means the shared cache/.dem can be deleted (no one can watch it)."""

@@ -167,7 +167,7 @@ def test_overview_explains_disk_vs_appdata(tmp_path, monkeypatch):
     assert r.status_code == 200
     j = r.get_json()
     assert set(("volume", "app_data_total", "categories", "unexplained_bytes", "note")) <= set(j)
-    assert "whole mounted volume" in j["note"]
+    assert "host" in j["note"].lower() and "build cache" in j["note"].lower()
     ids = {c2["id"] for c2 in j["categories"]}
     assert {"parsed_cache", "raw_uploads", "maps3d", "radars", "database",
             "nades", "app_root_other"} <= ids
