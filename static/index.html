@@ -276,7 +276,6 @@
           <button id="dapgBack" class="btn ghost sm dapg-back">&larr; Back to dashboard</button>
           <h2 class="dapg-title">Analytics <span id="dapgMatchCount" class="round"></span></h2>
           <span class="dapg-frame">your analytics compared to benchmarks</span>
-          <button id="dapgTrends" class="btn ghost sm dapg-trends">Full trends &rarr;</button>
         </div>
         <div id="dapgTabs" class="dapg-tabs antab-strip" role="tablist"></div>
         <div id="dapgBody" class="dapg-body"></div>
@@ -425,35 +424,7 @@
     </div>
   </div>
 
-  <div id="trendsModal" class="nv-modal">
-    <div class="nv-box tr-box">
-      <button id="trClose" class="nv-x">x</button>
-      <div class="nv-title">Trends &amp; team -- improvement across matches</div>
-      <div class="tr-cols">
-        <div class="tr-col">
-          <div class="tr-h">Player trend <select id="trPlayer" class="lf-in"></select>
-            <select id="trMap" class="lf-in" title="filter by map"></select></div>
-          <div id="trBody"></div>
-          <div class="tr-h tr-cmp-h">Compare <select id="trCompare" class="lf-in" title="compare this player with another"><option value="">— pick a player —</option></select></div>
-          <div id="trCompareOut"></div>
-          <div class="tr-h tr-tend-h">Tendencies <span class="round">across your matches</span></div>
-          <div id="trTend"></div>
-        </div>
-        <div class="tr-col">
-          <div class="tr-h">My squad <span class="round">auto-detected from who you play with</span></div>
-          <div id="trSquad"></div>
-          <div class="tr-h">My team</div>
-          <div id="trTeam"></div>
-          <div class="tr-h">CT / T win rate by map <span class="round">your visible matches &mdash; where to focus veto/practice</span></div>
-          <div id="trSides"></div>
-        </div>
-      </div>
-      <div class="tr-h">Practice plan <span class="round">(current match -- check off as you drill)</span></div>
-      <div id="trPlan" class="tr-plan"></div>
-      <div class="tr-h">Cached matches <span id="trMatchCount" class="round"></span></div>
-      <div id="trMatches" class="tr-matches"></div>
-    </div>
-  </div>
+  <!-- Trends & team retired into the Dashboard Analytics page (Trends tab); modal removed. -->
 
   <div id="libraryModal" class="nv-modal">
     <div class="nv-box lib-box">

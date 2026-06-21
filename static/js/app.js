@@ -479,7 +479,7 @@ const App = {
     // panel was left visible after clicking the brand from inside analytics).
     if (this._tour) this._tourEnd();                       // never leave the tour spotlight blocking the dashboard
     if ($("analyticsPanel") && $("analyticsPanel").classList.contains("show")) closeAnalytics(this);
-    ["libraryModal", "teamsModal", "goalsModal", "trendsModal", "adminModal", "upgradeModal", "searchModal"]
+    ["libraryModal", "teamsModal", "goalsModal", "adminModal", "upgradeModal", "searchModal"]
       .forEach(id => { const m = $(id); if (m) m.classList.remove("show"); });
     this.closeDashAnalytics();                            // brand/home always returns to the normal dashboard
     const me = this.me || {};
@@ -694,7 +694,7 @@ const App = {
           + `<div class="mf-empty">We couldn't match your Steam account to a player in your demos yet. `
           + `Open analytics to pick your player and see per-match + all-demo stats.</div>`;
         const ob = $("dashMeOpen");
-        if (ob) ob.onclick = () => this.entitled("advancedAnalytics") ? this.openTrends() : this._upsell("advancedAnalytics");
+        if (ob) ob.onclick = () => this.entitled("advancedAnalytics") ? this.openDashAnalytics("trends") : this._upsell("advancedAnalytics");
       } else { el.innerHTML = ""; el.classList.remove("show"); }
       return;
     }
@@ -735,13 +735,12 @@ const App = {
         + (lastKey ? ` <span class="mf-go">view &rsaquo;</span>` : "") + `</div>${latestStats}</div>`
       + `<div class="mf-group"><div class="mf-glabel">Average <i class="mf-sub">${n} demo${n === 1 ? "" : "s"}</i></div>${avgStats}</div>`
       + `</div>`;
-    $("dashMeTrends").onclick = () => this.entitled("advancedAnalytics") ? this.openTrends(me.steamid) : this._upsell("advancedAnalytics");
+    $("dashMeTrends").onclick = () => this.entitled("advancedAnalytics") ? this.openDashAnalytics("trends", me.steamid) : this._upsell("advancedAnalytics");
     if (lastKey) { const g = el.querySelector(".mf-group.mf-clickable"); if (g) g.onclick = () => this._openMatchAnalytics(lastKey); }
   },
   // load a specific demo and jump straight into its per-match analytics (from the dashboard / trends).
   _openMatchAnalytics(key) {
     if (!key) return;
-    const tm = $("trendsModal"); if (tm) tm.classList.remove("show");
     // leaving the dashboard for a demo -> drop the analytics-page mode so a later "home" lands on the
     // normal dashboard, not back on this page (loadDemo() hides #dashboard but won't clear this class).
     if (this.closeDashAnalytics) this.closeDashAnalytics();
@@ -1149,10 +1148,8 @@ const App = {
         + `<button class="btn primary sm acct-gopro">&#10022; Go Pro</button>`;
     }
     // support link (configurable via SUPPORT_CONTACT; email -> mailto, url -> link)
-    const sc = (me.support_contact || "").trim();
-    const supportHtml = sc
-      ? `<a class="btn ghost sm" href="${/^https?:\/\//.test(sc) ? esc(sc) : "mailto:" + esc(sc)}" target="_blank" rel="noopener">Contact support</a>`
-      : `<span class="acct-mut">Support contact will be added before public launch.</span>`;
+    const sc = (me.support_contact || "").trim() || "hexlynx@gmail.com";   // fallback to the public contact
+    const supportHtml = `<a class="btn ghost sm" href="${/^https?:\/\//.test(sc) ? esc(sc) : "mailto:" + esc(sc)}" target="_blank" rel="noopener">Contact support</a>`;
     body.innerHTML =
       `<div class="acct-id">${av}<div class="acct-idr"><div class="acct-name">${name}</div>`
       + (prof ? `<a class="acct-steam" href="${prof}" target="_blank" rel="noopener">View Steam profile &#8599;</a>` : "") + `</div></div>`
@@ -2076,15 +2073,11 @@ const App = {
     $("map3d").onclick = () => this.show3dStatus();
     $("m3Close").onclick = () => $("map3dStatus").classList.remove("show");
     $("map3dStatus").onclick = (e) => { if (e.target.id === "map3dStatus") $("map3dStatus").classList.remove("show"); };
-    $("toggleTrends").onclick = () => this.entitled("advancedAnalytics") ? this.openTrends() : this._upsell("advancedAnalytics");
-    $("trClose").onclick = () => $("trendsModal").classList.remove("show");
-    $("trendsModal").onclick = (e) => { if (e.target.id === "trendsModal") $("trendsModal").classList.remove("show"); };
-    // legacy modal (no longer opened, but keep close wiring defensive in case markup lingers)
-    if ($("daClose")) $("daClose").onclick = () => $("dashAnalyticsModal")?.classList.remove("show");
-    if ($("dashAnalyticsModal")) $("dashAnalyticsModal").onclick = (e) => { if (e.target.id === "dashAnalyticsModal") $("dashAnalyticsModal").classList.remove("show"); };
-    // in-dashboard analytics PAGE: back to the normal dashboard, and the "Full trends" handoff
+    // "Trends" now opens the dashboard analytics PAGE on its Trends tab (the standalone Trends modal
+    // was retired into the page). If a button is missing (legacy markup removed) the optional-chain no-ops.
+    if ($("toggleTrends")) $("toggleTrends").onclick = () => this.entitled("advancedAnalytics") ? this.openDashAnalytics("trends") : this._upsell("advancedAnalytics");
+    // in-dashboard analytics PAGE: back to the normal dashboard
     if ($("dapgBack")) $("dapgBack").onclick = () => this.closeDashAnalytics();
-    if ($("dapgTrends")) $("dapgTrends").onclick = () => this.entitled("advancedAnalytics") ? this.openTrends() : this._upsell("advancedAnalytics");
     $("teamsClose").onclick = () => $("teamsModal").classList.remove("show");
     $("teamsModal").onclick = (e) => { if (e.target.id === "teamsModal") $("teamsModal").classList.remove("show"); };
     $("adminClose").onclick = () => $("adminModal").classList.remove("show");
@@ -3022,7 +3015,7 @@ const App = {
     } catch (e) { this._toast && this._toast("Couldn't update squad"); return; }
     this._renderSquadPanel();
     const trsel = $("trPlayer");                         // keep the trends picker in sync with the squad
-    if (trsel && $("trendsModal").classList.contains("show")) {
+    if (trsel && this._daView === "trends") {
       const cur = trsel.value;
       try { const players = await fetch("api/players").then(r => r.json()); trsel.innerHTML = this._squadOptions(players, cur); } catch (e) { /* keep */ }
     }
@@ -3034,28 +3027,32 @@ const App = {
   // "your analytics compared to benchmarks". Scoped to the active workspace; roster only.
   _daTabDefs() {
     // Flash lives under Utility (it IS utility) -- no separate Flash tab.
+    // Trends = the old "Trends & team" modal, retired into this page (per-player improvement series,
+    // compare, anti-strat tendencies, squad curation, team config, CT/T-by-map vs Premier).
     return [
       ["overview", "Overview"], ["players", "Players"], ["maps", "Maps"],
       ["utility", "Utility"], ["issues", "Issues"],
-      ["matches", "Matches"], ["benchmarks", "Benchmarks"],
+      ["matches", "Matches"], ["trends", "Trends"], ["benchmarks", "Benchmarks"],
     ];
   },
-  async openDashAnalytics() {
+  async openDashAnalytics(initialView, focusSid) {
     if (!this.entitled("advancedAnalytics")) { this._upsell("advancedAnalytics"); return; }
     this.pausePlayback();
-    // make sure any leftover modal is gone (older builds) and we're on the dashboard page chrome
-    $("dashAnalyticsModal")?.classList.remove("show");
     if (!document.body.classList.contains("on-dashboard")) this.showDashboard();
     document.body.classList.add("on-dashboard-analytics");
     if (location.hash !== "#dashboard-analytics") {
       try { history.replaceState(null, "", "#dashboard-analytics"); } catch (e) { /* ignore */ }
     }
     const ws = this._currentWorkspace();
-    // build the tab strip (idempotent; rebuilt each open so a workspace switch resets to Overview)
-    this._daView = "overview";
+    // build the tab strip (idempotent; rebuilt each open so a workspace switch resets the tab).
+    // initialView lets entry points (e.g. "Trends") deep-link straight to a tab; focusSid pre-selects
+    // a player on the Trends tab.
+    const view0 = this._daTabDefs().some(([id]) => id === initialView) ? initialView : "overview";
+    this._daView = view0;
+    this._daTrendFocus = focusSid || null;
     const tabs = $("dapgTabs");
     tabs.innerHTML = this._daTabDefs().map(([id, label]) =>
-      `<button class="dapg-tab${id === "overview" ? " on" : ""}" role="tab" data-da="${id}">${esc(label)}</button>`).join("");
+      `<button class="dapg-tab${id === view0 ? " on" : ""}" role="tab" data-da="${id}">${esc(label)}</button>`).join("");
     tabs.querySelectorAll(".dapg-tab").forEach(btn => btn.onclick = () => {
       tabs.querySelectorAll(".dapg-tab").forEach(b => b.classList.remove("on"));
       btn.classList.add("on");
@@ -3121,6 +3118,9 @@ const App = {
       this._wireDaGoals(el);
     } else if (view === "benchmarks") {
       this._renderDaBenchmarks(el, data);
+    } else if (view === "trends") {
+      el.innerHTML = `<div class="da-fade">${this._daTrendsHtml()}</div>`;
+      this._wireDaTrends(this._daTrendFocus);
     } else {   // matches
       el.innerHTML = `<div class="da-fade">${this._daDemosHtml(data)}</div>`;
       el.querySelectorAll(".da-open-analytics").forEach(b => b.onclick = () => this._openMatchAnalytics(b.dataset.key));
@@ -3823,28 +3823,52 @@ const App = {
     out.innerHTML = `<table class="cmp-table"><thead><tr><th></th><th>${esc(an)}</th><th>${esc(bn)}</th></tr></thead>`
       + `<tbody>${rows}</tbody></table>` + (r.summary ? `<div class="cmp-sum">${esc(r.summary)}</div>` : "");
   },
-  async openTrends(focusSid) {
-    this.pausePlayback();
-    $("trendsModal").classList.add("show");
+  // Trends tab markup (was the standalone Trends modal, retired into the dashboard analytics page).
+  // Container IDs match what the existing renderers (renderTrend/renderCompare/renderTendencies/
+  // renderSideStats/_renderSquadPanel/renderTeam) write into, so they're reused unchanged.
+  _daTrendsHtml() {
+    return `<div class="da-report">
+      <div class="rp-card"><div class="rp-h">Player trend <em>improvement across matches</em></div>
+        <div class="da-tr-controls"><select id="trPlayer" class="lf-in"></select>
+          <select id="trMap" class="lf-in" title="filter by map"></select></div>
+        <div id="trBody"></div></div>
+      <div class="rp-cols">
+        <div class="rp-card"><div class="rp-h">Compare players <em>this player vs another</em></div>
+          <div class="da-tr-controls"><select id="trCompare" class="lf-in"><option value="">— pick a player —</option></select></div>
+          <div id="trCompareOut"></div></div>
+        <div class="rp-card"><div class="rp-h">Tendencies <em>repeated patterns across your matches</em></div>
+          <div id="trTend"></div></div>
+      </div>
+      <div class="rp-cols">
+        <div class="rp-card"><div class="rp-h">Your squad <em>auto-detected from who you play with</em></div>
+          <div id="trSquad"></div></div>
+        <div class="rp-card"><div class="rp-h">Team config <em>names &amp; roles</em></div>
+          <div id="trTeam"></div></div>
+      </div>
+      <div class="rp-card"><div class="rp-h">CT / T win rate by map <em>where to focus veto / practice</em></div>
+        <div id="trSides"></div></div>
+    </div>`;
+  },
+  // Populate + wire the Trends tab (adapted from the old openTrends; no modal, no cached-match list,
+  // no current-match practice plan -- those live on the Matches tab / in-match report respectively).
+  async _wireDaTrends(focusSid) {
     const [players, matches, team] = await Promise.all([
       fetch("api/players").then(r => r.json()).catch(() => []),
       fetch("api/matches").then(r => r.json()).catch(() => []),
       fetch("api/team").then(r => r.json()).catch(() => ({ name: "", players: [] })),
     ]);
-    await this._loadSquad(true);                         // refresh the squad each open
-    const sel = $("trPlayer");
+    await this._loadSquad(true);                         // refresh the squad
+    const sel = $("trPlayer"); if (!sel) return;
     sel.innerHTML = players.length
       ? this._squadOptions(players, focusSid || "")
       : `<option value="">no parsed matches yet</option>`;
     const maps = ["all", ...Array.from(new Set(matches.map(m => m.map).filter(Boolean))).sort()];
     $("trMap").innerHTML = maps.map(m => `<option value="${m}">${m === "all" ? "all maps" : esc(m)}</option>`).join("");
-    // compare picker: any parsed player; comparing this player vs the chosen one
     const cmp = $("trCompare");
     if (cmp) {
       cmp.innerHTML = `<option value="">— compare with —</option>` + this._squadOptions(players, "");
       cmp.onchange = () => this.renderCompare(sel.value, cmp.value);
     }
-    // player change re-renders trend + tendencies; map change only filters the trend series
     sel.onchange = () => {
       this.renderTrend(sel.value, $("trMap").value); this.renderTendencies(sel.value);
       this.renderSideStats(sel.value);
@@ -3858,13 +3882,8 @@ const App = {
     if (def) { sel.value = def; this.renderTrend(def, "all"); this.renderTendencies(def); }
     else { $("trBody").innerHTML = `<div class="empty">Upload a few demos, then come back to see your trend.</div>`; $("trTend").innerHTML = ""; }
     this.renderSideStats(def || null);                   // CT/T by map (own data, scope-aware)
-    $("trMatchCount").textContent = matches.length ? `${matches.length}` : "";
-    $("trMatches").innerHTML = matches.length
-      ? matches.map(m => `<div class="tr-mrow"><b>${esc(m.map || "?")}</b> <span class="round">${esc((m.created_at || "").slice(0, 10))} | ${m.rounds}r${m.score ? " | " + esc(m.score) : ""}</span></div>`).join("")
-      : `<div class="empty">No parsed matches cached yet.</div>`;
     this._renderSquadPanel();
     this.renderTeam(team);
-    this.renderPlan();
   },
   renderTrend(steamid, mapFilter) {
     if (!steamid) return;

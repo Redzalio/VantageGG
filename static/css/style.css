@@ -514,6 +514,9 @@ body.on-dashboard-analytics #dashAnalytics{display:block}
 body.on-dashboard-analytics .dash-hero{display:none}   /* the page bar carries its own title */
 .dapg-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:4px 0 14px}
 .dapg-back{flex-shrink:0}
+/* Trends-tab control rows (player/map/compare selects) on the dashboard analytics page */
+.da-tr-controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.da-tr-controls .lf-in{min-width:150px}
 .dapg-title{font-size:20px;font-weight:800;margin:0;display:flex;align-items:center;gap:8px}
 .dapg-title .round{font-size:12px;font-weight:500;color:var(--mut)}
 .dapg-frame{color:var(--mut);font-size:12px;font-style:italic}
