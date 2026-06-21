@@ -1091,7 +1091,7 @@ textarea.lf-in{height:46px;resize:vertical;font-family:inherit}
 /* ---- dashboard-analytics PAGE tabs: Maps / Utility / Flash / Benchmarks ---- */
 .da-grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
 @media(max-width:820px){.da-grid2{grid-template-columns:1fr}}
-.da-card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:14px 16px}
+.da-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}  /* match in-demo .card */
 .da-card>.da-section-head:first-child{margin-top:0}
 .da-clickrow{cursor:pointer}
 .da-clickrow:hover td{background:var(--panel2)}
@@ -1552,11 +1552,11 @@ body.upstrip-on{padding-top:26px}
   border:1px solid var(--line);padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;z-index:2}
 .ap-close:hover{border-color:var(--accent)}
 .analytics-body{max-width:1200px;margin:0 auto}
-.an-head{display:flex;align-items:center;justify-content:space-between;margin:4px 0 16px}
+.an-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:4px 0 16px}
 .an-title{font-size:20px;font-weight:700}
 .an-title span{color:var(--mut);font-weight:500;font-size:14px;text-transform:capitalize}
 .an-sel{background-color:var(--panel2);color:var(--txt);border:1px solid var(--line);border-radius:8px;
-  padding:9px 30px 9px 12px;font-size:14px;cursor:pointer;min-width:200px}
+  padding:7px 28px 7px 11px;font-size:13px;cursor:pointer;min-width:150px;max-width:230px}
 .an-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
 .an-col{display:flex;flex-direction:column;gap:16px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}

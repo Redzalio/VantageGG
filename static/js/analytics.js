@@ -152,11 +152,11 @@ function render() {
       <div class="an-col">
         ${skillsCard(sel)}
         ${radarCard(sel, A.benchmarks)}
-        <div id="anPerfBench" class="card pb-card"></div>
         ${contextCard(sel)}
         ${zonesCard(sel)}
       </div>
     </div>
+    <div id="anPerfBench" class="card pb-card"></div>
     ${trainingPlanCard(sel)}
     ${teamCard(A)}
     ${roundsCard(A)}

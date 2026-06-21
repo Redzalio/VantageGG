@@ -1925,7 +1925,12 @@ const App = {
     $("toggle3d").onclick = () => this.entitled("threeD") ? this.toggle3d() : this._upsell("threeD");
     $("camPreset").onclick = () => this.cycleCamPreset();
     $("toggleAnalytics").onclick = () => {
-      if (!this.demo) {                              // dashboard context: open the cross-demo analytics PAGE
+      // Pick by what you're LOOKING AT, not just whether a demo is loaded in memory: on the
+      // dashboard/home (a demo can still be loaded from earlier) -> the cross-demo analytics PAGE;
+      // only the actual in-replay view opens the per-match analytics panel.
+      const onDash = document.body.classList.contains("on-dashboard")
+        || document.body.classList.contains("on-dashboard-analytics");
+      if (onDash || !this.demo) {
         this.entitled("advancedAnalytics") ? this.openDashAnalytics() : this._upsell("advancedAnalytics");
         return;
       }
