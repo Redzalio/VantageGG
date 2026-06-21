@@ -51,7 +51,6 @@
       <button id="toggleUtil" class="btn demo-only">Utility</button>
       <button id="toggleReview" class="btn demo-only">Review</button>
       <button id="libraryBtn" class="btn">Library</button>
-      <button id="uploadBtn" class="btn primary">Upload</button>
       <!-- overflow menu: actions that don't fit collapse in here as the topbar narrows -->
       <div class="more-wrap">
         <button class="btn more-toggle" id="moreToggle" aria-haspopup="true">More &#9662;</button>
@@ -65,6 +64,8 @@
         </div>
       </div>
       <input id="fileInput" type="file" accept=".dem,.zip,.gz,.bz2" multiple hidden />
+      <!-- Upload lives on the far right, immediately before the account box (Tour … Upload | user) -->
+      <button id="uploadBtn" class="btn primary">Upload</button>
       <span id="authBox" class="authbox" hidden></span>
     </div>
   </header>
