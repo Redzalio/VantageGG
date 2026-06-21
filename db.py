@@ -274,48 +274,91 @@ def migrate(con=None):
                          SELECT owner_user_id, sha1, team_id, created_at
                          FROM demos WHERE owner_user_id IS NOT NULL""")
         c.commit()
-        _backfill_player_teams(c)   # one-time: fill team for demos indexed before the column existed
     finally:
         if con is None:
             c.close()
+    # one-time team backfill -- spawned in a DAEMON THREAD so it NEVER blocks startup. migrate() runs at
+    # import in BOTH the web and worker processes; doing the (cache-reading + writing) backfill inline
+    # here would hold the SQLite write lock long enough to crash the other process and stall waitress.
+    _spawn_backfill_player_teams()
 
 
-def _backfill_player_teams(con):
-    """One-time: demos indexed before the `team` column have NULL team on their player rows. Read each
-    such demo's parsed cache (which carries players[].team, 2=T/3=CT) and fill it, so same-team squad
-    detection works on EXISTING libraries without a re-upload. Bounded to rows that need it; a missing
-    or unreadable cache is skipped (squad_for's NULL-fallback still covers those). Idempotent: once a
-    demo's teams are filled it's no longer selected, so this is a no-op on subsequent boots."""
+_backfill_started = False
+
+
+def _spawn_backfill_player_teams():
+    """Kick the one-time team backfill onto a daemon thread (never blocks app/worker startup). It's
+    idempotent + lock-tolerant, so it's safe when BOTH processes spawn it: whoever wins the write lock
+    fills the rows, the other finds none left. Runs at most once per process."""
+    global _backfill_started
+    import sys
+    if _backfill_started or "pytest" in sys.modules:   # never spawn under tests (hermetic + tmp DBs)
+        return
+    _backfill_started = True
     try:
-        shas = [r["sha1"] for r in con.execute(
-            "SELECT DISTINCT sha1 FROM demo_players WHERE team IS NULL")]
+        import threading
+        threading.Thread(target=_backfill_player_teams_bg, name="team-backfill", daemon=True).start()
+    except Exception:
+        pass
+
+
+def _backfill_player_teams_bg():
+    """Demos indexed before the `team` column have NULL team on their player rows. Read each such demo's
+    parsed cache (players[].team, 2=T/3=CT) and fill it, so same-team squad detection works on EXISTING
+    libraries without a re-upload. Uses its OWN connection, SHORT per-demo transactions, and retries on
+    'database is locked' -- so it coexists with the live app + worker. A missing/unreadable cache is
+    skipped (squad_for's NULL-fallback covers it). Idempotent: only NULL rows are selected."""
+    import time
+    time.sleep(2)   # let startup/migrate settle in both processes before we start writing
+    try:
+        con = connect()
     except sqlite3.Error:
         return
-    if not shas:
-        return
-    cache_dir = os.environ.get("CACHE_DIR") or os.path.join(HERE, "cache")
-    filled = 0
-    for sha in shas:
-        row = con.execute("SELECT key FROM demos WHERE sha1=?", (sha,)).fetchone()
-        if not row or not row["key"]:
-            continue
+    try:
         try:
-            with open(os.path.join(cache_dir, row["key"] + ".json"), "r", encoding="utf-8") as fh:
-                data = json.load(fh)
-        except (OSError, ValueError):
-            continue
-        team_by_sid = {str(p.get("steamid")): p.get("team")
-                       for p in (data.get("players") or [])
-                       if p.get("steamid") and isinstance(p.get("team"), int)}
-        if not team_by_sid:
-            continue
-        for sid, tv in team_by_sid.items():
-            con.execute("UPDATE demo_players SET team=? WHERE sha1=? AND steamid=? AND team IS NULL",
-                        (tv, sha, sid))
-        filled += 1
-    if filled:
-        con.commit()
-        print(f"[migrate] backfilled roster team for {filled} demo(s)")
+            shas = [r["sha1"] for r in con.execute(
+                "SELECT DISTINCT sha1 FROM demo_players WHERE team IS NULL")]
+        except sqlite3.Error:
+            return
+        if not shas:
+            return
+        cache_dir = os.environ.get("CACHE_DIR") or os.path.join(HERE, "cache")
+        filled = 0
+        for sha in shas:
+            row = con.execute("SELECT key FROM demos WHERE sha1=?", (sha,)).fetchone()
+            if not row or not row["key"]:
+                continue
+            try:
+                with open(os.path.join(cache_dir, row["key"] + ".json"), "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+            except (OSError, ValueError):
+                continue
+            team_by_sid = {str(p.get("steamid")): p.get("team")
+                           for p in (data.get("players") or [])
+                           if p.get("steamid") and isinstance(p.get("team"), int)}
+            if not team_by_sid:
+                continue
+            for attempt in range(5):                       # short txn per demo, retried if DB is busy
+                try:
+                    for sid, tv in team_by_sid.items():
+                        con.execute("UPDATE demo_players SET team=? WHERE sha1=? AND steamid=? AND team IS NULL",
+                                    (tv, sha, sid))
+                    con.commit()
+                    filled += 1
+                    break
+                except sqlite3.OperationalError:
+                    try:
+                        con.rollback()
+                    except sqlite3.Error:
+                        pass
+                    time.sleep(0.5 * (attempt + 1))
+        if filled:
+            print(f"[backfill] filled roster team for {filled} demo(s)")
+    finally:
+        try:
+            con.close()
+        except sqlite3.Error:
+            pass
 
 
 # ---- write path -------------------------------------------------------------
