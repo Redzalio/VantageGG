@@ -42,6 +42,7 @@ import billing                                          # Stripe subscription bi
 import practiceplan                                     # practice-plan done-state (stdlib only)
 import pricing                                           # editable Pro subscription prices (stdlib only)
 import reviews                                          # review bookmarks + auto-queues (stdlib only)
+import samplemgr                                        # admin-managed replacement of the bundled sample demo
 import statsfile                                        # compact .txt stats retained when a replay is deleted
 import steamauth                                        # Steam OpenID 2.0 login (stdlib only, optional)
 import teams                                            # local team config (stdlib only)
@@ -98,6 +99,9 @@ os.makedirs(UPLOADS, exist_ok=True)
 # issue). Trade-off: a parser/schema upgrade can't re-process old demos from disk; users re-upload to
 # refresh. Set KEEP_DEM=1 only if you explicitly want raw demos retained for re-parsing.
 KEEP_DEM = os.environ.get("KEEP_DEM", "0").strip().lower() not in ("0", "false", "no", "off")
+# Persistent data volume (mirrors db.py): the admin-managed sample + its metadata + retained raw .dem
+# live under DATA_DIR/sample so they survive across deploys (cache/ and data/ are mounted volumes).
+DATA_DIR = os.environ.get("DATA_DIR") or HERE
 db.migrate()                                            # ensure the SQLite index schema exists
 
 
@@ -546,7 +550,12 @@ def sample():
     - replay missing or schema-stale  -> regenerate a fresh mock at the current SCHEMA_VERSION
     - replay current but analytics stale (and no .dem to recompute from) -> drop the stale
       analytics so the UI shows the honest empty state instead of wrong numbers
+
+    An admin-managed sample (DATA_DIR/sample/current.json) takes precedence WHEN it is present AND
+    valid (replay + analytics). Otherwise we fall back to the bundled sample exactly as before.
     """
+    if samplemgr.has_valid_admin_sample(DATA_DIR, replay_valid, analytics_valid):
+        return json_file_response(samplemgr.current_json_path(DATA_DIR))
     path = os.path.join(CACHE, "sample.json")
     data = load_cache(path)
     if not replay_valid(data):
@@ -3105,6 +3114,166 @@ def api_admin_retry_job(job_id):
     db.log_admin_action(actor.get("id") if actor else None, "retry_job", "job", job_id,
                         {"filename": job.get("filename")})
     return _nostore({"ok": True})
+
+
+# ---- admin: sample-demo replacement -----------------------------------------
+# The bundled sample goes stale when SCHEMA/ANALYTICS_VERSION bump (it then shows the empty-analytics
+# fallback). These admin-only routes let an admin upload a fresh .dem -> parse via the trusted path ->
+# validate real analytics -> atomically swap it in as the runtime sample. The admin sample is site
+# furniture: never a user/team library member, never counted against any quota, stored under DATA_DIR.
+def _parse_sample_dem(dem_path):
+    """Parse a .dem (or .dem.gz / .dem.bz2 / .zip) at `dem_path` into the normalized + analytics-tagged
+    dict using the SAME trusted parser/analytics as user uploads -- but WITHOUT the content-hash cache,
+    library, or quota side effects (the admin sample is not a user demo). The admin route saves the
+    picked file as-is, so compression is detected by MAGIC BYTES (not filename) and decompressed to a
+    real .dem first -- this also makes rebuild work on a retained compressed raw. Raises on an
+    unparseable demo. Analytics that fail to compute leave analytics=None, which validation then
+    rejects (no fake analytics)."""
+    import parser as demo_parser
+    import analytics as an
+    from demoparser2 import DemoParser
+
+    parse_path, tmp_dec = dem_path, None
+    try:
+        with open(dem_path, "rb") as fh:
+            magic = fh.read(4)
+        if magic[:2] == b"\x1f\x8b" or magic[:3] == b"BZh" or magic[:4] == b"PK\x03\x04":
+            fd, tmp_dec = tempfile.mkstemp(prefix="_sampledec_", suffix=".dem", dir=CACHE)
+            os.close(fd)
+            if magic[:2] == b"\x1f\x8b":
+                import gzip as _gz
+                with _gz.open(dem_path, "rb") as fin, open(tmp_dec, "wb") as fout:
+                    shutil.copyfileobj(fin, fout, length=1 << 20)
+            elif magic[:3] == b"BZh":
+                import bz2 as _bz2
+                with _bz2.open(dem_path, "rb") as fin, open(tmp_dec, "wb") as fout:
+                    shutil.copyfileobj(fin, fout, length=1 << 20)
+            else:                                          # zip -> first .dem entry
+                import zipfile
+                with zipfile.ZipFile(dem_path) as zf:
+                    names = [n for n in zf.namelist() if n.lower().endswith(".dem")]
+                    if not names:
+                        raise ValueError("zip archive contains no .dem file")
+                    with zf.open(names[0]) as fin, open(tmp_dec, "wb") as fout:
+                        shutil.copyfileobj(fin, fout, length=1 << 20)
+            parse_path = tmp_dec
+        pr = DemoParser(parse_path)
+        data = demo_parser.parse_demo(pr)
+        try:
+            data["analytics"] = an.analyze(pr, replay=data)
+        except Exception as ae:
+            print(f"[sample] analytics failed: {ae}")
+            traceback.print_exc()
+            data["analytics"] = None
+        data["source_sha1"] = _sha1_file(parse_path)
+        return clean_nan(data)
+    finally:
+        if tmp_dec and os.path.exists(tmp_dec):
+            try:
+                os.remove(tmp_dec)
+            except OSError:
+                pass
+
+
+def _sample_status():
+    return samplemgr.status(DATA_DIR, replay_valid, analytics_valid)
+
+
+@app.route("/api/admin/sample", methods=["GET", "POST"])
+def api_admin_sample():
+    """GET -> status of the effective sample (admin or bundled fallback).
+    POST (multipart, file field `demo`) -> parse via the trusted path, validate, atomically replace
+    the runtime sample. On any failure the PREVIOUS sample is untouched."""
+    admin = _admin_or_none()
+    if not admin:
+        # 401 if nobody is logged in, 403 if logged in but not an admin -- matching admin routes.
+        return (_nostore({"error": "login required"}), 401) if current_user() is None \
+            else (_nostore({"error": "admin only"}), 403)
+
+    if request.method == "GET":
+        return _nostore(_sample_status())
+
+    f = request.files.get("demo")
+    if f is None or not getattr(f, "filename", ""):
+        return _nostore({"ok": False, "error": "No demo file uploaded (form field 'demo')."}), 400
+    original_filename = os.path.basename(f.filename)
+
+    fd, tmp = tempfile.mkstemp(prefix="_sampleup_", suffix=".dem", dir=CACHE)
+    os.close(fd)
+    try:
+        f.save(tmp)
+        try:
+            data = _parse_sample_dem(tmp)
+        except Exception as e:
+            traceback.print_exc()
+            db.log_admin_action(admin.get("id"), "sample_upload_failed", "sample", original_filename,
+                                {"reason": "parse error: %s" % e, "original_filename": original_filename})
+            return _nostore({"ok": False, "error": "Could not parse demo: %s" % e}), 400
+
+        ok, reason = samplemgr.install_parsed(
+            DATA_DIR, data, replay_valid, analytics_valid,
+            source="admin", original_filename=original_filename, raw_src=tmp)
+        if not ok:
+            db.log_admin_action(admin.get("id"), "sample_upload_failed", "sample", original_filename,
+                                {"reason": reason, "original_filename": original_filename,
+                                 "map": data.get("map") if isinstance(data, dict) else None})
+            return _nostore({"ok": False, "error": reason}), 400
+
+        st = _sample_status()
+        db.log_admin_action(admin.get("id"), "sample_uploaded", "sample", original_filename,
+                            {"original_filename": original_filename, "map": st.get("map"),
+                             "rounds": st.get("rounds"), "schema_version": st.get("schema_version"),
+                             "analytics_version": st.get("analytics_version"),
+                             "replay_valid": st.get("replay_valid"),
+                             "analytics_valid": st.get("analytics_valid")})
+        return _nostore({"ok": True,
+                         "message": "Sample replaced: %s (%s rounds) on %s." %
+                                    (st.get("map") or "?", st.get("rounds"), original_filename),
+                         "status": st})
+    finally:
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)        # the raw .dem was COPIED into the sample dir by install_parsed
+        except OSError:
+            pass
+
+
+@app.route("/api/admin/sample/rebuild", methods=["POST"])
+def api_admin_sample_rebuild():
+    """Re-parse the RETAINED raw .dem at the latest parser/schema/analytics version and reinstall."""
+    admin = _admin_or_none()
+    if not admin:
+        return (_nostore({"error": "login required"}), 401) if current_user() is None \
+            else (_nostore({"error": "admin only"}), 403)
+    ok, reason = samplemgr.rebuild(DATA_DIR, _parse_sample_dem, replay_valid, analytics_valid)
+    if not ok:
+        db.log_admin_action(admin.get("id"), "sample_upload_failed", "sample", "rebuild",
+                            {"reason": reason, "op": "rebuild"})
+        return _nostore({"ok": False, "error": reason}), 400
+    st = _sample_status()
+    db.log_admin_action(admin.get("id"), "sample_rebuild", "sample", st.get("original_filename"),
+                        {"map": st.get("map"), "rounds": st.get("rounds"),
+                         "schema_version": st.get("schema_version"),
+                         "analytics_version": st.get("analytics_version"),
+                         "replay_valid": st.get("replay_valid"),
+                         "analytics_valid": st.get("analytics_valid")})
+    return _nostore({"ok": True, "status": st})
+
+
+@app.route("/api/admin/sample/revert", methods=["POST"])
+def api_admin_sample_revert():
+    """Drop the admin sample so /api/sample falls back to the bundled sample."""
+    admin = _admin_or_none()
+    if not admin:
+        return (_nostore({"error": "login required"}), 401) if current_user() is None \
+            else (_nostore({"error": "admin only"}), 403)
+    ok, reason = samplemgr.revert(DATA_DIR)
+    if not ok:
+        return _nostore({"ok": False, "error": reason}), 400
+    st = _sample_status()
+    db.log_admin_action(admin.get("id"), "sample_revert", "sample", None,
+                        {"source": st.get("source")})
+    return _nostore({"ok": True, "status": st})
 
 
 # ---- callouts / location knowledge ------------------------------------------

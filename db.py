@@ -265,14 +265,57 @@ def migrate(con=None):
         _ensure_column(c, "user_demos", "tag", "TEXT")             # per-user label (scrim/mm/faceit/... or free-form); NULL = untagged
         for _pc in _PERF_DB_COLS:                                   # #117: Leetify-comparable perf metrics (nullable; NULL = unavailable that match)
             _ensure_column(c, "demo_players", _pc, "REAL")
+        # roster team id per (sha,player): 2=T,3=CT roster (stable per match -> teammates share it).
+        # Lets squad detection keep only same-team co-players (teammates), not opponents you've faced.
+        # NULL on demos indexed before this column existed -> squad_for falls back to old behavior for them.
+        _ensure_column(c, "demo_players", "team", "INTEGER")
         if not had_user_demos:
             c.execute("""INSERT OR IGNORE INTO user_demos(user_id, sha1, team_id, created_at)
                          SELECT owner_user_id, sha1, team_id, created_at
                          FROM demos WHERE owner_user_id IS NOT NULL""")
         c.commit()
+        _backfill_player_teams(c)   # one-time: fill team for demos indexed before the column existed
     finally:
         if con is None:
             c.close()
+
+
+def _backfill_player_teams(con):
+    """One-time: demos indexed before the `team` column have NULL team on their player rows. Read each
+    such demo's parsed cache (which carries players[].team, 2=T/3=CT) and fill it, so same-team squad
+    detection works on EXISTING libraries without a re-upload. Bounded to rows that need it; a missing
+    or unreadable cache is skipped (squad_for's NULL-fallback still covers those). Idempotent: once a
+    demo's teams are filled it's no longer selected, so this is a no-op on subsequent boots."""
+    try:
+        shas = [r["sha1"] for r in con.execute(
+            "SELECT DISTINCT sha1 FROM demo_players WHERE team IS NULL")]
+    except sqlite3.Error:
+        return
+    if not shas:
+        return
+    cache_dir = os.environ.get("CACHE_DIR") or os.path.join(HERE, "cache")
+    filled = 0
+    for sha in shas:
+        row = con.execute("SELECT key FROM demos WHERE sha1=?", (sha,)).fetchone()
+        if not row or not row["key"]:
+            continue
+        try:
+            with open(os.path.join(cache_dir, row["key"] + ".json"), "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        team_by_sid = {str(p.get("steamid")): p.get("team")
+                       for p in (data.get("players") or [])
+                       if p.get("steamid") and isinstance(p.get("team"), int)}
+        if not team_by_sid:
+            continue
+        for sid, tv in team_by_sid.items():
+            con.execute("UPDATE demo_players SET team=? WHERE sha1=? AND steamid=? AND team IS NULL",
+                        (tv, sha, sid))
+        filled += 1
+    if filled:
+        con.commit()
+        print(f"[migrate] backfilled roster team for {filled} demo(s)")
 
 
 # ---- write path -------------------------------------------------------------
@@ -315,6 +358,10 @@ def index_demo(data, key, created_at=None, owner_user_id=None, con=None, team_id
              owner_user_id,
              datetime.datetime.now().isoformat(timespec="seconds")))
         c.execute("DELETE FROM demo_players WHERE sha1=?", (sha,))
+        # roster team id per steamid from the replay player list (analytics players don't carry it);
+        # 2=T,3=CT and stable across the match, so teammates share a value -> used for squad detection.
+        team_by_sid = {str(p.get("steamid")): p.get("team")
+                       for p in (data.get("players") or []) if p.get("steamid")}
         rows = []
         for p in players:
             sid = p.get("steamid")
@@ -322,11 +369,13 @@ def index_demo(data, key, created_at=None, owner_user_id=None, con=None, team_id
                 continue
             # core stats via mi._num (0-default is fine -- always present); perf via _perf_db_values
             # (None-preserving + quality-gated, so an unavailable metric is NULL, never a fake 0).
+            tv = team_by_sid.get(str(sid))
             rows.append((sha, str(sid), p.get("name"),
                          *[mi._num(p.get(f)) for f in _PLAYER_FIELDS],
-                         *_perf_db_values(p)))
+                         *_perf_db_values(p),
+                         tv if isinstance(tv, int) else None))
         if rows:
-            allcols = _PLAYER_FIELDS + _PERF_DB_COLS
+            allcols = _PLAYER_FIELDS + _PERF_DB_COLS + ["team"]
             c.executemany(
                 "INSERT OR REPLACE INTO demo_players(sha1,steamid,name,"
                 + ",".join(allcols) + ") VALUES(" + ",".join(["?"] * (3 + len(allcols))) + ")",
@@ -1489,10 +1538,18 @@ def squad_for(uid, scope=None, con=None):
         ph = ",".join("?" * len(mine))
         you_name = c.execute("SELECT MAX(name) n FROM demo_players WHERE steamid=? AND sha1 IN (%s)" % ph,
                              [str(my_sid)] + mine).fetchone()["n"]
+        # TEAMMATES ONLY: join each co-player row to the user's row in the same match and keep it only
+        # when they shared a team (2=T,3=CT roster, stable per match). This drops opponents you've merely
+        # faced. Demos indexed before the `team` column exists have NULL team on both sides -> the OR-NULL
+        # fallback keeps the old "anyone in your matches" behavior for them (no regression; a reparse
+        # upgrades them to strict teammate filtering).
         rows = c.execute(
-            "SELECT steamid, MAX(name) name, COUNT(DISTINCT sha1) shared FROM demo_players "
-            "WHERE steamid<>? AND sha1 IN (%s) GROUP BY steamid ORDER BY shared DESC, name" % ph,
-            [str(my_sid)] + mine).fetchall()
+            "SELECT co.steamid, MAX(co.name) name, COUNT(DISTINCT co.sha1) shared "
+            "FROM demo_players co JOIN demo_players me ON me.sha1=co.sha1 AND me.steamid=? "
+            "WHERE co.steamid<>? AND co.sha1 IN (%s) "
+            "AND (me.team=co.team OR me.team IS NULL OR co.team IS NULL) "
+            "GROUP BY co.steamid ORDER BY shared DESC, name" % ph,
+            [str(my_sid), str(my_sid)] + mine).fetchall()
         you = {"steamid": str(my_sid), "name": you_name or "You"}
         return you, [{"steamid": r["steamid"], "name": r["name"], "shared": r["shared"]} for r in rows]
     finally:

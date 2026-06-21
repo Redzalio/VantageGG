@@ -477,6 +477,7 @@ const App = {
   goHome() {
     // close any full-screen overlay first, or it stays covering the dashboard (e.g. the analytics
     // panel was left visible after clicking the brand from inside analytics).
+    if (this._tour) this._tourEnd();                       // never leave the tour spotlight blocking the dashboard
     if ($("analyticsPanel") && $("analyticsPanel").classList.contains("show")) closeAnalytics(this);
     ["libraryModal", "teamsModal", "goalsModal", "trendsModal", "adminModal", "upgradeModal", "searchModal"]
       .forEach(id => { const m = $(id); if (m) m.classList.remove("show"); });
@@ -674,7 +675,7 @@ const App = {
     el.querySelectorAll("[data-e]").forEach(b => b.onclick = () => {
       const e = b.dataset.e;
       if (e === "upload") $("uploadBtn").click();
-      else if (e === "sample") $("sampleBtn").click();
+      else if (e === "sample") this.loadSample();          // call the canonical path directly (no hidden-button hop)
       else if (e === "team") this.entitled("teams") ? this.openTeams() : this._upsell("teams");
     });
   },
@@ -1286,6 +1287,13 @@ const App = {
         })()
       + `<div class="dash-sec-head adm-uhead"><h2>Storage &amp; parsing</h2></div>${this._renderOps(ops)}`
       + (this.isAdmin
+          ? `<div class="dash-sec-head adm-uhead"><h2>Sample demo</h2></div>`
+            + `<div class="round adm-sample-hint">The sample demo is what new users see when they click `
+            +   `Load sample or start the tour. Replace it with a demo that has valid analytics so the `
+            +   `sample shows 2D, 3D, utility, review queues, and coaching.</div>`
+            + `<div id="admSample" class="adm-sample"><div class="round">Loading sample status&hellip;</div></div>`
+            + `<input id="admSampleFile" type="file" accept=".dem,.gz,.bz2" hidden>` : "")
+      + (this.isAdmin
           ? `<div class="dash-sec-head adm-uhead"><h2>Free-plan limit</h2></div>`
             + `<div class="adm-limit"><label>Demos a free user can upload `
             +   `<input id="admFreeLimit" type="number" min="1" max="1000" value="${cfg.free_upload_limit}"></label>`
@@ -1371,6 +1379,7 @@ const App = {
     this._renderAdmUserList();
     if (this.isAdmin) this._renderAdminPricing();
     if (this.isAdmin) this._bindBenchmarks();
+    if (this.isAdmin) this._bindSampleAdmin();
 
     const teamsBtn = $("admLoadTeams");
     if (teamsBtn) teamsBtn.onclick = async () => {
@@ -1542,6 +1551,127 @@ const App = {
         if (r && r.ok) load();   // refresh the loaded-datasets status list above
       };
     }
+  },
+  // ---- Admin "Sample demo" -------------------------------------------------
+  // Manage the demo new users load via "Load sample"/the tour. GET /api/admin/sample reports the
+  // current sample's health (replay schema + analytics validity, source, raw-retained); actions
+  // upload a replacement, rebuild from the stored raw, revert to the bundled default, or load it.
+  _sampleBytes(b) {
+    if (b == null) return "—";
+    return b >= (1 << 20) ? (b / (1 << 20)).toFixed(1) + " MB"
+      : b >= 1024 ? Math.round(b / 1024) + " KB" : b + " B";
+  },
+  _renderSampleAdmin(s) {
+    const wrap = $("admSample");
+    if (!wrap) return;
+    if (!s || s.error) { wrap.innerHTML = `<div class="round">Couldn't load sample status${s && s.error ? ` — ${esc(s.error)}` : ""}.</div>`; return; }
+    const yn = (v) => v ? `<b class="adm-on">yes</b>` : `<span class="adm-off">no</span>`;
+    const src = s.source === "admin" ? "Admin uploaded" : "Bundled default";
+    const rows = [
+      ["Map", esc(this._fmtMap(s.map || "?"))],
+      ["Rounds", s.rounds != null ? esc(String(s.rounds)) : "—"],
+      ["Score", esc(s.score || "—")],
+      ["Replay schema valid", yn(s.replay_valid)],
+      ["Analytics valid", yn(s.analytics_valid)],
+      ["Source", `${esc(src)}${s.original_filename ? ` <span class="round">(${esc(s.original_filename)})</span>` : ""}`],
+      ["Last replaced", s.uploaded_at ? esc(this._fmtDate(s.uploaded_at)) : `<span class="round">never (bundled)</span>`],
+      ["File size", esc(this._sampleBytes(s.sample_bytes))],
+      ["Schema / analytics", `v${esc(String(s.schema_version != null ? s.schema_version : "?"))} / v${esc(String(s.analytics_version != null ? s.analytics_version : "?"))}`],
+    ];
+    // Warning banner: prefer the server's message; otherwise synthesize from analytics validity.
+    let warn = "";
+    if (s.warning) warn = esc(s.warning);
+    else if (!s.has_analytics || !s.analytics_valid) warn = "Current sample has replay data but no valid analytics. Upload a new sample demo or rebuild from the raw sample if available.";
+    const weak = (s.weak_features || []).filter(Boolean);
+    const warnHtml = warn
+      ? `<div class="adm-sec-warn adm-warn">&#9888; ${warn}`
+        + (weak.length ? `<div class="adm-sample-weak">Weak/missing: ${weak.map(w => esc(w)).join(", ")}</div>` : "")
+        + `</div>`
+      : "";
+    // Raw-retained note governs whether Rebuild can work at all.
+    const rawHtml = s.raw_retained
+      ? `<div class="round adm-sample-raw">Raw sample demo is stored for future reparses.</div>`
+      : `<div class="round adm-sample-raw adm-sample-raw-no">Raw sample demo is not stored, so this sample cannot be fully reparsed. Upload a new sample demo to fix stale analytics.</div>`;
+    wrap.innerHTML =
+      warnHtml
+      + `<div class="adm-sample-grid">${rows.map(([k, v]) => `<div class="adm-cfg-row"><span>${k}</span><span>${v}</span></div>`).join("")}</div>`
+      + rawHtml
+      + `<div class="adm-sample-actions">`
+      +   `<button id="admSampleLoad" class="btn sm">Load current sample</button>`
+      +   `<button id="admSampleUpload" class="btn primary sm">Upload replacement&hellip;</button>`
+      +   `<button id="admSampleRebuild" class="btn ghost sm"${s.raw_retained ? "" : " disabled title=\"Raw sample not stored\""}>Rebuild current</button>`
+      +   `<button id="admSampleRevert" class="btn ghost sm"${s.source === "admin" ? "" : " disabled title=\"Already on the bundled default\""}>Revert to bundled</button>`
+      + `</div>`
+      + `<div id="admSampleMsg" class="round adm-sample-msg"></div>`;
+    // re-wire the action buttons each render (status HTML is replaced wholesale)
+    const msg = $("admSampleMsg");
+    const load = $("admSampleLoad");
+    if (load) load.onclick = () => { $("adminModal").classList.remove("show"); this.loadSample(); };
+    const up = $("admSampleUpload"), file = $("admSampleFile");
+    if (up && file) up.onclick = () => file.click();
+    const rb = $("admSampleRebuild");
+    if (rb && !rb.disabled) rb.onclick = async () => {
+      rb.disabled = true; if (msg) { msg.className = "round adm-sample-msg"; msg.textContent = "Rebuilding sample analytics…"; }
+      let r; try { r = await fetch("/api/admin/sample/rebuild", { method: "POST" }).then(x => x.json()); } catch (e) { r = null; }
+      rb.disabled = false;
+      if (r && r.ok) {
+        if (r.status) this._renderSampleAdmin(r.status); else this._bindSampleAdmin();
+        const m2 = $("admSampleMsg");                       // re-render replaced the old node -> grab the fresh one
+        if (m2) { m2.className = "round adm-sample-msg adm-sample-msg-ok"; m2.textContent = "Sample rebuilt from the stored raw demo."; }
+      } else {
+        const err = (r && r.error) || "rebuild failed";
+        const rawMiss = /raw|not stored|no.*raw/i.test(err);
+        if (msg) { msg.className = "round adm-sample-msg adm-sample-msg-err";
+          msg.textContent = rawMiss ? "Can't rebuild — the raw sample demo isn't stored. Upload a new sample demo instead." : `Rebuild failed: ${err}`; }
+      }
+    };
+    const rv = $("admSampleRevert");
+    if (rv && !rv.disabled) rv.onclick = async () => {
+      const ok = await this.askConfirm("Revert to bundled sample?",
+        `<div class="cf-line">This drops the admin-uploaded sample and restores the demo that ships with VantageGG.</div>`
+        + `<div class="cf-line cf-mut">New users will load the bundled default again.</div>`, "Revert");
+      if (!ok) return;
+      rv.disabled = true; if (msg) { msg.className = "round adm-sample-msg"; msg.textContent = "Reverting…"; }
+      let r; try { r = await fetch("/api/admin/sample/revert", { method: "POST" }).then(x => x.json()); } catch (e) { r = null; }
+      if (r && r.ok) {
+        this._sampleClearCache();
+        if (r.status) this._renderSampleAdmin(r.status); else this._bindSampleAdmin();
+        const m2 = $("admSampleMsg");                       // grab the post-render node
+        if (m2) { m2.className = "round adm-sample-msg adm-sample-msg-ok"; m2.textContent = "Reverted to the bundled sample."; }
+      } else { rv.disabled = false; if (msg) { msg.className = "round adm-sample-msg adm-sample-msg-err"; msg.textContent = (r && r.error) || "Revert failed."; } }
+    };
+  },
+  // Drop the cached sample JSON so the next "Load sample" refetches the just-changed demo (loadSample
+  // caches under "__sample__" for 5 min; replacing/reverting must invalidate it).
+  _sampleClearCache() { if (this._demoCache && this._demoCache.id === "__sample__") this._demoCache = null; },
+  _bindSampleAdmin() {
+    const wrap = $("admSample"); if (!wrap) return;
+    const refresh = async () => {
+      let s; try { s = await fetch("/api/admin/sample", { cache: "no-store" }).then(x => x.json()); } catch (e) { s = { error: "network error" }; }
+      this._renderSampleAdmin(s);
+    };
+    const file = $("admSampleFile");
+    if (file) file.onchange = async () => {
+      const f = file.files && file.files[0];
+      file.value = "";                                     // allow re-picking the same file
+      if (!f) return;
+      const msg = $("admSampleMsg");
+      if (msg) { msg.className = "round adm-sample-msg"; msg.textContent = `Uploading & validating "${f.name}"…`; }   // .textContent is already safe
+      const fd = new FormData(); fd.append("demo", f);
+      let r; try { r = await fetch("/api/admin/sample", { method: "POST", body: fd }).then(x => x.json()); } catch (e) { r = null; }
+      if (r && r.ok) {
+        this._sampleClearCache();
+        if (r.status) this._renderSampleAdmin(r.status); else await refresh();
+        const m2 = $("admSampleMsg");
+        if (m2) { m2.className = "round adm-sample-msg adm-sample-msg-ok"; m2.textContent = r.message || "Sample replaced. New users will now load this demo."; }
+      } else {
+        const reason = (r && r.error) || "the demo could not be parsed/validated";
+        const m2 = $("admSampleMsg") || msg;
+        if (m2) { m2.className = "round adm-sample-msg adm-sample-msg-err";
+          m2.textContent = `Sample was not changed. The uploaded demo could not be parsed/validated: ${reason}.`; }
+      }
+    };
+    refresh();
   },
   // Admin "Storage & parsing" section: where the bytes go + upload/parse timing (from the jobs table).
   _renderOps(ops) {
@@ -1972,10 +2102,10 @@ const App = {
     // dashboard (landing) navigation
     $("brandHome").onclick = () => this.goHome();
     $("dashUpload").onclick = () => $("uploadBtn").click();
-    $("dashSample").onclick = () => $("sampleBtn").click();
+    $("dashSample").onclick = () => this.loadSample();        // VISIBLE dashboard sample button -> canonical path
     $("dashAllMatches").onclick = () => this.openLibrary();
     $("dashGoals").onclick = () => this.openGoals();
-    $("landSample").onclick = () => $("sampleBtn").click();   // landing: let visitors try the sample
+    $("landSample").onclick = () => this.loadSample();        // landing: let visitors try the sample
     $("goalsBtn").onclick = () => this.entitled("goals") ? this.openGoals() : this._upsell("goals");
     $("goalsClose").onclick = () => $("goalsModal").classList.remove("show");
     $("goalsModal").addEventListener("click", (e) => { if (e.target.id === "goalsModal") $("goalsModal").classList.remove("show"); });
@@ -2051,7 +2181,7 @@ const App = {
     { const b = $("mobMenuToggle"); if (b) b.onclick = () => { const a = b.closest(".actions"); if (a) a.classList.toggle("mob-open"); }; }
     { const b = $("moreToggle"); if (b) b.onclick = () => { const w = b.closest(".more-wrap"); if (w) w.classList.toggle("open"); }; }
     { const b = $("mobScoreBtn"); if (b) b.onclick = () => { const s = $("stage"); if (s) s.classList.toggle("mob-score-open"); }; }
-    { const b = $("ovSampleBtn"); if (b) b.onclick = () => $("sampleBtn").click(); }
+    { const b = $("ovSampleBtn"); if (b) b.onclick = () => this.loadSample(); }
     { const b = $("ovLibraryBtn"); if (b) b.onclick = () => $("libraryBtn").click(); }
     { const b = $("ovUploadBtn"); if (b) b.onclick = () => $("uploadBtn").click(); }
     { const th = $("tourHelp"); if (th) th.onclick = () => this.startTour(true); }
@@ -2903,9 +3033,10 @@ const App = {
   // Overview · Players · Maps · Utility · Flash · Issues · Matches · Benchmarks. Framed as
   // "your analytics compared to benchmarks". Scoped to the active workspace; roster only.
   _daTabDefs() {
+    // Flash lives under Utility (it IS utility) -- no separate Flash tab.
     return [
       ["overview", "Overview"], ["players", "Players"], ["maps", "Maps"],
-      ["utility", "Utility"], ["flash", "Flash"], ["issues", "Issues"],
+      ["utility", "Utility"], ["issues", "Issues"],
       ["matches", "Matches"], ["benchmarks", "Benchmarks"],
     ];
   },
@@ -2985,9 +3116,6 @@ const App = {
     } else if (view === "utility") {
       el.innerHTML = `<div class="da-fade">${this._daUtilityHtml(data)}</div>`;
       this._wireDaActions(el);
-    } else if (view === "flash") {
-      el.innerHTML = `<div class="da-fade">${this._daFlashHtml(data)}</div>`;
-      this._wireDaActions(el);
     } else if (view === "issues") {
       el.innerHTML = `<div class="da-fade">${this._daIssuesHtml(data)}</div>`;
       this._wireDaGoals(el);
@@ -3019,104 +3147,134 @@ const App = {
       }
     });
   },
+  // Overview is the report LANDING page: same component vocabulary as the in-match
+  // Coaching Report (.rp-card / .rp-h / .rp-cols / .rp-summary-card) so the two read
+  // as one product. Hierarchy mirrors the match Report: context -> the gist ->
+  // key numbers -> recent form -> (next focus | top fixes) -> map performance.
   _daOverviewHtml(data) {
     const ov = data.overview || {}, form = ov.form || {}, avg = form.all || ov.averages || {};
-    const l3 = form.last3 || {}, d3 = form.delta3 || {};
+    const d3 = form.delta3 || {};
     const f = (v, unit = "") => v != null ? `${v}${unit}` : "—";
+    const r1 = (v) => v != null ? (Math.round(v * 10) / 10) : null;
     const delta = (v) => {
       if (v == null) return "";
       const cls = v > 0 ? "da-delta-up" : v < 0 ? "da-delta-dn" : "da-delta-eq";
-      const arrow = v > 0 ? "+" : "";
-      return `<span class="${cls}">${arrow}${v}</span>`;
+      return `<span class="${cls}">${v > 0 ? "+" : ""}${v}</span>`;
     };
+    const mc = data.match_count || 0;
+    const small = mc > 0 && mc < 3;
 
-    // Form table
-    const formFields = ["hltv","adr","kast","open_wr","traded_pct"];
-    const formLabels = ["Rating","ADR","KAST","Open%","Trade%"];
-    const formUnits = ["","","% ","% ","% "];
-    const formRows = [
-      ["Last 3", form.last3 || {}, d3],
-      ["Last 5", form.last5 || {}, null],
-      ["All", avg, null],
-    ].map(([label, row, deltas]) =>
-      `<tr><td class="da-fl">${label}</td>${formFields.map((f2, i) => {
-        const v = row[f2]; const d = deltas?.[f2];
-        return `<td>${f(v, formUnits[i])}${d != null ? delta(d) : ""}</td>`;
-      }).join("")}</tr>`).join("");
-    const formTable = `
-      <div class="da-section-head">Recent form</div>
-      <div class="da-scroll"><table class="da-form-table">
-        <thead><tr><th></th>${formLabels.map(l => `<th>${l}</th>`).join("")}</tr></thead>
-        <tbody>${formRows}</tbody>
-      </table></div>`;
-
-    // Map stats table
-    const mapStats = (ov.map_stats || []).slice(0, 6);
-    const mapTable = mapStats.length ? `
-      <div class="da-section-head">Maps</div>
-      <div class="da-scroll"><table class="da-form-table">
-        <thead><tr><th>Map</th><th>Demos</th><th>Rating</th><th>ADR</th><th>KAST</th><th>Open%</th></tr></thead>
-        <tbody>${mapStats.map(m =>
-          `<tr><td class="da-fl">${esc(this._fmtMap(m.map))}</td><td>${m.count}</td>
-           <td>${f(m.hltv)}</td><td>${f(m.adr)}</td><td>${f(m.kast, "%")}</td><td>${f(m.open_wr, "%")}</td></tr>`
-        ).join("")}</tbody>
-      </table></div>` : "";
-
-    // Next focus
-    const focusItems = (ov.next_focus || []);
-    const focusHtml = focusItems.length ? `
-      <div class="da-section-head">Next review focus</div>
-      <div class="da-focus-list">${focusItems.map(item => {
-        const goalBtn = item.suggest_metric
-          ? `<button class="da-focus-goal gl-rc-goal" data-player="" data-metric="${esc(item.suggest_metric)}"
-               data-target="${item.suggested_target != null ? item.suggested_target : ""}"
-               data-title="${esc(item.label)}" data-area="${esc(item.type)}">+ Goal</button>` : "";
-        return `<div class="da-focus-item da-focus-${esc(item.type)}">
-          <span class="da-focus-label">${esc(item.label)}</span>
-          <span class="da-focus-detail">${esc(item.detail)}</span>
-          ${goalBtn}
-        </div>`;
-      }).join("")}</div>` : "";
-
-    // roster averages for the util / UDR KPIs (defensive: only show when the contract supplied them)
-    const players = data.players || [];
-    const avgOf = (pick) => {
-      const vals = players.map(pick).filter(v => v != null && !isNaN(v));
-      return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null;
-    };
-    const udrAvg = avgOf(p => p.udr);
-    const utilAvg = avgOf(p => { const u = p.utility; return u ? ((u.smokes || 0) + (u.flashes_thrown || 0) + (u.hes || 0) + (u.molotovs || 0)) : null; });
-    const r1 = (v) => v != null ? (Math.round(v * 10) / 10) : null;
-
-    // KPI bar (matches, rating, ADR, KAST, opening%, traded%, + util/UDR when present)
-    const kpi = (val, label) => `<div class="da-kpi"><span class="da-kv">${val}</span><span class="da-kl">${label}</span></div>`;
-    const kpis = `<div class="da-kpis">
-      ${kpi(data.match_count, "Matches")}
-      ${kpi((data.roster_members || []).length || players.length || "—", "Roster")}
-      ${kpi(f(avg.hltv), "Rating")}
-      ${kpi(f(avg.adr), "ADR")}
-      ${kpi(f(avg.kast, "%"), "KAST")}
-      ${kpi(f(avg.open_wr, "%"), "Open%")}
-      ${kpi(f(avg.traded_pct, "%"), "Trade%")}
-      ${kpi(utilAvg != null ? r1(utilAvg) : "—", "Util/match")}
-      ${kpi(udrAvg != null ? r1(udrAvg) : "—", "UDR")}
+    // 1) context line: workspace · matches · roster · sample note (mirrors .rp-score)
+    const wsName = this._workspaceName ? this._workspaceName(this._currentWorkspace()) : "Personal";
+    const rosterN = (data.roster_members || []).length || (data.players || []).length;
+    const ctx = `<div class="da-ctx">
+      <span class="da-ctx-score"><b>${esc(wsName)}</b> — analytics across all your demos</span>
+      <span class="da-ctx-chip">${mc} match${mc === 1 ? "" : "es"}</span>
+      ${rosterN ? `<span class="da-ctx-chip">${rosterN} player${rosterN === 1 ? "" : "s"}</span>` : ""}
+      ${small ? `<span class="da-ctx-chip warn" title="Small sample — treat these as directional, not conclusive">small sample</span>` : ""}
     </div>`;
 
-    // Top fixes (from recurring issues) + suggested goals -- the "what to fix" framing
-    const rec = (data.recurring || []).slice(0, 4);
-    const fixesHtml = rec.length ? `<div class="da-section-head">Top fixes</div>
-      <div class="da-focus-list">${rec.map(it => {
-        const goal = it.suggest_metric
-          ? `<button class="da-focus-goal gl-rc-goal" data-player="" data-metric="${esc(it.suggest_metric)}"
-               data-target="${it.suggested_target != null ? it.suggested_target : ""}"
-               data-title="${esc(it.label)}" data-area="${esc(it.type || "")}">+ Goal</button>` : "";
-        return `<div class="da-focus-item da-focus-recurring_issue">
-          <span class="da-focus-label">${esc(it.label)}</span>
-          <span class="da-focus-detail">in ${it.matches_present} of ${it.matches_total} matches</span>
-          ${goal}</div>`;
-      }).join("")}</div>` : "";
+    // 2) the gist -- deterministic cross-demo read (no AI), in the same gradient card
+    const readCard = `<div class="rp-card rp-summary-card"><div class="rp-h">Cross-demo read <em>the gist — what to work on</em></div>
+      <div class="rp-summary">${this._daReadText(data)}</div></div>`;
 
-    return `<div class="da-section">${kpis}${formTable}${mapTable}${focusHtml}${fixesHtml}</div>`;
+    // 3) key numbers -- KPIs live INSIDE a calm card now (no longer a dominating hero strip)
+    const players = data.players || [];
+    const avgOf = (pick) => { const vals = players.map(pick).filter(v => v != null && !isNaN(v)); return vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : null; };
+    const udrAvg = avgOf(p => p.udr);
+    const utilAvg = avgOf(p => { const u = p.utility; return u ? ((u.smokes || 0) + (u.flashes_thrown || 0) + (u.hes || 0) + (u.molotovs || 0)) : null; });
+    const kpi = (val, label) => `<div class="da-kpi"><span class="da-kv">${val}</span><span class="da-kl">${label}</span></div>`;
+    const numbersCard = `<div class="rp-card"><div class="rp-h">Key numbers <em>roster averages</em></div>
+      <div class="da-kpis">
+        ${kpi(f(avg.hltv), "Rating")}
+        ${kpi(f(avg.adr), "ADR")}
+        ${kpi(f(avg.kast, "%"), "KAST")}
+        ${kpi(f(avg.open_wr, "%"), "Open%")}
+        ${kpi(f(avg.traded_pct, "%"), "Trade%")}
+        ${kpi(utilAvg != null ? r1(utilAvg) : "—", "Util/match")}
+        ${kpi(udrAvg != null ? r1(udrAvg) : "—", "UDR")}
+      </div></div>`;
+
+    // 4) recent form -- report table inside a card
+    const formFields = ["hltv", "adr", "kast", "open_wr", "traded_pct"];
+    const formLabels = ["Rating", "ADR", "KAST", "Open%", "Trade%"];
+    const formUnits = ["", "", "%", "%", "%"];
+    const formRows = [["Last 3", form.last3 || {}, d3], ["Last 5", form.last5 || {}, null], ["All", avg, null]]
+      .map(([label, row, deltas]) => `<tr><td class="rp-pn">${label}</td>${formFields.map((k, i) => {
+        const v = row[k], dd = deltas ? deltas[k] : null;
+        return `<td>${f(v, formUnits[i])}${dd != null ? delta(dd) : ""}</td>`;
+      }).join("")}</tr>`).join("");
+    const formCard = `<div class="rp-card"><div class="rp-h">Recent form <em>last 3 / 5 / all matches</em></div>
+      <div class="da-scroll"><table class="rp-table" style="min-width:380px">
+        <thead><tr><th></th>${formLabels.map(l => `<th>${l}</th>`).join("")}</tr></thead>
+        <tbody>${formRows}</tbody></table></div></div>`;
+
+    // 5) two columns: next review focus | top fixes (recurring) -- mirrors the Report's rp-cols
+    const focusItems = ov.next_focus || [];
+    const focusInner = focusItems.length ? focusItems.map(item => {
+      const goalBtn = item.suggest_metric
+        ? `<button class="da-focus-goal gl-rc-goal rp-goal" data-player="" data-metric="${esc(item.suggest_metric)}"
+             data-target="${item.suggested_target != null ? item.suggested_target : ""}"
+             data-title="${esc(item.label)}" data-area="${esc(item.type)}">+ Goal</button>` : "";
+      return `<div class="da-rfocus is-${esc(item.type)}">
+        <div><div class="da-rfocus-l">${esc(item.label)}</div><div class="da-rfocus-d">${esc(item.detail)}</div></div>${goalBtn}</div>`;
+    }).join("") : `<div class="empty">Nothing flagged — keep reviewing your closest rounds.</div>`;
+    const focusCard = `<div class="rp-card"><div class="rp-h">Next review focus <em>where to look first</em></div>${focusInner}</div>`;
+
+    const rec = (data.recurring || []).slice(0, 4);
+    const fixesInner = rec.length ? rec.map(it => {
+      const goal = it.suggest_metric
+        ? `<button class="da-focus-goal gl-rc-goal rp-goal" data-player="" data-metric="${esc(it.suggest_metric)}"
+             data-target="${it.suggested_target != null ? it.suggested_target : ""}"
+             data-title="${esc(it.label)}" data-area="${esc(it.type || "")}">+ Goal</button>` : "";
+      return `<div class="da-rfocus is-issue">
+        <div><div class="da-rfocus-l">${esc(it.label)}</div><div class="da-rfocus-d">in ${it.matches_present} of ${it.matches_total} matches</div></div>${goal}</div>`;
+    }).join("") : `<div class="empty">No mistakes repeat across your demos — clean.</div>`;
+    const fixesCard = `<div class="rp-card"><div class="rp-h">Top fixes <em>recurring — practice these</em></div>${fixesInner}</div>`;
+
+    // 6) map performance -- report table
+    const mapStats = (ov.map_stats || []).slice(0, 8);
+    const mapCard = mapStats.length ? `<div class="rp-card"><div class="rp-h">Map performance <em>your maps</em></div>
+      <div class="da-scroll"><table class="rp-table" style="min-width:420px">
+        <thead><tr><th>Map</th><th>Demos</th><th>Rating</th><th>ADR</th><th>KAST</th><th>Open%</th></tr></thead>
+        <tbody>${mapStats.map(m => `<tr><td class="rp-pn">${esc(this._fmtMap(m.map))}</td>
+          <td>${m.count != null ? m.count : "—"}</td><td>${f(m.hltv)}</td><td>${f(m.adr)}</td>
+          <td>${f(m.kast, "%")}</td><td>${f(m.open_wr, "%")}</td></tr>`).join("")}</tbody>
+      </table></div></div>` : "";
+
+    return `<div class="da-report">${ctx}${readCard}${numbersCard}${formCard}
+      <div class="rp-cols">${focusCard}${fixesCard}</div>${mapCard}</div>`;
+  },
+  // Deterministic cross-demo read: a few plain-English sentences composed straight
+  // from the existing analytics contract (NO AI / no network). Same tone as the
+  // in-match coaching summary, but spanning every demo in the workspace.
+  _daReadText(data) {
+    const ov = data.overview || {}, form = ov.form || {}, avg = form.all || ov.averages || {};
+    const mc = data.match_count || 0;
+    if (!mc) return "Upload a few demos to see a cross-demo read of your squad.";
+    const parts = [];
+    if (avg.hltv != null) {
+      let s = `Across your last ${mc} match${mc === 1 ? "" : "es"} the squad averages a <b>${avg.hltv}</b> rating`;
+      const extra = [];
+      if (avg.adr != null) extra.push(`${avg.adr} ADR`);
+      if (avg.kast != null) extra.push(`${avg.kast}% KAST`);
+      if (extra.length) s += ` (${extra.join(", ")})`;
+      parts.push(s + ".");
+    }
+    const d = (form.delta3 || {}).hltv;
+    if (d != null && Math.abs(d) >= 0.03)
+      parts.push(`Form is ${d > 0 ? "trending up" : "dipping"} (${d > 0 ? "+" : ""}${d} rating) over your last 3.`);
+    const maps = (ov.map_stats || []).filter(m => m.hltv != null && (m.count || 0) >= 1);
+    if (maps.length >= 2) {
+      const best = maps.reduce((a, b) => b.hltv > a.hltv ? b : a);
+      const worst = maps.reduce((a, b) => b.hltv < a.hltv ? b : a);
+      if (best.map !== worst.map)
+        parts.push(`Strongest on <b>${esc(this._fmtMap(best.map))}</b> (${best.hltv}); <b>${esc(this._fmtMap(worst.map))}</b> (${worst.hltv}) is the soft spot.`);
+    }
+    const top = (data.recurring || [])[0];
+    if (top) parts.push(`The recurring theme is <b>${esc(top.label)}</b> (${top.matches_present} of ${top.matches_total} matches) — make that your next focus.`);
+    else parts.push("No single mistake repeats across matches — review the closest rounds for marginal gains.");
+    return parts.join(" ");
   },
   _daPlayersHtml(data) {
     const players = data.players || [];
@@ -3193,15 +3351,22 @@ const App = {
         <td>${(p.udr || 0).toFixed(1)}</td>
       </tr>${detail}`;
     }).join("");
-    return `${rosterNote}<div class="da-scroll"><table class="da-table">
-      <thead><tr><th>Player</th><th>Demos</th><th>Rating</th><th>ADR</th><th>KAST</th>
-        <th>K/D</th><th>Open%</th><th>Trade%</th><th>UDR</th></tr></thead>
-      <tbody>${rows}</tbody></table></div>`;
+    const rosterSub = data.roster_mode === "personal_squad"
+      ? `your squad only — ${data.roster_members?.length || 0} players`
+      : data.roster_mode === "team"
+      ? `team members only — ${data.roster_members?.length || 0} players`
+      : "click a row to expand";
+    return `<div class="da-report"><div class="rp-card"><div class="rp-h">Players <em>${esc(rosterSub)}</em></div>
+      <div class="da-scroll"><table class="da-table">
+        <thead><tr><th>Player</th><th>Demos</th><th>Rating</th><th>ADR</th><th>KAST</th>
+          <th>K/D</th><th>Open%</th><th>Trade%</th><th>UDR</th></tr></thead>
+        <tbody>${rows}</tbody></table></div></div></div>`;
   },
   _daIssuesHtml(data) {
     const rec = data.recurring || [];
-    if (!rec.length) return `<div class="da-empty">No repeating issues found across your demos yet.</div>`;
-    return `<div class="gl-recur-body">` + rec.map(it => {
+    if (!rec.length) return `<div class="da-report"><div class="rp-card"><div class="rp-h">Recurring issues <em>patterns across your demos</em></div>
+      <div class="empty">No repeating issues found across your demos yet — clean.</div></div></div>`;
+    const body = `<div class="gl-recur-body">` + rec.map(it => {
       const goal = it.suggest_metric
         ? `<button class="gl-rc-goal" data-player="" data-metric="${esc(it.suggest_metric)}"
             data-target="${it.suggested_target != null ? it.suggested_target : ""}"
@@ -3216,12 +3381,14 @@ const App = {
         ${goal}
       </div>`;
     }).join("") + `</div>`;
+    return `<div class="da-report"><div class="rp-card"><div class="rp-h">Recurring issues <em>mistakes that repeat — turn one into a goal</em></div>${body}</div></div>`;
   },
   _daDemosHtml(data) {
     const matches = data.matches || [];
-    if (!matches.length) return `<div class="da-empty">No demos yet — upload a .dem to get started.</div>`;
+    if (!matches.length) return `<div class="da-report"><div class="rp-card"><div class="rp-h">Matches</div>
+      <div class="empty">No demos yet — upload a .dem to get started.</div></div></div>`;
     const rosterSids = new Set((data.roster_members || []).map(m => String(m.steamid)));
-    return `<div class="da-demos">` + matches.map(m => {
+    const list = `<div class="da-demos">` + matches.map(m => {
       const date = (m.created_at || "").slice(0, 10);
       const allPlayers = m.players || [];
       const squadPlayers = rosterSids.size
@@ -3242,13 +3409,15 @@ const App = {
         </div>
       </div>`;
     }).join("") + `</div>`;
+    return `<div class="da-report"><div class="rp-card"><div class="rp-h">Matches <em>${matches.length} demo${matches.length === 1 ? "" : "s"} in this workspace</em></div>${list}</div></div>`;
   },
   // ---- Maps tab: per-map rows with util/flash effectiveness + CT/T (when present), click-through.
   // Benchmark framing: where the contract gives a rank delta we show it; otherwise honest dashes.
   _daMapsHtml(data) {
     const ov = data.overview || {};
     const rows = ov.map_stats || [];
-    if (!rows.length) return `<div class="da-empty">Not enough data yet — review a few more matches to see per-map breakdowns.</div>`;
+    if (!rows.length) return `<div class="da-report"><div class="rp-card"><div class="rp-h">Map breakdown</div>
+      <div class="empty">Not enough data yet — review a few more matches to see per-map breakdowns.</div></div></div>`;
     const f = (v, u = "") => v != null ? `${v}${u}` : "—";
     const pct = (v) => v != null ? `${Math.round(v)}%` : "—";
     const hasSide = rows.some(m => m.ct_win_rate != null || m.t_win_rate != null);
@@ -3271,9 +3440,10 @@ const App = {
         <td>${f(m.hltv)}</td><td>${f(m.adr)}</td><td>${pct(m.kast)}</td>
         ${sideCells}${utilCells}<td></td></tr>`;
     }).join("");
-    const note = `<div class="da-bench-note">Click a map to open its most-recent match analytics. CT/T and utility columns appear once the underlying data is available.</div>`;
-    return `<div class="da-section">${note}<div class="da-scroll"><table class="da-form-table" style="min-width:520px">
-      <thead>${head}</thead><tbody>${body}</tbody></table></div></div>`;
+    return `<div class="da-report"><div class="rp-card"><div class="rp-h">Map breakdown <em>click a map to open its most-recent match analytics</em></div>
+      <div class="da-scroll"><table class="da-form-table" style="min-width:520px">
+        <thead>${head}</thead><tbody>${body}</tbody></table></div>
+      <div class="da-bench-note" style="margin-top:8px">CT/T and utility columns appear once the underlying data is available.</div></div></div>`;
   },
   // ---- Utility tab: most-common by map + by type, with effectiveness (HE dmg, flashes hit, etc).
   _daUtilityHtml(data) {
@@ -3284,25 +3454,26 @@ const App = {
     const flashByMap = u.flash_by_map || [];
     const hasType = ["smoke", "flash", "he", "molotov"].some(k => byType[k] != null);
     const hasMap = byMap.length > 0;
-    if (!hasType && !hasMap) return `<div class="da-empty">Not enough utility data yet — review a few more matches.</div>`;
+    if (!hasType && !hasMap) return `<div class="da-report"><div class="rp-card"><div class="rp-h">Utility</div>
+      <div class="empty">Not enough utility data yet — review a few more matches.</div></div></div>`;
     const n = (v) => v != null ? (Math.round(v * 10) / 10) : "—";
     // by-type tiles (per-match averages from the contract)
     const typeDefs = [["smoke", "Smokes"], ["flash", "Flashes"], ["he", "HE"], ["molotov", "Molotovs"]];
-    const typeTiles = hasType ? `<div class="da-section-head">Utility by type <span class="round">per match</span></div>
+    const typeTiles = hasType ? `<div class="rp-card"><div class="rp-h">Utility by type <em>per match</em></div>
       <div class="da-util-types">${typeDefs.map(([k, lbl]) =>
-        `<div class="da-ut ut-${k}"><div class="da-ut-v">${n(byType[k])}</div><div class="da-ut-k">${lbl}</div></div>`).join("")}</div>` : "";
+        `<div class="da-ut ut-${k}"><div class="da-ut-v">${n(byType[k])}</div><div class="da-ut-k">${lbl}</div></div>`).join("")}</div></div>` : "";
     // by-map table (counts + HE dmg join)
     const dmgMap = {}; dmgByMap.forEach(d => { dmgMap[d.map] = d.he_dmg; });
-    const mapTable = hasMap ? `<div class="da-section-head">Most-thrown by map</div>
+    const mapTable = hasMap ? `<div class="rp-card"><div class="rp-h">Most-thrown by map <em>where your utility goes</em></div>
       <div class="da-scroll"><table class="da-form-table" style="min-width:460px">
         <thead><tr><th>Map</th><th>Smoke</th><th>Flash</th><th>HE</th><th>Molotov</th><th>Total</th><th title="HE damage on this map">HE dmg</th></tr></thead>
         <tbody>${byMap.map(r => `<tr><td class="da-fl">${esc(this._fmtMap(r.map))}</td>
           <td>${r.smoke != null ? r.smoke : "—"}</td><td>${r.flash != null ? r.flash : "—"}</td>
           <td>${r.he != null ? r.he : "—"}</td><td>${r.molotov != null ? r.molotov : "—"}</td>
           <td>${r.total != null ? r.total : "—"}</td><td>${dmgMap[r.map] != null ? Math.round(dmgMap[r.map]) : "—"}</td></tr>`).join("")}</tbody>
-      </table></div>` : "";
+      </table></div></div>` : "";
     // flash effectiveness by map (blind value)
-    const flashTable = flashByMap.length ? `<div class="da-section-head">Flash effectiveness by map</div>
+    const flashTable = flashByMap.length ? `<div class="rp-card"><div class="rp-h">Flash effectiveness by map <em>blinds that landed</em></div>
       <div class="da-scroll"><table class="da-form-table" style="min-width:520px">
         <thead><tr><th>Map</th><th>Thrown</th><th>Enemies</th><th>Teammates</th><th title="avg blind seconds">Avg blind</th><th title="enemies blinded per flash">Enemy/flash</th></tr></thead>
         <tbody>${flashByMap.map(r => `<tr><td class="da-fl">${esc(this._fmtMap(r.map))}</td>
@@ -3310,37 +3481,13 @@ const App = {
           <td>${r.teammates_flashed != null ? r.teammates_flashed : "—"}</td>
           <td>${r.avg_blind != null ? n(r.avg_blind) + "s" : "—"}</td>
           <td>${r.enemies_per_flash != null ? n(r.enemies_per_flash) : "—"}</td></tr>`).join("")}</tbody>
-      </table></div>` : "";
-    const actions = `<div class="da-util-actions">
-      <button class="btn ghost sm" data-da-act="util-lib" title="Open the utility / nade library (needs a demo open)">Utility library</button>
-      <button class="btn ghost sm gl-rc-goal" data-metric="he_dmg_per_he" data-area="utility" data-title="Improve HE damage" data-target="">+ Utility goal</button>
-    </div>`;
-    return `<div class="da-section">${typeTiles}${mapTable}${flashTable}${actions}</div>`;
-  },
-  // ---- Flash tab: flash effectiveness per map + per player, with flags (high-volume/low-value, high
-  // teammate flashes). Roster players only.
-  _daFlashHtml(data) {
-    const u = data.utility || {};
-    const flashByMap = u.flash_by_map || [];
-    const players = (data.players || []).filter(p => p.utility && (p.utility.flashes_thrown != null || p.utility.enemy_flashed != null));
-    if (!flashByMap.length && !players.length) return `<div class="da-empty">Not enough flash data yet — review a few more matches.</div>`;
-    const n = (v) => v != null ? (Math.round(v * 10) / 10) : "—";
-    const mapTable = flashByMap.length ? `<div class="da-section-head">Per map</div>
-      <div class="da-scroll"><table class="da-form-table" style="min-width:560px">
-        <thead><tr><th>Map</th><th>Thrown</th><th>Enemies</th><th>Teammates</th><th>Blind total</th><th>Avg blind</th><th title="enemies per flash">Enemy/f</th><th title="teammates per flash">Team/f</th></tr></thead>
-        <tbody>${flashByMap.map(r => `<tr><td class="da-fl">${esc(this._fmtMap(r.map))}</td>
-          <td>${r.thrown != null ? r.thrown : "—"}</td><td>${r.enemies_flashed != null ? r.enemies_flashed : "—"}</td>
-          <td>${r.teammates_flashed != null ? r.teammates_flashed : "—"}</td>
-          <td>${r.blind_total != null ? n(r.blind_total) + "s" : "—"}</td>
-          <td>${r.avg_blind != null ? n(r.avg_blind) + "s" : "—"}</td>
-          <td>${r.enemies_per_flash != null ? n(r.enemies_per_flash) : "—"}</td>
-          <td>${r.teammates_per_flash != null ? n(r.teammates_per_flash) : "—"}</td></tr>`).join("")}</tbody>
-      </table></div>` : "";
-    // per-player flash quality + flags
-    const playerTable = players.length ? `<div class="da-section-head">Per player</div>
+      </table></div></div>` : "";
+    // per-player flash quality + flags (flash IS utility -> folded in here, no separate tab)
+    const flashPlayers = (data.players || []).filter(p => p.utility && (p.utility.flashes_thrown != null || p.utility.enemy_flashed != null));
+    const flashPlayerTable = flashPlayers.length ? `<div class="rp-card"><div class="rp-h">Flash by player <em>volume, value &amp; team-flash flags</em></div>
       <div class="da-scroll"><table class="da-form-table" style="min-width:520px">
         <thead><tr><th>Player</th><th>Thrown</th><th>Enemies</th><th>Teammates</th><th>Avg blind</th><th></th></tr></thead>
-        <tbody>${players.map(p => {
+        <tbody>${flashPlayers.map(p => {
           const ut = p.utility || {};
           const thrown = ut.flashes_thrown, enemy = ut.enemy_flashed, team = ut.team_flashed;
           const flags = [];
@@ -3353,18 +3500,21 @@ const App = {
             <td>${team != null ? n(team) : "—"}</td><td>${ut.avg_blind != null ? n(ut.avg_blind) + "s" : "—"}</td>
             <td>${flags.join(" ")}</td></tr>`;
         }).join("")}</tbody>
-      </table></div>` : "";
-    const actions = `<div class="da-flash-actions">
+      </table></div></div>` : "";
+    const actions = `<div class="da-util-actions">
+      <button class="btn ghost sm" data-da-act="util-lib" title="Open the utility / nade library (needs a demo open)">Utility library</button>
+      <button class="btn ghost sm gl-rc-goal" data-metric="he_dmg_per_he" data-area="utility" data-title="Improve HE damage" data-target="">+ Utility goal</button>
       <button class="btn ghost sm gl-rc-goal" data-metric="avg_flashbang_hit_foe" data-area="utility" data-title="Land more flashes on enemies" data-target="">+ Flash goal</button>
     </div>`;
-    return `<div class="da-section">${mapTable}${playerTable}${actions}</div>`;
+    return `<div class="da-report">${typeTiles}${mapTable}${flashTable}${flashPlayerTable}${actions}</div>`;
   },
   // ---- Benchmarks tab: player selector (default = top-by-matches roster player) -> reuse the existing
   // shared renderPerfBench panel (Leetify-comparable metrics vs the chosen rank bucket).
   _renderDaBenchmarks(el, data) {
     const players = (data.players || []).slice();
     if (!players.length) {
-      el.innerHTML = `<div class="da-empty">No roster player data yet — upload demos or configure your team to compare against benchmarks.</div>`;
+      el.innerHTML = `<div class="da-fade da-report"><div class="rp-card"><div class="rp-h">Benchmarks</div>
+        <div class="empty">No roster player data yet — upload demos or configure your team to compare against benchmarks.</div></div></div>`;
       return;
     }
     // default to the player with the most matches (most reliable comparison)
@@ -3374,11 +3524,12 @@ const App = {
     const opts = players.map(p =>
       `<option value="${esc(String(p.steamid))}"${String(p.steamid) === String(this._daBenchSid) ? " selected" : ""}>`
       + `${esc(p.name || p.steamid)} — ${p.n_matches || 0} demo${(p.n_matches || 0) === 1 ? "" : "s"}</option>`).join("");
-    el.innerHTML = `<div class="da-fade da-section">
-      <div class="da-bench-note">How a roster player compares to public skill-bucket averages over their recent matches. Pick a rank bucket inside the panel; rows show an honest dash where there isn't enough data.</div>
+    el.innerHTML = `<div class="da-fade da-report"><div class="rp-card">
+      <div class="rp-h">Benchmarks <em>you vs public skill-bucket averages</em></div>
+      <div class="da-bench-note">How a roster player compares over their recent matches. Pick a rank bucket inside the panel; rows show an honest dash where there isn't enough data.</div>
       <div class="da-bench-head"><label>Player <select id="daBenchSel" class="da-bench-sel">${opts}</select></label></div>
-      <div id="daBenchPanel" class="card pb-card"></div>
-    </div>`;
+      <div id="daBenchPanel" class="pb-card" style="margin-top:4px"></div>
+    </div></div>`;
     const sel = $("daBenchSel");
     if (sel) sel.onchange = () => { this._daBenchSid = sel.value; this._renderDaBenchmarks(el, data); };
     if (this.renderPerfBench) this.renderPerfBench($("daBenchPanel"), { player: this._daBenchSid, recent: 15 });
@@ -3429,22 +3580,22 @@ const App = {
     if (teamCoaching.length) {
       const tc = teamCoaching[0];
       const entry = tc.entry || {}, retake = tc.retake || {};
-      teamStatsHtml = `<div class="da-section-head">Team stats</div>
+      teamStatsHtml = `<div class="rp-card"><div class="rp-h">Team stats</div>
         <div class="da-kpis">
           <div class="da-kpi da-kpi-sm"><span class="da-kv">${tc.trade_pct != null ? Math.round(tc.trade_pct) + "%" : "—"}</span><span class="da-kl">Trade%</span></div>
           <div class="da-kpi da-kpi-sm"><span class="da-kv">${entry.wr != null ? Math.round(entry.wr) + "%" : "—"}</span><span class="da-kl">Entry WR</span></div>
           <div class="da-kpi da-kpi-sm"><span class="da-kv">${retake.wr != null ? Math.round(retake.wr) + "%" : "—"}</span><span class="da-kl">Retake WR</span></div>
           ${tc.won != null ? `<div class="da-kpi da-kpi-sm"><span class="da-kv">${tc.won}W–${tc.lost}L</span><span class="da-kl">Record</span></div>` : ""}
-        </div>`;
+        </div></div>`;
     }
 
-    // Key issues and positives from insights
+    // Key issues and positives from insights (2-col, mirrors the in-match Report)
     const issueHtml = topIssues.length
-      ? `<div class="da-section-head">Key fixes</div>
-         <ul class="da-detail-issues">${topIssues.map(l => `<li>${esc(l)}</li>`).join("")}</ul>` : "";
+      ? `<div class="rp-card"><div class="rp-h">Key fixes <em>practice these</em></div>
+         <ul class="da-detail-issues">${topIssues.map(l => `<li>${esc(l)}</li>`).join("")}</ul></div>` : "";
     const goodHtml = topGood.length
-      ? `<div class="da-section-head">What went well</div>
-         <ul class="da-detail-good">${topGood.map(l => `<li>${esc(l)}</li>`).join("")}</ul>` : "";
+      ? `<div class="rp-card"><div class="rp-h">What went well <em>keep doing it</em></div>
+         <ul class="da-detail-good">${topGood.map(l => `<li>${esc(l)}</li>`).join("")}</ul></div>` : "";
 
     // Per-player high-severity focus items
     const allFocus = players.flatMap(p =>
@@ -3452,35 +3603,35 @@ const App = {
         .map(fi => ({ pname: p.name || p.steamid, area: fi.area, fix: fi.fix || fi.detail || "" }))
     ).slice(0, 5);
     const focusHtml = allFocus.length
-      ? `<div class="da-section-head">Player priorities</div>
+      ? `<div class="rp-card"><div class="rp-h">Player priorities</div>
          <div class="da-focus-list">${allFocus.map(fi =>
-           `<div class="da-focus-item da-focus-recurring_issue">
-              <span class="da-focus-label">${esc(fi.pname)}</span>
-              <span class="da-focus-detail">${esc(fi.area)}: ${esc(fi.fix)}</span>
+           `<div class="da-rfocus is-issue">
+              <div><div class="da-rfocus-l">${esc(fi.pname)}</div>
+              <div class="da-rfocus-d">${esc(fi.area)}: ${esc(fi.fix)}</div></div>
             </div>`
-         ).join("")}</div>` : "";
+         ).join("")}</div></div>` : "";
 
     // Practice plan from team coaching
     const planItems = teamCoaching.flatMap(tc => (tc.practice_plan || []).slice(0, 2));
     const planHtml = planItems.length
-      ? `<div class="da-section-head">Practice plan</div>
+      ? `<div class="rp-card"><div class="rp-h">Practice plan <em>next session</em></div>
          <div class="da-practice-list">${planItems.map(item =>
            `<div class="da-practice-item">
               <span class="da-practice-focus">${esc(item.focus || "")}</span>
               ${item.drill ? `<span class="da-practice-drill">${esc(item.drill)}</span>` : ""}
             </div>`
-         ).join("")}</div>` : "";
+         ).join("")}</div></div>` : "";
 
     // Key rounds that have a summary
     const keyRounds = roundCards.filter(r => r.summary).slice(0, 4);
     const roundsHtml = keyRounds.length
-      ? `<div class="da-section-head">Key rounds</div>
+      ? `<div class="rp-card"><div class="rp-h">Key rounds <em>biggest swings</em></div>
          <div class="da-rounds-list">${keyRounds.map(r =>
            `<div class="da-round-card">
               <span class="da-round-num">R${r.round}</span>
               <span class="da-round-summary">${esc(r.summary)}</span>
             </div>`
-         ).join("")}</div>` : "";
+         ).join("")}</div></div>` : "";
 
     // Players table with roles + colour-coded rating
     const playerRows = players.slice(0, 10).map(p =>
@@ -3495,22 +3646,25 @@ const App = {
       </tr>`
     ).join("");
     const playerHtml = playerRows
-      ? `<div class="da-section-head">Players</div>
+      ? `<div class="rp-card"><div class="rp-h">Players</div>
          <div class="da-scroll"><table class="da-table">
            <thead><tr><th>Player</th><th>Rating</th><th>ADR</th><th>KAST</th><th>Open%</th><th>Trade%</th><th>UDR</th></tr></thead>
            <tbody>${playerRows}</tbody>
-         </table></div>` : "";
+         </table></div></div>` : "";
+
+    // Key fixes + What went well sit side-by-side like the in-match Report's rp-cols.
+    const colsHtml = (issueHtml || goodHtml) ? `<div class="rp-cols">${issueHtml}${goodHtml}</div>` : "";
 
     return `<div class="da-match-header">
-      <button class="btn ghost sm da-back-btn">← Back</button>
+      <button class="btn ghost sm da-back-btn">← Back to matches</button>
       <span class="da-match-title"><b>${esc(this._fmtMap(md.map))}</b>
         ${md.score ? `<span class="round">${esc(md.score)}</span>` : ""}
         ${md.rounds ? `<span class="da-mutl">${md.rounds}r</span>` : ""}
         <span class="da-mutl">${(md.created_at || "").slice(0,10)}</span>
       </span>
-      <button class="btn ghost sm da-replay-btn">Open replay</button>
+      <button class="btn ghost sm da-replay-btn">Open replay →</button>
     </div>
-    <div class="da-match-body">${teamStatsHtml}${issueHtml}${goodHtml}${focusHtml}${planHtml}${roundsHtml}${playerHtml}</div>`;
+    <div class="da-match-body da-report">${teamStatsHtml}${colsHtml}${focusHtml}${planHtml}${roundsHtml}${playerHtml}</div>`;
   },
 
   // --- multi-demo trends + team config (cross-match "am I getting better?") -

@@ -268,6 +268,19 @@ input:focus-visible,select:focus-visible,textarea:focus-visible{outline:none;bor
 .adm-limit{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px}
 .adm-limit label{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--mut)}
 .adm-limit input{width:88px}
+/* admin: sample-demo management */
+.adm-sample-hint{margin-bottom:8px;max-width:680px}
+.adm-sample{max-width:680px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:12px 14px}
+.adm-sample-grid{display:grid;grid-template-columns:1fr 1fr;gap:2px 18px}
+.adm-sample-weak{margin-top:5px;font-size:11px;color:var(--mut)}
+.adm-sample-raw{margin-top:10px;font-size:12px}
+.adm-sample-raw-no{color:#ffb37a}
+.adm-sample-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px}
+.adm-sample-actions .btn[disabled]{opacity:.45;cursor:not-allowed}
+.adm-sample-msg{margin-top:8px;min-height:1em;font-size:12px}
+.adm-sample-msg-ok{color:#5fcf80}
+.adm-sample-msg-err{color:#ff8f6f}
+@media(max-width:560px){.adm-sample-grid{grid-template-columns:1fr}}
 .sqd-n.lnk{cursor:pointer}                              /* #24 click a teammate -> their trend */
 .sqd-n.lnk:hover{color:var(--accent);text-decoration:underline}
 .an-name-lnk{cursor:pointer}                            /* clickable player name -> Player detail */
@@ -505,16 +518,47 @@ body.on-dashboard-analytics .dash-hero{display:none}   /* the page bar carries i
 .dapg-title .round{font-size:12px;font-weight:500;color:var(--mut)}
 .dapg-frame{color:var(--mut);font-size:12px;font-style:italic}
 .dapg-trends{margin-left:auto;flex-shrink:0}
-/* tab strip styled like the in-match .antab strip (the quality bar) */
+/* tab strip styled EXACTLY like the in-match .antab strip (bright accent active
+   tab) so dashboard analytics reads as the same product as match analytics. */
 .dapg-tabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:9px;margin-bottom:14px}
-.dapg-tab{background:none;border:1px solid transparent;border-radius:7px;color:var(--mut);padding:6px 15px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s}
-.dapg-tab:hover{color:var(--txt);border-color:var(--line)}
-.dapg-tab.on{background:var(--panel2);color:var(--txt);border-color:var(--line2)}
+.dapg-tab{background:var(--panel2);border:1px solid var(--line);color:var(--mut);border-radius:7px;padding:5px 14px;font-size:13px;font-weight:600;cursor:pointer;transition:all .12s}
+.dapg-tab:hover{border-color:var(--accent);color:var(--accent)}
+.dapg-tab.on{background:var(--accent);border-color:var(--accent);color:#1a1205}
+.dapg-tab.on:hover{color:#1a1205}
 .dapg-body{min-height:200px}
 .dapg-body .da-section{gap:14px}
 /* the page is wider than the old modal -> let KPI tiles + tables breathe */
 .dapg-body .da-kpis{gap:10px}
 .dapg-body .da-scroll{margin-bottom:2px}
+
+/* ---- dashboard-analytics "report" parity layer ---------------------------
+   Overview + tabs are now built from the SAME .rp-card / .rp-h / .rp-cols /
+   .rp-summary-card / .rp-score components the in-match Coaching Report uses, so
+   the two pages share one visual language. These rules only tune the few
+   dashboard-specific bits (workspace context line, key-numbers strip, focus
+   rows) to sit cleanly inside those shared cards. */
+.da-ctx{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:13px;margin:2px 0 14px;color:var(--mut)}
+.da-ctx .da-ctx-score{font-size:15px;color:var(--txt)}
+.da-ctx b{color:var(--txt)}
+.da-ctx-chip{background:var(--panel2);border:1px solid var(--line);border-radius:20px;padding:3px 11px;font-size:12px;font-weight:600;color:var(--txt)}
+.da-ctx-chip.warn{border-color:rgba(240,160,64,.5);color:#f0a040}
+/* key-numbers strip lives INSIDE an .rp-card now -> calmer than the old hero KPIs */
+.da-report .da-kpis{gap:8px}
+.da-report .da-kpi{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--line2);border-radius:8px;padding:8px 13px;min-width:88px}
+.da-report .da-kv{font-size:17px;font-weight:800}
+.da-report .da-kl{font-size:10px;text-transform:uppercase;letter-spacing:.4px}
+/* focus / fix rows inside the report cards (mirror .rp-fix rhythm) */
+.da-rfocus{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #1a212b}
+.da-rfocus:last-child{border-bottom:0}
+.da-rfocus.is-issue{border-left:3px solid #ff6f8b;padding-left:10px;border-radius:0}
+.da-rfocus.is-weak_map{border-left:3px solid #f0a040;padding-left:10px}
+.da-rfocus.is-form_drop{border-left:3px solid #6fb0ff;padding-left:10px}
+.da-rfocus-l{font-size:14px;font-weight:600;color:var(--txt)}
+.da-rfocus-d{font-size:12px;color:var(--mut);flex:1;line-height:1.4}
+.da-rfocus .da-focus-goal,.da-rfocus .gl-rc-goal{margin-left:auto;flex:0 0 auto}
+.da-report .rp-card>.da-scroll{margin:0}
+/* small-sample inline flag on table rows */
+.da-small{font-size:10px;color:#f0a040;margin-left:5px;font-weight:600}
 @media(max-width:600px){.dapg-bar{gap:8px}.dapg-frame{width:100%;order:5}.dapg-trends{margin-left:0}}
 
 /* ---- Public landing page (logged-out marketing) ---- */
