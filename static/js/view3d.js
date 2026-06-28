@@ -95,6 +95,7 @@ export class View3D {
     this.geoLoading = false;   // true while the map GLB is streaming/decoding
     this.calMode = false;      // calibration / debug overlay (spawns, axes, bounds)
     this.calibrated = false;   // true only when a VALIDATED transform placed the geometry
+    this.samplePreview = false; // true only while loading the public sample's preview geometry
     this.anchors = null;       // real spawn/bomb anchors for the current map
     this._transforms = null;   // cached transforms.json
     this._calGroup = null;     // calibration helpers group
@@ -194,7 +195,8 @@ export class View3D {
       this._loader = new GLTFLoader();
       if (MeshoptDecoder) this._loader.setMeshoptDecoder(MeshoptDecoder);
     }
-    const url = `static/maps3d/${cfg.glb || mapName + "_full.glb"}`;
+    const sample = this.samplePreview ? "&sample=1" : "";
+    const url = `static/maps3d/${cfg.glb || mapName + "_full.glb"}?t=${Date.now()}${sample}`;
     this.geoLoading = true;
     if (this.onGeoStatus) this.onGeoStatus("loading");
     this._loader.load(url, (gltf) => {

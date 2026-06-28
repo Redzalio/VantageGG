@@ -2753,6 +2753,7 @@ const App = {
       this.miniRadar.setMap(mapMeta, img, lower);   // 3D-overlay minimap (re-fit on enter3D when sized)
       this.view3d.setMap(mapMeta, img);
       this.view3d.setDemo(this.demo);
+      this.view3d.samplePreview = !!isSample;
       this.view3d.loadGeo(json.map);
       this.exit3D();
       // start at the first live round, not the warmup transition (where money is still warmup $)

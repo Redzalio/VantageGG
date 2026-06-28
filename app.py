@@ -489,18 +489,46 @@ def csrf_origin_guard():
 def feature_and_store_gates():
     """Defense-in-depth for things the frontend already gates (a direct API/asset call must not bypass):
       - 3D map geometry (/static/maps3d/*.glb) is a Pro (threeD) asset -> 402 for free/anon when tiers
-        are on (2D replay + the sample don't need it).
+        are on, except for the current public sample's own map mesh.
       - the shared nade/playbook/team/practice JSON stores are writable only by a logged-in user on a
         locked site, so an anonymous request can't clobber them.
     All no-ops in local/open mode (tiers off, not auth-locked), so dev/preview behavior is unchanged."""
     p = request.path
     if p.startswith("/static/maps3d/") and p.endswith(".glb"):
+        if _is_current_sample_glb_request(p):
+            return None
         return require_feature("threeD")
     if request.method in ("POST", "PUT", "DELETE", "PATCH") and (
             p.startswith("/api/nades") or p == "/api/playbook" or p.startswith("/api/playbook/")
             or p == "/api/team" or p == "/api/practice"):
         return require_auth_when_locked()
     return None
+
+
+def _effective_sample_data():
+    if samplemgr.has_valid_admin_sample(DATA_DIR, replay_valid, analytics_valid):
+        return load_cache(samplemgr.current_json_path(DATA_DIR))
+    return load_cache(os.path.join(CACHE, "sample.json"))
+
+
+def _current_sample_glb_name():
+    data = _effective_sample_data()
+    map_name = data.get("map") if isinstance(data, dict) else None
+    if not map_name:
+        return None
+    transforms = load_cache(os.path.join(STATIC, "maps3d", "transforms.json")) or {}
+    cfg = transforms.get(map_name) if isinstance(transforms, dict) else None
+    if not isinstance(cfg, dict) or not cfg.get("verified"):
+        return None
+    return os.path.basename(cfg.get("glb") or (map_name + "_full.glb"))
+
+
+def _is_current_sample_glb_request(path):
+    """Allow the public sample to preview exactly its own 3D mesh without opening all 3D assets."""
+    if request.args.get("sample") != "1":
+        return False
+    wanted = _current_sample_glb_name()
+    return bool(wanted) and os.path.basename(path) == wanted
 
 
 @app.after_request

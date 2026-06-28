@@ -1,6 +1,7 @@
 """Server-side Pro-tier enforcement (defense in depth). The frontend already hides Pro tools, but a
 free account hitting a Pro endpoint directly must be refused server-side. Verified here because the
 dev preview runs in open mode (tiers off) and can't exercise gating. Temp DB, no parsing."""
+import json
 import os
 import sys
 
@@ -86,6 +87,42 @@ def test_glb_allowed_when_tiers_off(tmp_path, monkeypatch):
     c, _ = _client(app, tmp_path, monkeypatch, tiers=False)
     # tiers off -> gate is a no-op; file may not exist (404) but must NOT be 402
     assert c.get("/static/maps3d/de_dust2.glb").status_code != 402
+
+
+def _sample_cache(app, tmp_path, monkeypatch, map_name="de_dust2"):
+    cache = tmp_path / "cache"
+    data = tmp_path / "data"
+    cache.mkdir()
+    data.mkdir()
+    (cache / "sample.json").write_text(json.dumps({"map": map_name}), encoding="utf-8")
+    monkeypatch.setattr(app, "CACHE", str(cache))
+    monkeypatch.setattr(app, "DATA_DIR", str(data))
+
+
+def test_sample_glb_allowed_for_public_preview(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    import app
+    monkeypatch.setattr(app, "TIERS_ENABLED", True)
+    _sample_cache(app, tmp_path, monkeypatch, "de_dust2")
+    c = app.app.test_client()
+
+    r = c.get("/static/maps3d/de_dust2_full.glb?sample=1")
+
+    assert r.status_code != 402
+
+
+def test_sample_preview_marker_does_not_unlock_other_maps(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUTH_REQUIRED", "1")
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    import app
+    monkeypatch.setattr(app, "TIERS_ENABLED", True)
+    _sample_cache(app, tmp_path, monkeypatch, "de_dust2")
+    c = app.app.test_client()
+
+    r = c.get("/static/maps3d/de_mirage_full.glb?sample=1")
+
+    assert r.status_code == 402
 
 
 def test_shared_store_write_blocked_anon_when_locked(tmp_path, monkeypatch):
