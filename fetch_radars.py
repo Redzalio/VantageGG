@@ -44,6 +44,19 @@ LOWER_VARIANTS = {
     "ar_baggage": "ar_baggage_lower",
 }
 
+# Maps with generated radar images that do not exist in the upstream radar-image repo.
+# Keep these here because Docker builds re-run this script and rewrite maps.json.
+GENERATED_RADARS = {
+    "de_cache": {
+        "image": "de_cache.png",
+        "pos_x": -3888.4,
+        "pos_y": 2831.5,
+        "scale": 7.7108,
+        "size": 1024,
+        "generated": True,
+    },
+}
+
 
 def fetch(name, dest, force=False):
     if os.path.exists(dest) and not force:
@@ -181,6 +194,13 @@ def build():
         maps[m] = entry
         print(f"  ok pos=({entry['pos_x']},{entry['pos_y']}) scale={entry['scale']}"
               + (" +lower" if "lower" in entry else ""))
+
+    for m, entry in GENERATED_RADARS.items():
+        if not os.path.exists(os.path.join(OUT_DIR, entry["image"])):
+            print(f"{m}\n  skip generated radar (missing {entry['image']})")
+            continue
+        maps[m] = dict(entry)
+        print(f"{m}\n  ok generated pos=({entry['pos_x']},{entry['pos_y']}) scale={entry['scale']}")
 
     with open(os.path.join(OUT_DIR, "maps.json"), "w", encoding="utf-8") as f:
         json.dump(maps, f, indent=2)
